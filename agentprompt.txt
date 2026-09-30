@@ -1,0 +1,64 @@
+# TASK PROMPT: Multi-Bookie Odds Filtering & Betslip Generator (betPawa & SportyBet Kenya)
+
+You are tasked with building a Next.js (App Router, TypeScript, Tailwind CSS) web app that fetches live football match odds, runs local filtering against strict preferred market criteria, randomly picks N matches, and converts the selections into a single booking code for betPawa Kenya (`betpawa:ke`) or SportyBet Kenya (`sportybet:ke`).
+
+---
+
+## 1. TECHNICAL ARCHITECTURE (Zero-DB In-Memory Pipeline)
+
+- **Frontend:** Next.js App Router UI with responsive mobile layout, sticky bottom betslip drawer, and filter pills.
+- **Backend Routing:** 
+  - `GET /api/odds`: Ingests and normalizes live soccer match odds in memory.
+  - `POST /api/generate-code`: Packages selected match market IDs and sends them to the ConvertBetCodes API to return a destination booking code.
+
+---
+
+## 2. STRICT DATA MATCHING & PARSING RULES
+
+### Common Grep/Regex String Pitfalls
+1. **Diacritics & Team Name Mismatches:** Teams like "Bayern München" vs "Bayern Munich" or "Atlético Madrid" cause string matching failures. Always normalize team names to lowercase, lowercase ASCII without accents (`NFD` normalization: `.normalize("NFD").replace(/[\u0300-\u036f]/g, "")`) before matching.
+2. **Special Characters in JSON Strings:** Characters like `&` (e.g., "Brighton & Hove Albion"), hyphens, and single quotes (`'`) break strict regex lookups. Strip non-alphanumeric characters when performing ID maps.
+3. **PAGINATION & ACTIVE MATCH DISCOVERY:** Odds APIs return paginated responses or omit active live games if requested with `prematch` parameters.
+   - You MUST loop through all API response pages to ensure no matches meeting the odds constraints are missed.
+   - Filter out games where status is `IN_PLAY`, `CANCELLED`, or `POSTPONED`.
+   - Kickoff times must be strictly mapped using UTC ISO timestamps (`kickoff >= NOW()` and `kickoff <= NOW + selected_timeframe`).
+
+---
+
+## 3. PREFERRED MARKET FILTERING ENGINE (`src/lib/filterEngine.ts`)
+
+Implement array processing logic that scans every fixture and pulls ONLY outcomes matching these thresholds:
+
+1. **Double Chance (1X, X2, 12):** Decimal odds range between `1.08` and `1.20`.
+2. **Home Win (1):** Decimal odds range between `1.30` and `1.50`.
+3. **Over 0.5 Goals:** Market outcome for Over 0.5 Total Goals.
+4. **Under 3.5 Goals:** Market outcome for Under 3.5 Total Goals.
+
+*Selection Constraint:* Ensure each game displays its league name, kickoff time, normalized team names, selected market description, and exact decimal odds cleanly on card containers.
+
+---
+
+## 4. API & CODE GENERATION INTEGRATION
+
+### A. Odds API Fetcher (`src/lib/oddsFetcher.ts`)
+- Use `The Odds API` or `API-Football` endpoints to pull soccer odds (`h2h`, `doublechance`, `totals`).
+- Extract the raw fixture data into a standardized TypeScript model:
+  ```ts
+  export interface StandardGame {
+    id: string;
+    homeTeam: string;
+    awayTeam: string;
+    league: string;
+    kickoffTime: string;
+    markets: {
+      doubleChance?: { pick: string; odd: number }[];
+      homeWin?: { pick: string; odd: number };
+      overUnder?: { pick: string; odd: number }[];
+    };
+  }
+
+  B. ConvertBetCodes Integration (src/lib/codeConverter.ts)Call https://convertbetcodes.com/api/generate_bet_code (or RapidAPI equivalent).Parameters:destination_bookie: Either sportybet:ke or betpawa:ke.selections: Array of { match_id, market_name, pick, odd }.Handle conversion errors gracefully with clear user notifications if an individual market key fails to map.5. UI COMPONENTS TO BUILDFilterBar.tsx:Sliders/toggles for odds bounds (e.g., DC $1.08-1.20$, Home Win $1.30-1.50$).Timeframe pills: Next 3h, Next 6h, Today, Next 24h.Number picker for N random picks (default: 30 games).GameCard.tsx:High-density list showing League, Home vs Away, Kickoff countdown, selected Market Badge, and Odds chip.BetslipDrawer.tsx:Slide-over / bottom-docked list showing the active $N$ randomly picked games.Button: "Shuffle & Re-Pick N Games" (uses Fisher-Yates shuffle algorithm on filtered pool).Button: "Export Betslip".ExportModal.tsx:Choice to target SportyBet Kenya or betPawa Kenya.Output container displaying the generated 6-to-8 character Booking Code.1-Click Actions: "Copy Code", "Open SportyBet", "Open betPawa".6. EXECUTION STEPS FOR AGENTPopulate src/types/index.ts with all strict interfaces.Build src/lib/oddsFetcher.ts to fetch and parse incoming odds.Build src/lib/filterEngine.ts to implement normalization, string cleanup, range logic, and random array selection.Build src/lib/codeConverter.ts to communicate with the Bet Code Converter API.Implement backend API handlers in src/app/api/odds/route.ts and src/app/api/generate-code/route.ts.Assemble the UI with Tailwind CSS inside src/app/page.tsx and related components.
+***
+
+### What's Next?
+Run the setup commands in your project directory, add your API keys to `.env.local`, and pass the prompt to your coding agent to write the entire implementation.
