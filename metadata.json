@@ -1,0 +1,8 @@
+{
+  "name": "LottoBet - Odds Filter & Betslip Generator",
+  "description": "Multi-bookie odds filter and betslip generator for betPawa Kenya and SportyBet Kenya.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
