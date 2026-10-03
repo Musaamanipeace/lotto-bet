@@ -263,9 +263,21 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         </div>
 
         {/* Over Goal Line Selector */}
-        <div className="p-3.5 rounded-xl border bg-[#0f172a] border-amber-500/40 shadow-sm">
+        <div
+          className={`p-3.5 rounded-xl border transition-all flex flex-col ${
+            criteria.enableOver
+              ? 'bg-[#0f172a] border-amber-500/40 shadow-sm'
+              : 'bg-slate-900/40 border-slate-800/70 opacity-60'
+          }}`}
+        >
           <div className="flex items-center justify-between mb-2">
             <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={criteria.enableOver}
+                onChange={(e) => updateCriteria('enableOver', e.target.checked)}
+                className="w-4 h-4 rounded text-amber-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
+              />
               <span className="text-xs font-bold text-amber-300">Over Goals</span>
             </label>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-950/60 text-amber-400 border border-amber-800/50">
@@ -275,21 +287,23 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <div className="flex gap-1">
             <button
               onClick={() => updateCriteria('overGoalLine', '0.5')}
+              disabled={!criteria.enableOver}
               className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
                 criteria.overGoalLine === '0.5'
                   ? 'bg-amber-500 text-slate-950 font-bold'
                   : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
-              }`}
+              } disabled:opacity-40`}
             >
               Over 0.5
             </button>
             <button
               onClick={() => updateCriteria('overGoalLine', '1.5')}
+              disabled={!criteria.enableOver}
               className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
                 criteria.overGoalLine === '1.5'
                   ? 'bg-amber-500 text-slate-950 font-bold'
                   : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
-              }`}
+              } disabled:opacity-40`}
             >
               Over 1.5
             </button>
@@ -300,9 +314,21 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         </div>
 
         {/* Under Goal Line Selector */}
-        <div className="p-3.5 rounded-xl border bg-[#0f172a] border-purple-500/40 shadow-sm">
+        <div
+          className={`p-3.5 rounded-xl border transition-all flex flex-col ${
+            criteria.enableUnder
+              ? 'bg-[#0f172a] border-purple-500/40 shadow-sm'
+              : 'bg-slate-900/40 border-slate-800/70 opacity-60'
+          }}`}
+        >
           <div className="flex items-center justify-between mb-2">
             <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={criteria.enableUnder}
+                onChange={(e) => updateCriteria('enableUnder', e.target.checked)}
+                className="w-4 h-4 rounded text-purple-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
+              />
               <span className="text-xs font-bold text-purple-300">Under Goals</span>
             </label>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-purple-950/60 text-purple-400 border border-purple-800/50">
@@ -312,21 +338,23 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <div className="flex gap-1">
             <button
               onClick={() => updateCriteria('underGoalLine', '3.5')}
+              disabled={!criteria.enableUnder}
               className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
                 criteria.underGoalLine === '3.5'
                   ? 'bg-purple-500 text-slate-950 font-bold'
                   : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
-              }`}
+              } disabled:opacity-40`}
             >
               Under 3.5
             </button>
             <button
               onClick={() => updateCriteria('underGoalLine', '4.5')}
+              disabled={!criteria.enableUnder}
               className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
                 criteria.underGoalLine === '4.5'
                   ? 'bg-purple-500 text-slate-950 font-bold'
                   : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
-              }`}
+              } disabled:opacity-40`}
             >
               Under 4.5
             </button>

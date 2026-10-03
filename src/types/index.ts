@@ -67,7 +67,9 @@ export interface FilterCriteria {
   homeWinMax: number;
   enableDoubleChance: boolean;
   enableHomeWin: boolean;
+  enableOver: boolean;
   overGoalLine: '0.5' | '1.5';
+  enableUnder: boolean;
   underGoalLine: '3.5' | '4.5';
   enableEvenOdd: boolean;
   timeframeHours: number | null;

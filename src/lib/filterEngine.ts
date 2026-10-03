@@ -323,7 +323,7 @@ export function evaluateAndFilterGames(
     }
 
     // Over goals — use criterion-selected goal line (0.5 or 1.5)
-    if (activeMarkets.overUnder) {
+    if (criteria.enableOver && activeMarkets.overUnder) {
       const overPick = activeMarkets.overUnder.find((m) => m.pick === `Over ${criteria.overGoalLine}`);
       if (overPick && overPick.odd > 1.01) {
         const ids = findSportyBetIds(sportyIds, `Over ${criteria.overGoalLine}`, overPick.pick);
@@ -348,7 +348,7 @@ export function evaluateAndFilterGames(
     }
 
     // Under goals — use criterion-selected goal line (3.5 or 4.5)
-    if (activeMarkets.overUnder) {
+    if (criteria.enableUnder && activeMarkets.overUnder) {
       const underPick = activeMarkets.overUnder.find((m) => m.pick === `Under ${criteria.underGoalLine}`);
       if (underPick && underPick.odd > 1.05) {
         const ids = findSportyBetIds(sportyIds, `Under ${criteria.underGoalLine}`, underPick.pick);
