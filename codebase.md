@@ -4472,13 +4472,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               />
             </div>
 
-            <button
-              onClick={onShuffleAndPick}
-              className="px-3.5 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+            <span
+              className="px-3.5 py-2 bg-slate-900 text-emerald-400 font-bold text-xs rounded-xl flex items-center gap-1.5 border border-slate-700"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>Pick {criteria.pickCount}</span>
-            </button>
+              <span className="text-sm">N</span>
+              Pick {criteria.pickCount}
+            </span>
 
             <button
               onClick={() => onAddNextPicks(criteria.pickCount)}
