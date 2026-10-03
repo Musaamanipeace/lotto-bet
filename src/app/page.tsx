@@ -6,6 +6,8 @@ import { DEFAULT_FILTER_CRITERIA, BOOKIE_CONFIGS } from '@/lib/constants';
 import {
   evaluateAndFilterGames,
   pickRandomSelections,
+  pickSmartSelections,
+  mergePicksIntoSlip,
   calculateAccumulatorOdds,
 } from '@/lib/filterEngine';
 import { FilterBar } from '@/components/FilterBar';
@@ -107,7 +109,7 @@ export default function HomePage() {
     }
   };
 
-  // Shuffle & pick N matches using Fisher-Yates
+  // Shuffle & replace entire slip using Fisher-Yates
   const handleShuffleAndPick = () => {
     if (evaluations.length === 0) return;
     const newPicks = pickRandomSelections(evaluations, criteria.pickCount);
@@ -121,6 +123,33 @@ export default function HomePage() {
     const evals = evaluateAndFilterGames(games, next);
     const newPicks = pickRandomSelections(evals, next.pickCount);
     setSelectedPicks(newPicks);
+  };
+
+  /**
+   * Apply current filters, AI-pick `count` new games, ADD to slip (no duplicates).
+   * Filters stay as-is so you can tweak and add again; use resetFilters to clear criteria only.
+   */
+  const handleAddAiPicks = (count: number) => {
+    const n = Math.max(1, Math.min(50, count || criteria.pickCount));
+    const exclude = new Set(selectedPicks.map((p) => p.gameId));
+    const fresh = pickSmartSelections(evaluations, n, exclude);
+    if (fresh.length === 0) return;
+    setSelectedPicks((prev) => mergePicksIntoSlip(prev, fresh));
+  };
+
+  /** Same as AI add but pure random under current filters */
+  const handleAddRandomPicks = (count: number) => {
+    const n = Math.max(1, Math.min(50, count || criteria.pickCount));
+    const exclude = new Set(selectedPicks.map((p) => p.gameId));
+    const pool = evaluations.filter((ev) => !exclude.has(ev.game.id));
+    const fresh = pickRandomSelections(pool, n);
+    if (fresh.length === 0) return;
+    setSelectedPicks((prev) => mergePicksIntoSlip(prev, fresh));
+  };
+
+  /** Reset filter criteria to defaults without clearing the betslip */
+  const handleResetFiltersKeepSlip = () => {
+    setCriteria({ ...DEFAULT_FILTER_CRITERIA });
   };
 
   // Toggle selection on/off for a given pick
@@ -424,6 +453,11 @@ export default function HomePage() {
         onRemovePick={handleRemovePick}
         onClearSlip={handleClearSlip}
         onShuffleAndPick={handleShuffleAndPick}
+        onAddAiPicks={handleAddAiPicks}
+        onAddRandomPicks={handleAddRandomPicks}
+        onResetFiltersKeepSlip={handleResetFiltersKeepSlip}
+        defaultAddCount={criteria.pickCount}
+        eligibleCount={evaluations.length}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         stake={stake}
         onStakeChange={setStake}

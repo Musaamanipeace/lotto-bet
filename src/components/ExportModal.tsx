@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { BookieId, SelectedPick, BookingCodeResponse } from '@/types';
 import { BOOKIE_CONFIGS, getCompanyBonusPercentage } from '@/lib/constants';
 import { calculateAccumulatorOdds } from '@/lib/filterEngine';
+import { copyTextToClipboard } from '@/lib/clipboard';
 import {
   X,
   Copy,
@@ -115,11 +116,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!result?.bookingCode) return;
-    navigator.clipboard.writeText(result.bookingCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    const ok = await copyTextToClipboard(result.bookingCode);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } else {
+      setError('Could not copy to clipboard. Select the code and copy manually (Ctrl/Cmd+C).');
+    }
   };
 
   const handleDownloadSlip = () => {

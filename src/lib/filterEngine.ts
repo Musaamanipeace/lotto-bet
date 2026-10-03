@@ -428,6 +428,84 @@ export function pickRandomSelections(
 }
 
 /**
+ * Score a candidate for "AI" selection: prefer mid-range odds, bookable IDs, league diversity.
+ */
+function scoreEvaluation(ev: GameEvaluation, usedLeagues: Set<string>): number {
+  const pick = ev.bestPick;
+  if (!pick) return -Infinity;
+
+  const ideal = 1.15;
+  const oddScore = 1 / (1 + Math.abs(pick.odd - ideal) * 8);
+  const idBonus = pick.marketId && pick.outcomeId ? 0.35 : 0;
+  const marketBonus =
+    pick.marketName === 'Double Chance'
+      ? 0.15
+      : pick.marketName === 'Home Win'
+        ? 0.1
+        : 0.05;
+  const league = (ev.game.league || '').toLowerCase();
+  const diversity = usedLeagues.has(league) ? -0.4 : 0.2;
+  const jitter = Math.random() * 0.08;
+
+  return oddScore + idBonus + marketBonus + diversity + jitter;
+}
+
+/**
+ * AI-style selection: ranks eligible games by score, picks top N with league diversity.
+ * Skips gameIds already on the slip when excludeGameIds is provided.
+ */
+export function pickSmartSelections(
+  evaluations: GameEvaluation[],
+  count: number,
+  excludeGameIds: Set<string> = new Set()
+): SelectedPick[] {
+  if (evaluations.length === 0 || count <= 0) return [];
+
+  const pool = evaluations.filter(
+    (ev) => ev.bestPick && !excludeGameIds.has(ev.game.id)
+  );
+  if (pool.length === 0) return [];
+
+  const selected: SelectedPick[] = [];
+  const usedLeagues = new Set<string>();
+  const remaining = [...pool];
+
+  while (selected.length < count && remaining.length > 0) {
+    let bestIdx = 0;
+    let bestScore = -Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const s = scoreEvaluation(remaining[i], usedLeagues);
+      if (s > bestScore) {
+        bestScore = s;
+        bestIdx = i;
+      }
+    }
+    const chosen = remaining.splice(bestIdx, 1)[0];
+    if (chosen.bestPick) {
+      selected.push(chosen.bestPick);
+      usedLeagues.add((chosen.game.league || '').toLowerCase());
+    }
+  }
+
+  return selected;
+}
+
+/**
+ * Merge new picks into the slip without duplicating the same match (gameId).
+ */
+export function mergePicksIntoSlip(
+  existing: SelectedPick[],
+  incoming: SelectedPick[]
+): SelectedPick[] {
+  const byGame = new Map<string, SelectedPick>();
+  for (const p of existing) byGame.set(p.gameId, p);
+  for (const p of incoming) {
+    if (!byGame.has(p.gameId)) byGame.set(p.gameId, p);
+  }
+  return Array.from(byGame.values());
+}
+
+/**
  * Computes accumulator total odds from selected picks.
  */
 export function calculateAccumulatorOdds(picks: SelectedPick[]): number {

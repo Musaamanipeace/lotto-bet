@@ -23,6 +23,10 @@ import {
   ArrowUpRight,
   CheckCircle2,
   Info,
+  Sparkles,
+  Plus,
+  RotateCcw,
+  Dices,
 } from 'lucide-react';
 
 interface BetslipDrawerProps {
@@ -32,6 +36,11 @@ interface BetslipDrawerProps {
   onRemovePick: (gameId: string) => void;
   onClearSlip: () => void;
   onShuffleAndPick: () => void;
+  onAddAiPicks: (count: number) => void;
+  onAddRandomPicks: (count: number) => void;
+  onResetFiltersKeepSlip: () => void;
+  defaultAddCount: number;
+  eligibleCount: number;
   onOpenExportModal: () => void;
   stake: number;
   onStakeChange: (stake: number) => void;
@@ -44,12 +53,18 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
   onRemovePick,
   onClearSlip,
   onShuffleAndPick,
+  onAddAiPicks,
+  onAddRandomPicks,
+  onResetFiltersKeepSlip,
+  defaultAddCount,
+  eligibleCount,
   onOpenExportModal,
   stake,
   onStakeChange,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'picks' | 'simulator'>('picks');
+  const [addCount, setAddCount] = useState(defaultAddCount);
 
   // Active target company for the slip
   const targetBookie: BookieId = selectedCompany === 'ALL' ? 'sportybet:ke' : selectedCompany;
@@ -258,6 +273,73 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                        SportyBet
                      </button>
                    </div>
+                </div>
+
+                {/* Add-to-slip controls: use current filters, AI or random, then reset filters if needed */}
+                <div className="px-3 py-2.5 border-b border-slate-800/80 bg-[#0d1420] space-y-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-slate-400 font-medium">Add to slip</span>
+                    <label className="flex items-center gap-1 text-slate-300">
+                      <span className="text-[10px] uppercase tracking-wide text-slate-500">N</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={addCount}
+                        onChange={(e) =>
+                          setAddCount(Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1)))
+                        }
+                        className="w-14 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                      />
+                    </label>
+                    <span className="text-[10px] text-slate-500">
+                      {eligibleCount} eligible under filters
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onAddAiPicks(addCount)}
+                      disabled={eligibleCount === 0}
+                      title="Score games under current filters and add N to the slip (keeps existing legs)"
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      AI add {addCount}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onAddRandomPicks(addCount)}
+                      disabled={eligibleCount === 0}
+                      title="Random picks under current filters, added to slip"
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold flex items-center gap-1 disabled:opacity-40"
+                    >
+                      <Dices className="w-3 h-3" />
+                      Random add {addCount}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onResetFiltersKeepSlip}
+                      title="Reset filters to defaults without clearing the betslip"
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[11px] font-semibold flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      Reset filters
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onShuffleAndPick}
+                      title="Replace entire slip with a new shuffle"
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[11px] font-semibold flex items-center gap-1"
+                    >
+                      <Shuffle className="w-3 h-3" />
+                      Replace slip
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-snug">
+                    Change filters above, then AI/Random add. Reset filters keeps your legs so you can
+                    stack different criteria.
+                  </p>
                 </div>
 
                 {/* TAB 1: MATCH PICKS LIST */}
