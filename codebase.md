@@ -2699,10 +2699,11 @@ export default function HomePage() {
           availableLeagues={availableLeagues}
           totalEligibleMatches={evaluations.length}
           companyCounts={companyCounts}
-          onShuffleAndPick={handleShuffleAndPick}
+         onShuffleAndPick={handleShuffleAndPick}
          onAddNextPicks={handleAddNextPicks}
          onRemoveGames={handleRemoveGames}
-        />
+         onClearSlip={handleClearSlip}
+       />
 
         {/* Fixtures Section Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -3247,6 +3248,16 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                     >
                       <Shuffle className="w-3 h-3" />
                       Replace slip
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onClearSlip}
+                      disabled={selections.length === 0}
+                      title="Empty the entire betslip (clears all selections)"
+                      className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Empty Slip
                     </button>
                   </div>
                   <p className="text-[10px] text-slate-500 leading-snug">
@@ -3948,7 +3959,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 import React from 'react';
 import { FilterCriteria, BookieId } from '@/types';
 import { TIMEFRAME_OPTIONS, PICK_COUNT_PRESETS, DEFAULT_FILTER_CRITERIA, BOOKIE_CONFIGS } from '@/lib/constants';
-import { RotateCcw, Search, Sliders, Sparkles, Building2, Check, ShieldCheck, Plus, Minus } from 'lucide-react';
+import { RotateCcw, Search, Sliders, Sparkles, Building2, Check, ShieldCheck, Plus, Minus, Trash2 } from 'lucide-react';
 
 interface FilterBarProps {
   criteria: FilterCriteria;
@@ -3962,6 +3973,7 @@ interface FilterBarProps {
   onShuffleAndPick: () => void;
   onAddNextPicks: (count: number) => void;
   onRemoveGames: (count: number) => void;
+  onClearSlip: () => void;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -3973,6 +3985,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onShuffleAndPick,
   onAddNextPicks,
   onRemoveGames,
+  onClearSlip,
 }) => {
   const updateCriteria = <K extends keyof FilterCriteria>(key: K, value: FilterCriteria[K]) => {
     onChange({ ...criteria, [key]: value });
@@ -4437,6 +4450,15 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             >
               <Minus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Remove</span>
+            </button>
+
+            <button
+              onClick={onClearSlip}
+              title="Empty the entire betslip"
+              className="px-2.5 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-400 text-xs font-semibold flex items-center gap-1 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Empty Slip</span>
             </button>
           </div>
         </div>

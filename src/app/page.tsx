@@ -321,10 +321,11 @@ export default function HomePage() {
           availableLeagues={availableLeagues}
           totalEligibleMatches={evaluations.length}
           companyCounts={companyCounts}
-          onShuffleAndPick={handleShuffleAndPick}
+         onShuffleAndPick={handleShuffleAndPick}
          onAddNextPicks={handleAddNextPicks}
          onRemoveGames={handleRemoveGames}
-        />
+         onClearSlip={handleClearSlip}
+       />
 
         {/* Fixtures Section Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">

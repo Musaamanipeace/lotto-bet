@@ -3,7 +3,7 @@
 import React from 'react';
 import { FilterCriteria, BookieId } from '@/types';
 import { TIMEFRAME_OPTIONS, PICK_COUNT_PRESETS, DEFAULT_FILTER_CRITERIA, BOOKIE_CONFIGS } from '@/lib/constants';
-import { RotateCcw, Search, Sliders, Sparkles, Building2, Check, ShieldCheck, Plus, Minus } from 'lucide-react';
+import { RotateCcw, Search, Sliders, Sparkles, Building2, Check, ShieldCheck, Plus, Minus, Trash2 } from 'lucide-react';
 
 interface FilterBarProps {
   criteria: FilterCriteria;
@@ -17,6 +17,7 @@ interface FilterBarProps {
   onShuffleAndPick: () => void;
   onAddNextPicks: (count: number) => void;
   onRemoveGames: (count: number) => void;
+  onClearSlip: () => void;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -28,6 +29,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onShuffleAndPick,
   onAddNextPicks,
   onRemoveGames,
+  onClearSlip,
 }) => {
   const updateCriteria = <K extends keyof FilterCriteria>(key: K, value: FilterCriteria[K]) => {
     onChange({ ...criteria, [key]: value });
@@ -492,6 +494,15 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             >
               <Minus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Remove</span>
+            </button>
+
+            <button
+              onClick={onClearSlip}
+              title="Empty the entire betslip"
+              className="px-2.5 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-400 text-xs font-semibold flex items-center gap-1 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Empty Slip</span>
             </button>
           </div>
         </div>

@@ -360,6 +360,16 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                       <Shuffle className="w-3 h-3" />
                       Replace slip
                     </button>
+                    <button
+                      type="button"
+                      onClick={onClearSlip}
+                      disabled={selections.length === 0}
+                      title="Empty the entire betslip (clears all selections)"
+                      className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Empty Slip
+                    </button>
                   </div>
                   <p className="text-[10px] text-slate-500 leading-snug">
                     Change filters above, then AI/Random add. Reset filters keeps your legs so you can
