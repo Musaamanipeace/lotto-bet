@@ -11,7 +11,8 @@ export interface GameMarkets {
   homeWin?: { pick: '1'; odd: number };
   draw?: { pick: 'X'; odd: number };
   awayWin?: { pick: '2'; odd: number };
-  overUnder?: { pick: 'Over 0.5' | 'Under 3.5' | 'Over 1.5' | 'Under 2.5' | string; odd: number }[];
+  overUnder?: { pick: 'Over 0.5' | 'Under 3.5' | 'Over 1.5' | 'Under 4.5' | string; odd: number }[];
+  evenOdd?: { pick: 'Even' | 'Odd'; odd: number };
 }
 
 export interface SportyBetOutcome {
@@ -49,7 +50,7 @@ export interface SelectedPick {
   awayTeam: string;
   league: string;
   kickoffTime: string;
-  marketName: 'Double Chance' | 'Home Win' | 'Over 0.5' | 'Under 3.5' | string;
+  marketName: 'Double Chance' | 'Home Win' | 'Over 0.5' | 'Under 3.5' | 'Over 1.5' | 'Under 4.5' | 'Even' | 'Odd' | string;
   pick: string;
   odd: number;
   marketId?: string;
@@ -66,8 +67,9 @@ export interface FilterCriteria {
   homeWinMax: number;
   enableDoubleChance: boolean;
   enableHomeWin: boolean;
-  enableOver05: boolean;
-  enableUnder35: boolean;
+  overGoalLine: '0.5' | '1.5';
+  underGoalLine: '3.5' | '4.5';
+  enableEvenOdd: boolean;
   timeframeHours: number | null;
   pickCount: number;
   searchQuery: string;

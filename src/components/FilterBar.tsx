@@ -212,7 +212,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <input
               type="range"
               min="1.05"
-              max="1.30"
+              max="1.60"
               step="0.01"
               value={criteria.dcMax}
               disabled={!criteria.enableDoubleChance}
@@ -262,38 +262,85 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </div>
         </div>
 
-        {/* Over 0.5 Goals */}
-        <div
-          className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
-            criteria.enableOver05
-              ? 'bg-[#0f172a] border-amber-500/40 shadow-sm'
-              : 'bg-slate-900/40 border-slate-800/70 opacity-60'
-          }`}
-        >
-          <div className="flex items-center justify-between">
+        {/* Over Goal Line Selector */}
+        <div className="p-3.5 rounded-xl border bg-[#0f172a] border-amber-500/40 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={criteria.enableOver05}
-                onChange={(e) => updateCriteria('enableOver05', e.target.checked)}
-                className="w-4 h-4 rounded text-amber-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
-              />
-              <span className="text-xs font-bold text-amber-300">Over 0.5 Goals</span>
+              <span className="text-xs font-bold text-amber-300">Over Goals</span>
             </label>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-950/60 text-amber-400 border border-amber-800/50">
               High Probability
             </span>
           </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => updateCriteria('overGoalLine', '0.5')}
+              className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
+                criteria.overGoalLine === '0.5'
+                  ? 'bg-amber-500 text-slate-950 font-bold'
+                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              Over 0.5
+            </button>
+            <button
+              onClick={() => updateCriteria('overGoalLine', '1.5')}
+              className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
+                criteria.overGoalLine === '1.5'
+                  ? 'bg-amber-500 text-slate-950 font-bold'
+                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              Over 1.5
+            </button>
+          </div>
           <p className="text-[11px] text-slate-400 mt-2">
-            Filters matches with high likelihood of at least 1 goal in 90 mins.
+            Filters matches with high likelihood of at least {criteria.overGoalLine === '0.5' ? '1' : '2'} goals.
           </p>
         </div>
 
-        {/* Under 3.5 Goals */}
+        {/* Under Goal Line Selector */}
+        <div className="p-3.5 rounded-xl border bg-[#0f172a] border-purple-500/40 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <span className="text-xs font-bold text-purple-300">Under Goals</span>
+            </label>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-purple-950/60 text-purple-400 border border-purple-800/50">
+              Max {criteria.underGoalLine === '3.5' ? '3' : '4'} Goals
+            </span>
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => updateCriteria('underGoalLine', '3.5')}
+              className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
+                criteria.underGoalLine === '3.5'
+                  ? 'bg-purple-500 text-slate-950 font-bold'
+                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              Under 3.5
+            </button>
+            <button
+              onClick={() => updateCriteria('underGoalLine', '4.5')}
+              className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
+                criteria.underGoalLine === '4.5'
+                  ? 'bg-purple-500 text-slate-950 font-bold'
+                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              Under 4.5
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-2">
+            Safe over/under ceiling for disciplined accumulators.
+          </p>
+        </div>
+
+        {/* Even/Odd Goals Toggle */}
         <div
           className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
-            criteria.enableUnder35
-              ? 'bg-[#0f172a] border-purple-500/40 shadow-sm'
+            criteria.enableEvenOdd
+              ? 'bg-[#0f172a] border-cyan-500/40 shadow-sm'
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
           }`}
         >
@@ -301,18 +348,18 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={criteria.enableUnder35}
-                onChange={(e) => updateCriteria('enableUnder35', e.target.checked)}
-                className="w-4 h-4 rounded text-purple-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
+                checked={criteria.enableEvenOdd}
+                onChange={(e) => updateCriteria('enableEvenOdd', e.target.checked)}
+                className="w-4 h-4 rounded text-cyan-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
               />
-              <span className="text-xs font-bold text-purple-300">Under 3.5 Goals</span>
+              <span className="text-xs font-bold text-cyan-300">Even/Odd</span>
             </label>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-purple-950/60 text-purple-400 border border-purple-800/50">
-              Max 3 Goals
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-cyan-950/60 text-cyan-400 border border-cyan-800/50">
+              Total Goals
             </span>
           </div>
           <p className="text-[11px] text-slate-400 mt-2">
-            Safe ceiling market for disciplined accumulators.
+            Picks whether total match goals will be even or odd — single-leg market.
           </p>
         </div>
       </div>

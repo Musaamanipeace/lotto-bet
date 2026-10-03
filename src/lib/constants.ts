@@ -8,8 +8,9 @@ export const DEFAULT_FILTER_CRITERIA: FilterCriteria = {
   homeWinMax: 1.50,
   enableDoubleChance: true,
   enableHomeWin: true,
-  enableOver05: true,
-  enableUnder35: true,
+  overGoalLine: '0.5',
+  underGoalLine: '3.5',
+  enableEvenOdd: true,
   timeframeHours: 24,
   pickCount: 30,
   searchQuery: '',
@@ -80,9 +81,10 @@ export function getCompanyBonusPercentage(bookie: BookieId, legCount: number): n
 }
 
 export const SPORTYBET_MARKET_IDS = {
-  MATCH_WINNER: '1', // 1X2
-  DOUBLE_CHANCE: '10', // Double Chance (1X / X2 / 12)
-  OVER_UNDER: '18', // Over/Under (specifier total=X.X)
+  MATCH_WINNER: '1',
+  DOUBLE_CHANCE: '10',
+  OVER_UNDER: '18',
+  EVEN_ODD: '14',
 } as const;
 
 export const SPORTYBET_API_BASE = 'https://www.sportybet.com/api/ke';
@@ -99,9 +101,11 @@ export const MARKET_NAME_TO_ID = new Map<string, string>([
   ['Double Chance', SPORTYBET_MARKET_IDS.DOUBLE_CHANCE],
   ['Home Win', SPORTYBET_MARKET_IDS.MATCH_WINNER],
   ['Over 0.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
-  ['Under 3.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
   ['Over 1.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
-  ['Under 2.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
+  ['Under 3.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
+  ['Under 4.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
+  ['Even', SPORTYBET_MARKET_IDS.EVEN_ODD],
+  ['Odd', SPORTYBET_MARKET_IDS.EVEN_ODD],
 ]);
 
 export function getMarketIdForPick(marketName: string): string | undefined {

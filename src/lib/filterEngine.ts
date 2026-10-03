@@ -322,11 +322,11 @@ export function evaluateAndFilterGames(
       }
     }
 
-    // Over 0.5 Goals
-    if (criteria.enableOver05 && activeMarkets.overUnder) {
-      const over05 = activeMarkets.overUnder.find((m) => m.pick === 'Over 0.5');
-      if (over05 && over05.odd > 1.01) {
-        const ids = findSportyBetIds(sportyIds, 'Over 0.5', over05.pick);
+    // Over goals — use criterion-selected goal line (0.5 or 1.5)
+    if (activeMarkets.overUnder) {
+      const overPick = activeMarkets.overUnder.find((m) => m.pick === `Over ${criteria.overGoalLine}`);
+      if (overPick && overPick.odd > 1.01) {
+        const ids = findSportyBetIds(sportyIds, `Over ${criteria.overGoalLine}`, overPick.pick);
         if (ids.marketId && ids.outcomeId) {
           eligiblePicks.push({
             gameId: game.id,
@@ -335,9 +335,9 @@ export function evaluateAndFilterGames(
             awayTeam: game.awayTeam,
             league: game.league,
             kickoffTime: game.kickoffTime,
-            marketName: 'Over 0.5',
-            pick: 'Over 0.5',
-            odd: over05.odd,
+            marketName: `Over ${criteria.overGoalLine}`,
+            pick: `Over ${criteria.overGoalLine}`,
+            odd: overPick.odd,
             marketId: ids.marketId,
             outcomeId: ids.outcomeId,
             specifier: ids.specifier,
@@ -347,11 +347,11 @@ export function evaluateAndFilterGames(
       }
     }
 
-    // Under 3.5 Goals
-    if (criteria.enableUnder35 && activeMarkets.overUnder) {
-      const under35 = activeMarkets.overUnder.find((m) => m.pick === 'Under 3.5');
-      if (under35 && under35.odd > 1.05) {
-        const ids = findSportyBetIds(sportyIds, 'Under 3.5', under35.pick);
+    // Under goals — use criterion-selected goal line (3.5 or 4.5)
+    if (activeMarkets.overUnder) {
+      const underPick = activeMarkets.overUnder.find((m) => m.pick === `Under ${criteria.underGoalLine}`);
+      if (underPick && underPick.odd > 1.05) {
+        const ids = findSportyBetIds(sportyIds, `Under ${criteria.underGoalLine}`, underPick.pick);
         if (ids.marketId && ids.outcomeId) {
           eligiblePicks.push({
             gameId: game.id,
@@ -360,15 +360,38 @@ export function evaluateAndFilterGames(
             awayTeam: game.awayTeam,
             league: game.league,
             kickoffTime: game.kickoffTime,
-            marketName: 'Under 3.5',
-            pick: 'Under 3.5',
-            odd: under35.odd,
+            marketName: `Under ${criteria.underGoalLine}`,
+            pick: `Under ${criteria.underGoalLine}`,
+            odd: underPick.odd,
             marketId: ids.marketId,
             outcomeId: ids.outcomeId,
             specifier: ids.specifier,
             bookie: pickBookie,
           });
         }
+      }
+    }
+
+    // Even/Odd goals
+    if (criteria.enableEvenOdd && activeMarkets.evenOdd) {
+      const eo = activeMarkets.evenOdd;
+      const ids = findSportyBetIds(sportyIds, 'Even/Odd', eo.pick);
+      if (ids.marketId && ids.outcomeId) {
+        eligiblePicks.push({
+          gameId: game.id,
+          eventId: game.eventId,
+          homeTeam: game.homeTeam,
+          awayTeam: game.awayTeam,
+          league: game.league,
+          kickoffTime: game.kickoffTime,
+          marketName: eo.pick,
+          pick: eo.pick,
+          odd: eo.odd,
+          marketId: ids.marketId,
+          outcomeId: ids.outcomeId,
+          specifier: ids.specifier ?? null,
+          bookie: pickBookie,
+        });
       }
     }
 

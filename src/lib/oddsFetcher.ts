@@ -178,6 +178,28 @@ function findOverUnder(
   return undefined;
 }
 
+function findEvenOddOutcome(markets: SportyBetMarket[]): { even: SportyBetOutcome | undefined; odd: SportyBetOutcome | undefined } {
+  const even: SportyBetOutcome | undefined = undefined;
+  const odd: SportyBetOutcome | undefined = undefined;
+  for (const m of markets) {
+    if (m.marketId === SPORTYBET_MARKET_IDS.EVEN_ODD) {
+      const e = m.outcomes.find((o) => o.name.toLowerCase().includes('even'));
+      const o = m.outcomes.find((o) => o.name.toLowerCase().includes('odd'));
+      return { even: e, odd: o };
+    }
+  }
+  // Also try markets whose name includes "even" or "odd"
+  for (const m of markets) {
+    const lowerName = m.name.toLowerCase();
+    if (lowerName.includes('even') || lowerName.includes('odd') || lowerName.includes('goal total')) {
+      const e = m.outcomes.find((o) => o.name.toLowerCase().includes('even'));
+      const o = m.outcomes.find((o) => o.name.toLowerCase().includes('odd'));
+      if (e || o) return { even: e, odd: o };
+    }
+  }
+  return { even, odd };
+}
+
 function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: string): StandardGame | null {
   const eventId = raw.eventId || '';
   const homeTeam = raw.homeTeamName || '';
@@ -223,20 +245,30 @@ function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: 
   if (dc12) dcOutcomes.push({ pick: '12', odd: dc12.odd });
 
   const over05 = findOverUnder(sportyMarkets, true, 0.5);
+  const over15 = findOverUnder(sportyMarkets, true, 1.5);
   const under35 = findOverUnder(sportyMarkets, false, 3.5);
+  const under45 = findOverUnder(sportyMarkets, false, 4.5);
+  const { even: evenOutcome, odd: oddOutcome } = findEvenOddOutcome(sportyMarkets);
+
+  const ouPicks: { pick: string; odd: number }[] = [];
+  if (over05) ouPicks.push({ pick: 'Over 0.5', odd: over05.odd });
+  if (over15) ouPicks.push({ pick: 'Over 1.5', odd: over15.odd });
+  if (under35) ouPicks.push({ pick: 'Under 3.5', odd: under35.odd });
+  if (under45) ouPicks.push({ pick: 'Under 4.5', odd: under45.odd });
 
   const baseMarkets: GameMarkets = {
     doubleChance: dcOutcomes.length > 0 ? dcOutcomes : undefined,
     homeWin: homeOutcome ? { pick: '1', odd: homeOutcome.odd } : undefined,
     draw: drawOutcome ? { pick: 'X', odd: drawOutcome.odd } : undefined,
     awayWin: awayOutcome ? { pick: '2', odd: awayOutcome.odd } : undefined,
-    overUnder:
-      over05 || under35
-        ? [
-            over05 ? { pick: 'Over 0.5', odd: over05.odd } : undefined,
-            under35 ? { pick: 'Under 3.5', odd: under35.odd } : undefined,
-          ].filter((m): m is { pick: string; odd: number } => m !== undefined)
-        : undefined,
+    overUnder: ouPicks.length > 0 ? ouPicks : undefined,
+    evenOdd: evenOutcome && oddOutcome
+      ? { pick: 'Even', odd: evenOutcome.odd }
+      : evenOutcome
+        ? { pick: 'Even', odd: evenOutcome.odd }
+        : oddOutcome
+          ? { pick: 'Odd', odd: oddOutcome.odd }
+          : undefined,
   };
 
   return {

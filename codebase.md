@@ -4157,7 +4157,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <input
               type="range"
               min="1.05"
-              max="1.30"
+              max="1.60"
               step="0.01"
               value={criteria.dcMax}
               disabled={!criteria.enableDoubleChance}
@@ -4207,38 +4207,85 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </div>
         </div>
 
-        {/* Over 0.5 Goals */}
-        <div
-          className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
-            criteria.enableOver05
-              ? 'bg-[#0f172a] border-amber-500/40 shadow-sm'
-              : 'bg-slate-900/40 border-slate-800/70 opacity-60'
-          }`}
-        >
-          <div className="flex items-center justify-between">
+        {/* Over Goal Line Selector */}
+        <div className="p-3.5 rounded-xl border bg-[#0f172a] border-amber-500/40 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={criteria.enableOver05}
-                onChange={(e) => updateCriteria('enableOver05', e.target.checked)}
-                className="w-4 h-4 rounded text-amber-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
-              />
-              <span className="text-xs font-bold text-amber-300">Over 0.5 Goals</span>
+              <span className="text-xs font-bold text-amber-300">Over Goals</span>
             </label>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-950/60 text-amber-400 border border-amber-800/50">
               High Probability
             </span>
           </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => updateCriteria('overGoalLine', '0.5')}
+              className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
+                criteria.overGoalLine === '0.5'
+                  ? 'bg-amber-500 text-slate-950 font-bold'
+                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              Over 0.5
+            </button>
+            <button
+              onClick={() => updateCriteria('overGoalLine', '1.5')}
+              className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
+                criteria.overGoalLine === '1.5'
+                  ? 'bg-amber-500 text-slate-950 font-bold'
+                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              Over 1.5
+            </button>
+          </div>
           <p className="text-[11px] text-slate-400 mt-2">
-            Filters matches with high likelihood of at least 1 goal in 90 mins.
+            Filters matches with high likelihood of at least {criteria.overGoalLine === '0.5' ? '1' : '2'} goals.
           </p>
         </div>
 
-        {/* Under 3.5 Goals */}
+        {/* Under Goal Line Selector */}
+        <div className="p-3.5 rounded-xl border bg-[#0f172a] border-purple-500/40 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <span className="text-xs font-bold text-purple-300">Under Goals</span>
+            </label>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-purple-950/60 text-purple-400 border border-purple-800/50">
+              Max {criteria.underGoalLine === '3.5' ? '3' : '4'} Goals
+            </span>
+          </div>
+          <div className="flex gap-1">
+            <button
+              onClick={() => updateCriteria('underGoalLine', '3.5')}
+              className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
+                criteria.underGoalLine === '3.5'
+                  ? 'bg-purple-500 text-slate-950 font-bold'
+                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              Under 3.5
+            </button>
+            <button
+              onClick={() => updateCriteria('underGoalLine', '4.5')}
+              className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
+                criteria.underGoalLine === '4.5'
+                  ? 'bg-purple-500 text-slate-950 font-bold'
+                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+            >
+              Under 4.5
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-2">
+            Safe over/under ceiling for disciplined accumulators.
+          </p>
+        </div>
+
+        {/* Even/Odd Goals Toggle */}
         <div
           className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
-            criteria.enableUnder35
-              ? 'bg-[#0f172a] border-purple-500/40 shadow-sm'
+            criteria.enableEvenOdd
+              ? 'bg-[#0f172a] border-cyan-500/40 shadow-sm'
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
           }`}
         >
@@ -4246,18 +4293,18 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={criteria.enableUnder35}
-                onChange={(e) => updateCriteria('enableUnder35', e.target.checked)}
-                className="w-4 h-4 rounded text-purple-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
+                checked={criteria.enableEvenOdd}
+                onChange={(e) => updateCriteria('enableEvenOdd', e.target.checked)}
+                className="w-4 h-4 rounded text-cyan-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
               />
-              <span className="text-xs font-bold text-purple-300">Under 3.5 Goals</span>
+              <span className="text-xs font-bold text-cyan-300">Even/Odd</span>
             </label>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-purple-950/60 text-purple-400 border border-purple-800/50">
-              Max 3 Goals
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-cyan-950/60 text-cyan-400 border border-cyan-800/50">
+              Total Goals
             </span>
           </div>
           <p className="text-[11px] text-slate-400 mt-2">
-            Safe ceiling market for disciplined accumulators.
+            Picks whether total match goals will be even or odd — single-leg market.
           </p>
         </div>
       </div>
@@ -4834,8 +4881,9 @@ export const DEFAULT_FILTER_CRITERIA: FilterCriteria = {
   homeWinMax: 1.50,
   enableDoubleChance: true,
   enableHomeWin: true,
-  enableOver05: true,
-  enableUnder35: true,
+  overGoalLine: '0.5',
+  underGoalLine: '3.5',
+  enableEvenOdd: true,
   timeframeHours: 24,
   pickCount: 30,
   searchQuery: '',
@@ -4906,9 +4954,10 @@ export function getCompanyBonusPercentage(bookie: BookieId, legCount: number): n
 }
 
 export const SPORTYBET_MARKET_IDS = {
-  MATCH_WINNER: '1', // 1X2
-  DOUBLE_CHANCE: '10', // Double Chance (1X / X2 / 12)
-  OVER_UNDER: '18', // Over/Under (specifier total=X.X)
+  MATCH_WINNER: '1',
+  DOUBLE_CHANCE: '10',
+  OVER_UNDER: '18',
+  EVEN_ODD: '14',
 } as const;
 
 export const SPORTYBET_API_BASE = 'https://www.sportybet.com/api/ke';
@@ -4925,9 +4974,11 @@ export const MARKET_NAME_TO_ID = new Map<string, string>([
   ['Double Chance', SPORTYBET_MARKET_IDS.DOUBLE_CHANCE],
   ['Home Win', SPORTYBET_MARKET_IDS.MATCH_WINNER],
   ['Over 0.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
-  ['Under 3.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
   ['Over 1.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
-  ['Under 2.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
+  ['Under 3.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
+  ['Under 4.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
+  ['Even', SPORTYBET_MARKET_IDS.EVEN_ODD],
+  ['Odd', SPORTYBET_MARKET_IDS.EVEN_ODD],
 ]);
 
 export function getMarketIdForPick(marketName: string): string | undefined {
@@ -5271,11 +5322,11 @@ export function evaluateAndFilterGames(
       }
     }
 
-    // Over 0.5 Goals
-    if (criteria.enableOver05 && activeMarkets.overUnder) {
-      const over05 = activeMarkets.overUnder.find((m) => m.pick === 'Over 0.5');
-      if (over05 && over05.odd > 1.01) {
-        const ids = findSportyBetIds(sportyIds, 'Over 0.5', over05.pick);
+    // Over goals — use criterion-selected goal line (0.5 or 1.5)
+    if (activeMarkets.overUnder) {
+      const overPick = activeMarkets.overUnder.find((m) => m.pick === `Over ${criteria.overGoalLine}`);
+      if (overPick && overPick.odd > 1.01) {
+        const ids = findSportyBetIds(sportyIds, `Over ${criteria.overGoalLine}`, overPick.pick);
         if (ids.marketId && ids.outcomeId) {
           eligiblePicks.push({
             gameId: game.id,
@@ -5284,9 +5335,9 @@ export function evaluateAndFilterGames(
             awayTeam: game.awayTeam,
             league: game.league,
             kickoffTime: game.kickoffTime,
-            marketName: 'Over 0.5',
-            pick: 'Over 0.5',
-            odd: over05.odd,
+            marketName: `Over ${criteria.overGoalLine}`,
+            pick: `Over ${criteria.overGoalLine}`,
+            odd: overPick.odd,
             marketId: ids.marketId,
             outcomeId: ids.outcomeId,
             specifier: ids.specifier,
@@ -5296,11 +5347,11 @@ export function evaluateAndFilterGames(
       }
     }
 
-    // Under 3.5 Goals
-    if (criteria.enableUnder35 && activeMarkets.overUnder) {
-      const under35 = activeMarkets.overUnder.find((m) => m.pick === 'Under 3.5');
-      if (under35 && under35.odd > 1.05) {
-        const ids = findSportyBetIds(sportyIds, 'Under 3.5', under35.pick);
+    // Under goals — use criterion-selected goal line (3.5 or 4.5)
+    if (activeMarkets.overUnder) {
+      const underPick = activeMarkets.overUnder.find((m) => m.pick === `Under ${criteria.underGoalLine}`);
+      if (underPick && underPick.odd > 1.05) {
+        const ids = findSportyBetIds(sportyIds, `Under ${criteria.underGoalLine}`, underPick.pick);
         if (ids.marketId && ids.outcomeId) {
           eligiblePicks.push({
             gameId: game.id,
@@ -5309,15 +5360,38 @@ export function evaluateAndFilterGames(
             awayTeam: game.awayTeam,
             league: game.league,
             kickoffTime: game.kickoffTime,
-            marketName: 'Under 3.5',
-            pick: 'Under 3.5',
-            odd: under35.odd,
+            marketName: `Under ${criteria.underGoalLine}`,
+            pick: `Under ${criteria.underGoalLine}`,
+            odd: underPick.odd,
             marketId: ids.marketId,
             outcomeId: ids.outcomeId,
             specifier: ids.specifier,
             bookie: pickBookie,
           });
         }
+      }
+    }
+
+    // Even/Odd goals
+    if (criteria.enableEvenOdd && activeMarkets.evenOdd) {
+      const eo = activeMarkets.evenOdd;
+      const ids = findSportyBetIds(sportyIds, 'Even/Odd', eo.pick);
+      if (ids.marketId && ids.outcomeId) {
+        eligiblePicks.push({
+          gameId: game.id,
+          eventId: game.eventId,
+          homeTeam: game.homeTeam,
+          awayTeam: game.awayTeam,
+          league: game.league,
+          kickoffTime: game.kickoffTime,
+          marketName: eo.pick,
+          pick: eo.pick,
+          odd: eo.odd,
+          marketId: ids.marketId,
+          outcomeId: ids.outcomeId,
+          specifier: ids.specifier ?? null,
+          bookie: pickBookie,
+        });
       }
     }
 
@@ -5648,6 +5722,28 @@ function findOverUnder(
   return undefined;
 }
 
+function findEvenOddOutcome(markets: SportyBetMarket[]): { even: SportyBetOutcome | undefined; odd: SportyBetOutcome | undefined } {
+  const even: SportyBetOutcome | undefined = undefined;
+  const odd: SportyBetOutcome | undefined = undefined;
+  for (const m of markets) {
+    if (m.marketId === SPORTYBET_MARKET_IDS.EVEN_ODD) {
+      const e = m.outcomes.find((o) => o.name.toLowerCase().includes('even'));
+      const o = m.outcomes.find((o) => o.name.toLowerCase().includes('odd'));
+      return { even: e, odd: o };
+    }
+  }
+  // Also try markets whose name includes "even" or "odd"
+  for (const m of markets) {
+    const lowerName = m.name.toLowerCase();
+    if (lowerName.includes('even') || lowerName.includes('odd') || lowerName.includes('goal total')) {
+      const e = m.outcomes.find((o) => o.name.toLowerCase().includes('even'));
+      const o = m.outcomes.find((o) => o.name.toLowerCase().includes('odd'));
+      if (e || o) return { even: e, odd: o };
+    }
+  }
+  return { even, odd };
+}
+
 function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: string): StandardGame | null {
   const eventId = raw.eventId || '';
   const homeTeam = raw.homeTeamName || '';
@@ -5693,20 +5789,30 @@ function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: 
   if (dc12) dcOutcomes.push({ pick: '12', odd: dc12.odd });
 
   const over05 = findOverUnder(sportyMarkets, true, 0.5);
+  const over15 = findOverUnder(sportyMarkets, true, 1.5);
   const under35 = findOverUnder(sportyMarkets, false, 3.5);
+  const under45 = findOverUnder(sportyMarkets, false, 4.5);
+  const { even: evenOutcome, odd: oddOutcome } = findEvenOddOutcome(sportyMarkets);
+
+  const ouPicks: { pick: string; odd: number }[] = [];
+  if (over05) ouPicks.push({ pick: 'Over 0.5', odd: over05.odd });
+  if (over15) ouPicks.push({ pick: 'Over 1.5', odd: over15.odd });
+  if (under35) ouPicks.push({ pick: 'Under 3.5', odd: under35.odd });
+  if (under45) ouPicks.push({ pick: 'Under 4.5', odd: under45.odd });
 
   const baseMarkets: GameMarkets = {
     doubleChance: dcOutcomes.length > 0 ? dcOutcomes : undefined,
     homeWin: homeOutcome ? { pick: '1', odd: homeOutcome.odd } : undefined,
     draw: drawOutcome ? { pick: 'X', odd: drawOutcome.odd } : undefined,
     awayWin: awayOutcome ? { pick: '2', odd: awayOutcome.odd } : undefined,
-    overUnder:
-      over05 || under35
-        ? [
-            over05 ? { pick: 'Over 0.5', odd: over05.odd } : undefined,
-            under35 ? { pick: 'Under 3.5', odd: under35.odd } : undefined,
-          ].filter((m): m is { pick: string; odd: number } => m !== undefined)
-        : undefined,
+    overUnder: ouPicks.length > 0 ? ouPicks : undefined,
+    evenOdd: evenOutcome && oddOutcome
+      ? { pick: 'Even', odd: evenOutcome.odd }
+      : evenOutcome
+        ? { pick: 'Even', odd: evenOutcome.odd }
+        : oddOutcome
+          ? { pick: 'Odd', odd: oddOutcome.odd }
+          : undefined,
   };
 
   return {
@@ -5817,7 +5923,8 @@ export interface GameMarkets {
   homeWin?: { pick: '1'; odd: number };
   draw?: { pick: 'X'; odd: number };
   awayWin?: { pick: '2'; odd: number };
-  overUnder?: { pick: 'Over 0.5' | 'Under 3.5' | 'Over 1.5' | 'Under 2.5' | string; odd: number }[];
+  overUnder?: { pick: 'Over 0.5' | 'Under 3.5' | 'Over 1.5' | 'Under 4.5' | string; odd: number }[];
+  evenOdd?: { pick: 'Even' | 'Odd'; odd: number };
 }
 
 export interface SportyBetOutcome {
@@ -5855,7 +5962,7 @@ export interface SelectedPick {
   awayTeam: string;
   league: string;
   kickoffTime: string;
-  marketName: 'Double Chance' | 'Home Win' | 'Over 0.5' | 'Under 3.5' | string;
+  marketName: 'Double Chance' | 'Home Win' | 'Over 0.5' | 'Under 3.5' | 'Over 1.5' | 'Under 4.5' | 'Even' | 'Odd' | string;
   pick: string;
   odd: number;
   marketId?: string;
@@ -5872,8 +5979,9 @@ export interface FilterCriteria {
   homeWinMax: number;
   enableDoubleChance: boolean;
   enableHomeWin: boolean;
-  enableOver05: boolean;
-  enableUnder35: boolean;
+  overGoalLine: '0.5' | '1.5';
+  underGoalLine: '3.5' | '4.5';
+  enableEvenOdd: boolean;
   timeframeHours: number | null;
   pickCount: number;
   searchQuery: string;
