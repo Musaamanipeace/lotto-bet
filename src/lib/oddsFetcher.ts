@@ -114,6 +114,45 @@ function findOutcomeByDesc(
   return undefined;
 }
 
+/** Double Chance outcomes use many label variants on SportyBet */
+function findDoubleChanceOutcome(
+  markets: SportyBetMarket[],
+  pick: '1X' | 'X2' | '12'
+): SportyBetOutcome | undefined {
+  const m =
+    markets.find((x) => x.marketId === SPORTYBET_MARKET_IDS.DOUBLE_CHANCE) ||
+    markets.find((x) => x.name.toLowerCase().includes('double chance'));
+  if (!m) return undefined;
+
+  const aliases: Record<string, string[]> = {
+    '1X': ['1x', 'home or draw', 'home/draw', '1 or x', '1 or draw'],
+    X2: ['x2', 'draw or away', 'draw/away', 'x or 2', 'draw or 2'],
+    '12': ['12', 'home or away', 'home/away', '1 or 2', 'home or 2'],
+  };
+  const keys = aliases[pick] || [pick.toLowerCase()];
+  let found = m.outcomes.find((o) => {
+    const n = o.name.toLowerCase().replace(/\s+/g, ' ').trim();
+    return keys.some((a) => n === a || n.includes(a));
+  });
+  if (!found) {
+    const byId: Record<string, string[]> = {
+      '1X': ['9', '1'],
+      '12': ['10', '3'],
+      X2: ['11', '2'],
+    };
+    const ids = byId[pick] || [];
+    found = m.outcomes.find((o) => ids.includes(o.outcomeId));
+  }
+  if (!found) {
+    const want = pick.toLowerCase();
+    found = m.outcomes.find((o) => {
+      const compact = o.name.toLowerCase().replace(/[^1x2]/g, '');
+      return compact === want;
+    });
+  }
+  return found;
+}
+
 function findOverUnder(
   markets: SportyBetMarket[],
   isOver: boolean,
@@ -174,15 +213,9 @@ function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: 
       .find((m) => m.marketId === SPORTYBET_MARKET_IDS.MATCH_WINNER)
       ?.outcomes.find((o) => o.outcomeId === '3');
 
-  const dc1x =
-    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, '1x') ||
-    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, 'home or draw');
-  const dcX2 =
-    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, 'x2') ||
-    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, 'draw or away');
-  const dc12 =
-    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, '12') ||
-    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, 'home or away');
+  const dc1x = findDoubleChanceOutcome(sportyMarkets, '1X');
+  const dcX2 = findDoubleChanceOutcome(sportyMarkets, 'X2');
+  const dc12 = findDoubleChanceOutcome(sportyMarkets, '12');
 
   const dcOutcomes: { pick: '1X' | 'X2' | '12'; odd: number }[] = [];
   if (dc1x) dcOutcomes.push({ pick: '1X', odd: dc1x.odd });

@@ -25,6 +25,8 @@ interface SportyBetShareResponse {
   [key: string]: unknown;
 }
 
+const SHARE_TIMEOUT_MS = 12_000;
+
 function emptyErrorResponse(
   bookie: BookieId,
   selections: SelectedPick[],
@@ -97,6 +99,55 @@ function buildSelectionsPayload(selections: SelectedPick[]): {
   return { payload };
 }
 
+async function postShare(
+  body: object
+): Promise<{ ok: true; data: SportyBetShareResponse } | { ok: false; error: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SHARE_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(SPORTYBET_SHARE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'Current-Country': 'KE',
+        Origin: 'https://www.sportybet.com',
+        Referer: 'https://www.sportybet.com/ke/',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+
+    const text = await res.text();
+    let data: SportyBetShareResponse;
+    try {
+      data = JSON.parse(text) as SportyBetShareResponse;
+    } catch {
+      return {
+        ok: false,
+        error: `SportyBet returned non-JSON (HTTP ${res.status}). The share endpoint may be blocked from this server IP.`,
+      };
+    }
+
+    return { ok: true, data };
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return {
+        ok: false,
+        error: `SportyBet share API timed out after ${SHARE_TIMEOUT_MS / 1000}s. Try fewer legs or retry shortly.`,
+      };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Could not reach SportyBet share API: ${msg}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Call SportyBet share API. No local/fake code generation — only real codes or errors.
  */
@@ -122,68 +173,45 @@ export async function convertSelectionsToBookingCode(
   const now = new Date();
   const expires = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
-  // SportyBet accepts both shapes historically; prefer `selections` (current web client)
-  const bodyVariants: object[] = [
-    { selections: payload },
-    { outcomes: payload },
-  ];
+  // SportyBet web client uses `selections`; older docs used `outcomes` — try both
+  const bodyVariants: object[] = [{ selections: payload }, { outcomes: payload }];
 
   let lastError = 'SportyBet share API did not return a booking code.';
 
   for (const body of bodyVariants) {
-    try {
-      const res = await fetch(SPORTYBET_SHARE_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'Current-Country': 'KE',
-          Referer: 'https://www.sportybet.com/ke/',
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-        body: JSON.stringify(body),
-      });
-
-      const text = await res.text();
-      let data: SportyBetShareResponse;
-      try {
-        data = JSON.parse(text) as SportyBetShareResponse;
-      } catch {
-        lastError = `SportyBet returned non-JSON (HTTP ${res.status}). The share API may be blocked from this network.`;
-        continue;
-      }
-
-      if (data.bizCode === 10000 && data.data?.shareCode) {
-        const code = data.data.shareCode;
-        const deepLink = data.data.shareURL || `${SPORTYBET_DEEP_LINK_BASE}${code}`;
-        const bonusPct = getCompanyBonusPercentage(bookie, selections.length);
-
-        return {
-          success: true,
-          bookingCode: code,
-          destinationBookie: bookie,
-          bookieName: bookieConfig.name,
-          matchCount: selections.length,
-          totalOdds,
-          generatedAt: now.toISOString(),
-          expiresAt: expires.toISOString(),
-          directUrl: bookieConfig.bookingUrl,
-          deepLink,
-          selections,
-          bonusPercentage: bonusPct > 0 ? bonusPct : undefined,
-        };
-      }
-
-      lastError =
-        data.message ||
-        (data.bizCode !== undefined
-          ? `SportyBet rejected the slip (bizCode ${data.bizCode}). Check that markets are still available.`
-          : `SportyBet share failed (HTTP ${res.status}).`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      lastError = `Could not reach SportyBet share API: ${msg}`;
+    const result = await postShare(body);
+    if (!result.ok) {
+      lastError = result.error;
+      continue;
     }
+
+    const data = result.data;
+    if (data.bizCode === 10000 && data.data?.shareCode) {
+      const code = data.data.shareCode;
+      const deepLink = data.data.shareURL || `${SPORTYBET_DEEP_LINK_BASE}${code}`;
+      const bonusPct = getCompanyBonusPercentage(bookie, selections.length);
+
+      return {
+        success: true,
+        bookingCode: code,
+        destinationBookie: bookie,
+        bookieName: bookieConfig.name,
+        matchCount: selections.length,
+        totalOdds,
+        generatedAt: now.toISOString(),
+        expiresAt: expires.toISOString(),
+        directUrl: bookieConfig.bookingUrl,
+        deepLink,
+        selections,
+        bonusPercentage: bonusPct > 0 ? bonusPct : undefined,
+      };
+    }
+
+    lastError =
+      (typeof data.message === 'string' && data.message) ||
+      (data.bizCode !== undefined
+        ? `SportyBet rejected the slip (bizCode ${data.bizCode}). Markets may have closed or IDs are invalid.`
+        : 'SportyBet share API did not return a booking code.');
   }
 
   return emptyErrorResponse(bookie, selections, lastError);

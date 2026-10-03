@@ -3,7 +3,7 @@
 import React from 'react';
 import { FilterCriteria, BookieId } from '@/types';
 import { TIMEFRAME_OPTIONS, PICK_COUNT_PRESETS, DEFAULT_FILTER_CRITERIA, BOOKIE_CONFIGS } from '@/lib/constants';
-import { RotateCcw, Search, Sliders, Sparkles, Building2, Check } from 'lucide-react';
+import { RotateCcw, Search, Sliders, Sparkles, Building2, Check, ShieldCheck } from 'lucide-react';
 
 interface FilterBarProps {
   criteria: FilterCriteria;
@@ -144,6 +144,25 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               className="w-full bg-[#0b111e] border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
             />
           </div>
+
+          {/* Bookable / full market data only */}
+          <button
+            type="button"
+            onClick={() =>
+              updateCriteria('requireFullMarketData', !criteria.requireFullMarketData)
+            }
+            title="Only use fixtures that already have complete SportyBet market IDs (needed for real booking codes)"
+            className={`p-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors border ${
+              criteria.requireFullMarketData
+                ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300'
+                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span className="hidden sm:inline">
+              {criteria.requireFullMarketData ? 'Bookable only' : 'All fixtures'}
+            </span>
+          </button>
 
           {/* Reset Button */}
           <button

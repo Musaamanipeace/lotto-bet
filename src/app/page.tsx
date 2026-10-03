@@ -114,6 +114,15 @@ export default function HomePage() {
     setSelectedPicks(newPicks);
   };
 
+  /** Enable full-market-data filter and rebuild slip — for testing real booking codes */
+  const handleUseBookableOnly = () => {
+    const next: FilterCriteria = { ...criteria, requireFullMarketData: true };
+    setCriteria(next);
+    const evals = evaluateAndFilterGames(games, next);
+    const newPicks = pickRandomSelections(evals, next.pickCount);
+    setSelectedPicks(newPicks);
+  };
+
   // Toggle selection on/off for a given pick
   const handleTogglePick = (pick: SelectedPick) => {
     setSelectedPicks((prev) => {
@@ -302,6 +311,18 @@ export default function HomePage() {
             >
               <Sparkles className="w-3 h-3 text-emerald-400" />
               Shuffle
+            </button>
+            <button
+              onClick={handleUseBookableOnly}
+              title="Only fixtures with complete SportyBet market IDs, then shuffle — use this to test real booking codes"
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 border ${
+                criteria.requireFullMarketData
+                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                  : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+              }`}
+            >
+              <ShieldCheck className="w-3 h-3 text-emerald-400" />
+              Bookable only
             </button>
           </div>
         </div>

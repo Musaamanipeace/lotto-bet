@@ -72,6 +72,8 @@ export interface FilterCriteria {
   pickCount: number;
   searchQuery: string;
   selectedLeague: string;
+  /** When true, only games with complete SportyBet market IDs (bookable) are used */
+  requireFullMarketData: boolean;
 }
 
 export interface BookingCodeResponse {

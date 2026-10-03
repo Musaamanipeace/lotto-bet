@@ -55,6 +55,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setLoading(true);
     setError(null);
     setResult(null);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
     try {
       // Server-side proxy avoids browser CORS blocks against sportybet.com
       const res = await fetch('/api/generate-code', {
@@ -64,11 +66,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           destination_bookie: bookie,
           selections,
         }),
+        signal: controller.signal,
       });
-      const data: BookingCodeResponse = await res.json();
+
+      let data: BookingCodeResponse;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(
+          `Server returned an invalid response (HTTP ${res.status}). Is the Next.js server still running?`
+        );
+      }
+
       if (!res.ok || !data.success) {
         throw new Error(
-          data.error || 'Failed to generate booking code. SportyBet may be unreachable or markets expired.'
+          data.error ||
+            'Failed to generate booking code. SportyBet may be unreachable or markets expired.'
         );
       }
       if (!data.bookingCode) {
@@ -76,9 +89,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       }
       setResult(data);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error generating booking code';
+      let msg = err instanceof Error ? err.message : 'Unknown error generating booking code';
+      // Browser TypeError when the request never reaches the server or connection drops
+      if (
+        msg === 'Failed to fetch' ||
+        msg.includes('NetworkError') ||
+        msg.includes('Load failed') ||
+        (err instanceof Error && err.name === 'AbortError')
+      ) {
+        msg =
+          'Could not reach the booking API (network/timeout). Confirm `npm run dev` is running, then retry. If it keeps failing, SportyBet may be blocking this server IP.';
+      }
       setError(msg);
     } finally {
+      clearTimeout(timer);
       setLoading(false);
     }
   }, [selections]);

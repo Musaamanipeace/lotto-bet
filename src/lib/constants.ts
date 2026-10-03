@@ -14,6 +14,7 @@ export const DEFAULT_FILTER_CRITERIA: FilterCriteria = {
   pickCount: 30,
   searchQuery: '',
   selectedLeague: 'ALL',
+  requireFullMarketData: false,
 };
 
 export interface BookieMeta {

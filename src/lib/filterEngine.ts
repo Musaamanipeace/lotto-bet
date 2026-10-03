@@ -68,14 +68,45 @@ function findSportyBetIds(
   }
 
   // --- Double Chance (market 10) ---
+  // SportyBet labels vary: "1X" / "12" / "X2" OR "Home or Draw" / "Home or Away" / "Draw or Away"
   if (lowerMarket.includes('double chance') || ['1x', 'x2', '12'].includes(lowerPick)) {
-    const m = sportyMarkets.find((x) => x.marketId === '10');
+    const m =
+      sportyMarkets.find((x) => x.marketId === '10') ||
+      sportyMarkets.find((x) => x.name.toLowerCase().includes('double chance'));
     if (m) {
-      const outcome =
-        m.outcomes.find((o) => o.name.toLowerCase().includes(lowerPick)) ||
-        m.outcomes.find((o) => o.outcomeId === pickName);
+      const aliases: Record<string, string[]> = {
+        '1x': ['1x', 'home or draw', 'home/draw', '1 or x', '1 or draw'],
+        x2: ['x2', 'draw or away', 'draw/away', 'x or 2', 'draw or 2'],
+        '12': ['12', 'home or away', 'home/away', '1 or 2', 'home or 2'],
+      };
+      const keys = aliases[lowerPick] || [lowerPick];
+      let outcome = m.outcomes.find((o) => {
+        const n = o.name.toLowerCase().replace(/\s+/g, ' ').trim();
+        return keys.some((a) => n === a || n.includes(a)) || o.outcomeId === pickName;
+      });
+      // Common numeric outcomeIds on SportyBet DC: 9=1X, 10=12, 11=X2 (varies by feed)
+      if (!outcome) {
+        const byId: Record<string, string[]> = {
+          '1x': ['9', '1'],
+          '12': ['10', '3'],
+          x2: ['11', '2'],
+        };
+        const ids = byId[lowerPick] || [];
+        outcome = m.outcomes.find((o) => ids.includes(o.outcomeId));
+      }
+      // Last resort: match by normalized pick characters only (1, x, 2)
+      if (!outcome && lowerPick.length <= 2) {
+        outcome = m.outcomes.find((o) => {
+          const compact = o.name.toLowerCase().replace(/[^1x2]/g, '');
+          return compact === lowerPick || compact === lowerPick.split('').reverse().join('');
+        });
+      }
       if (outcome) {
-        return { marketId: m.marketId, outcomeId: outcome.outcomeId, specifier: m.specifier };
+        return {
+          marketId: m.marketId || '10',
+          outcomeId: outcome.outcomeId,
+          specifier: m.specifier ?? null,
+        };
       }
     }
   }
@@ -221,16 +252,32 @@ export function evaluateAndFilterGames(
     // 7b. SportyBet native market data for booking code generation
     const sportyIds = game.sportyMarkets;
 
+    // Optional: only games that already have usable SportyBet market payloads
+    if (criteria.requireFullMarketData) {
+      const hasBookableMarkets =
+        Array.isArray(sportyIds) &&
+        sportyIds.length > 0 &&
+        sportyIds.some(
+          (m) =>
+            (m.marketId === '1' || m.marketId === '10' || m.marketId === '18') &&
+            m.outcomes.length > 0
+        );
+      if (!hasBookableMarkets) {
+        continue;
+      }
+    }
+
     // 8. Market Evaluation
     const eligiblePicks: SelectedPick[] = [];
     const pickBookie: BookieId | undefined =
       criteria.selectedCompany !== 'ALL' ? criteria.selectedCompany : undefined;
 
-    // Double Chance (1X, X2, 12)
+    // Double Chance (1X, X2, 12) — only include when SportyBet IDs resolve
     if (criteria.enableDoubleChance && activeMarkets.doubleChance) {
       for (const dc of activeMarkets.doubleChance) {
         if (dc.odd >= criteria.dcMin && dc.odd <= criteria.dcMax) {
           const ids = findSportyBetIds(sportyIds, 'Double Chance', dc.pick);
+          if (!ids.marketId || !ids.outcomeId) continue;
           eligiblePicks.push({
             gameId: game.id,
             eventId: game.eventId,
@@ -255,21 +302,23 @@ export function evaluateAndFilterGames(
       const hw = activeMarkets.homeWin;
       if (hw.odd >= criteria.homeWinMin && hw.odd <= criteria.homeWinMax) {
         const ids = findSportyBetIds(sportyIds, 'Home Win', hw.pick);
-        eligiblePicks.push({
-          gameId: game.id,
-          eventId: game.eventId,
-          homeTeam: game.homeTeam,
-          awayTeam: game.awayTeam,
-          league: game.league,
-          kickoffTime: game.kickoffTime,
-          marketName: 'Home Win',
-          pick: '1',
-          odd: hw.odd,
-          marketId: ids.marketId,
-          outcomeId: ids.outcomeId,
-          specifier: ids.specifier,
-          bookie: pickBookie,
-        });
+        if (ids.marketId && ids.outcomeId) {
+          eligiblePicks.push({
+            gameId: game.id,
+            eventId: game.eventId,
+            homeTeam: game.homeTeam,
+            awayTeam: game.awayTeam,
+            league: game.league,
+            kickoffTime: game.kickoffTime,
+            marketName: 'Home Win',
+            pick: '1',
+            odd: hw.odd,
+            marketId: ids.marketId,
+            outcomeId: ids.outcomeId,
+            specifier: ids.specifier,
+            bookie: pickBookie,
+          });
+        }
       }
     }
 
@@ -278,21 +327,23 @@ export function evaluateAndFilterGames(
       const over05 = activeMarkets.overUnder.find((m) => m.pick === 'Over 0.5');
       if (over05 && over05.odd > 1.01) {
         const ids = findSportyBetIds(sportyIds, 'Over 0.5', over05.pick);
-        eligiblePicks.push({
-          gameId: game.id,
-          eventId: game.eventId,
-          homeTeam: game.homeTeam,
-          awayTeam: game.awayTeam,
-          league: game.league,
-          kickoffTime: game.kickoffTime,
-          marketName: 'Over 0.5',
-          pick: 'Over 0.5',
-          odd: over05.odd,
-          marketId: ids.marketId,
-          outcomeId: ids.outcomeId,
-          specifier: ids.specifier,
-          bookie: pickBookie,
-        });
+        if (ids.marketId && ids.outcomeId) {
+          eligiblePicks.push({
+            gameId: game.id,
+            eventId: game.eventId,
+            homeTeam: game.homeTeam,
+            awayTeam: game.awayTeam,
+            league: game.league,
+            kickoffTime: game.kickoffTime,
+            marketName: 'Over 0.5',
+            pick: 'Over 0.5',
+            odd: over05.odd,
+            marketId: ids.marketId,
+            outcomeId: ids.outcomeId,
+            specifier: ids.specifier,
+            bookie: pickBookie,
+          });
+        }
       }
     }
 
@@ -301,21 +352,23 @@ export function evaluateAndFilterGames(
       const under35 = activeMarkets.overUnder.find((m) => m.pick === 'Under 3.5');
       if (under35 && under35.odd > 1.05) {
         const ids = findSportyBetIds(sportyIds, 'Under 3.5', under35.pick);
-        eligiblePicks.push({
-          gameId: game.id,
-          eventId: game.eventId,
-          homeTeam: game.homeTeam,
-          awayTeam: game.awayTeam,
-          league: game.league,
-          kickoffTime: game.kickoffTime,
-          marketName: 'Under 3.5',
-          pick: 'Under 3.5',
-          odd: under35.odd,
-          marketId: ids.marketId,
-          outcomeId: ids.outcomeId,
-          specifier: ids.specifier,
-          bookie: pickBookie,
-        });
+        if (ids.marketId && ids.outcomeId) {
+          eligiblePicks.push({
+            gameId: game.id,
+            eventId: game.eventId,
+            homeTeam: game.homeTeam,
+            awayTeam: game.awayTeam,
+            league: game.league,
+            kickoffTime: game.kickoffTime,
+            marketName: 'Under 3.5',
+            pick: 'Under 3.5',
+            odd: under35.odd,
+            marketId: ids.marketId,
+            outcomeId: ids.outcomeId,
+            specifier: ids.specifier,
+            bookie: pickBookie,
+          });
+        }
       }
     }
 
