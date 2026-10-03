@@ -38,6 +38,7 @@ interface BetslipDrawerProps {
   onShuffleAndPick: () => void;
   onAddAiPicks: (count: number) => void;
   onAddRandomPicks: (count: number) => void;
+  onAddNextPicks: (count: number) => void;
   onResetFiltersKeepSlip: () => void;
   defaultAddCount: number;
   eligibleCount: number;
@@ -53,8 +54,9 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
   onRemovePick,
   onClearSlip,
   onShuffleAndPick,
-  onAddAiPicks,
-  onAddRandomPicks,
+   onAddAiPicks,
+   onAddRandomPicks,
+   onAddNextPicks,
   onResetFiltersKeepSlip,
   defaultAddCount,
   eligibleCount,
@@ -297,6 +299,16 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onAddNextPicks(addCount)}
+                      disabled={eligibleCount === 0}
+                      title="Add next N unselected games (earliest kickoff first), keeping existing legs"
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add Next {addCount}
+                    </button>
                     <button
                       type="button"
                       onClick={() => onAddAiPicks(addCount)}

@@ -147,6 +147,22 @@ export default function HomePage() {
     setSelectedPicks((prev) => mergePicksIntoSlip(prev, fresh));
   };
 
+  /**
+   * Add the next N unselected games (earliest kickoff first) using current filters.
+   * Keeps all pre-existing picks in the slip — only appends new games.
+   */
+  const handleAddNextPicks = (count: number) => {
+    const n = Math.max(1, Math.min(50, count || criteria.pickCount));
+    const exclude = new Set(selectedPicks.map((p) => p.gameId));
+    const pool = evaluations.filter((ev) => !exclude.has(ev.game.id));
+    const sorted = [...pool].sort(
+      (a, b) => new Date(a.game.kickoffTime).getTime() - new Date(b.game.kickoffTime).getTime()
+    );
+    const fresh = pickRandomSelections(sorted.slice(0, n), n);
+    if (fresh.length === 0) return;
+    setSelectedPicks((prev) => mergePicksIntoSlip(prev, fresh));
+  };
+
   /** Reset filter criteria to defaults without clearing the betslip */
   const handleResetFiltersKeepSlip = () => {
     setCriteria({ ...DEFAULT_FILTER_CRITERIA });
@@ -453,8 +469,9 @@ export default function HomePage() {
         onRemovePick={handleRemovePick}
         onClearSlip={handleClearSlip}
         onShuffleAndPick={handleShuffleAndPick}
-        onAddAiPicks={handleAddAiPicks}
-        onAddRandomPicks={handleAddRandomPicks}
+         onAddAiPicks={handleAddAiPicks}
+         onAddRandomPicks={handleAddRandomPicks}
+         onAddNextPicks={handleAddNextPicks}
         onResetFiltersKeepSlip={handleResetFiltersKeepSlip}
         defaultAddCount={criteria.pickCount}
         eligibleCount={evaluations.length}
