@@ -264,6 +264,52 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </div>
         </div>
 
+        {/* Away Win (2) Controls */}
+        <div
+          className={`p-3.5 rounded-xl border transition-all ${
+            criteria.enableAwayWin
+              ? 'bg-[#0f172a] border-indigo-500/40 shadow-sm'
+              : 'bg-slate-900/40 border-slate-800/70 opacity-60'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={criteria.enableAwayWin}
+                onChange={(e) => updateCriteria('enableAwayWin', e.target.checked)}
+                className="w-4 h-4 rounded text-indigo-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
+              />
+              <span className="text-xs font-bold text-indigo-300">Away Win (2)</span>
+            </label>
+            <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded bg-indigo-950/60 text-indigo-400 border border-indigo-800/50">
+              {criteria.awayWinMin.toFixed(2)} - {criteria.awayWinMax.toFixed(2)}
+            </span>
+          </div>
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>Min: {criteria.awayWinMin.toFixed(2)}</span>
+              <span>Max: {criteria.awayWinMax.toFixed(2)}</span>
+            </div>
+            <input
+              type="range"
+              min="1.50"
+              max="1.60"
+              step="0.02"
+              value={criteria.awayWinMax}
+              disabled={!criteria.enableAwayWin}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                updateCriteria('awayWinMax', val);
+                if (criteria.awayWinMin > val) {
+                  updateCriteria('awayWinMin', val - 0.3);
+                }
+              }}
+              className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+            />
+          </div>
+        </div>
+
         {/* Over Goal Line Selector */}
         <div
           className={`p-3.5 rounded-xl border transition-all flex flex-col ${

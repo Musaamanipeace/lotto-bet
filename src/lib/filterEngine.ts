@@ -322,6 +322,31 @@ export function evaluateAndFilterGames(
       }
     }
 
+    // Away Win (2)
+    if (criteria.enableAwayWin && activeMarkets.awayWin) {
+      const aw = activeMarkets.awayWin;
+      if (aw.odd >= criteria.awayWinMin && aw.odd <= criteria.awayWinMax) {
+        const ids = findSportyBetIds(sportyIds, 'Away Win', aw.pick);
+        if (ids.marketId && ids.outcomeId) {
+          eligiblePicks.push({
+            gameId: game.id,
+            eventId: game.eventId,
+            homeTeam: game.homeTeam,
+            awayTeam: game.awayTeam,
+            league: game.league,
+            kickoffTime: game.kickoffTime,
+            marketName: 'Away Win',
+            pick: '2',
+            odd: aw.odd,
+            marketId: ids.marketId,
+            outcomeId: ids.outcomeId,
+            specifier: ids.specifier,
+            bookie: pickBookie,
+          });
+        }
+      }
+    }
+
     // Over goals — use criterion-selected goal line (0.5 or 1.5)
     if (criteria.enableOver && activeMarkets.overUnder) {
       const overPick = activeMarkets.overUnder.find((m) => m.pick === `Over ${criteria.overGoalLine}`);

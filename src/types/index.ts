@@ -63,10 +63,13 @@ export interface FilterCriteria {
   selectedCompany: 'ALL' | BookieId;
   dcMin: number;
   dcMax: number;
-  homeWinMin: number;
-  homeWinMax: number;
   enableDoubleChance: boolean;
   enableHomeWin: boolean;
+  homeWinMin: number;
+  homeWinMax: number;
+  enableAwayWin: boolean;
+  awayWinMin: number;
+  awayWinMax: number;
   enableOver: boolean;
   overGoalLine: '0.5' | '1.5';
   enableUnder: boolean;
