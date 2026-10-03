@@ -2541,6 +2541,14 @@ export default function HomePage() {
     setSelectedPicks((prev) => mergePicksIntoSlip(prev, fresh));
   };
 
+  /**
+   * Remove the last N picks from the slip (highest-risk games / latest additions).
+   */
+  const handleRemoveGames = (count: number) => {
+    const n = Math.max(1, Math.min(50, count || criteria.pickCount));
+    setSelectedPicks((prev) => prev.slice(0, Math.max(0, prev.length - n)));
+  };
+
   /** Reset filter criteria to defaults without clearing the betslip */
   const handleResetFiltersKeepSlip = () => {
     setCriteria({ ...DEFAULT_FILTER_CRITERIA });
@@ -2692,6 +2700,8 @@ export default function HomePage() {
           totalEligibleMatches={evaluations.length}
           companyCounts={companyCounts}
           onShuffleAndPick={handleShuffleAndPick}
+         onAddNextPicks={handleAddNextPicks}
+         onRemoveGames={handleRemoveGames}
         />
 
         {/* Fixtures Section Header */}
@@ -2850,7 +2860,8 @@ export default function HomePage() {
          onAddAiPicks={handleAddAiPicks}
          onAddRandomPicks={handleAddRandomPicks}
          onAddNextPicks={handleAddNextPicks}
-        onResetFiltersKeepSlip={handleResetFiltersKeepSlip}
+         onRemoveGames={handleRemoveGames}
+         onResetFiltersKeepSlip={handleResetFiltersKeepSlip}
         defaultAddCount={criteria.pickCount}
         eligibleCount={evaluations.length}
         onOpenExportModal={() => setIsExportModalOpen(true)}
@@ -2901,7 +2912,8 @@ import {
   CheckCircle2,
   Info,
   Sparkles,
-  Plus,
+   Plus,
+   Minus,
   RotateCcw,
   Dices,
 } from 'lucide-react';
@@ -2916,6 +2928,7 @@ interface BetslipDrawerProps {
   onAddAiPicks: (count: number) => void;
   onAddRandomPicks: (count: number) => void;
   onAddNextPicks: (count: number) => void;
+  onRemoveGames: (count: number) => void;
   onResetFiltersKeepSlip: () => void;
   defaultAddCount: number;
   eligibleCount: number;
@@ -2934,6 +2947,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
    onAddAiPicks,
    onAddRandomPicks,
    onAddNextPicks,
+   onRemoveGames,
   onResetFiltersKeepSlip,
   defaultAddCount,
   eligibleCount,
@@ -3185,6 +3199,16 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                     >
                       <Plus className="w-3 h-3" />
                       Add Next {addCount}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveGames(addCount)}
+                      disabled={selections.length === 0}
+                      title="Remove N games from the end of the slip"
+                      className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
+                    >
+                      <Minus className="w-3 h-3" />
+                      Remove {addCount}
                     </button>
                     <button
                       type="button"
@@ -3924,7 +3948,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 import React from 'react';
 import { FilterCriteria, BookieId } from '@/types';
 import { TIMEFRAME_OPTIONS, PICK_COUNT_PRESETS, DEFAULT_FILTER_CRITERIA, BOOKIE_CONFIGS } from '@/lib/constants';
-import { RotateCcw, Search, Sliders, Sparkles, Building2, Check, ShieldCheck } from 'lucide-react';
+import { RotateCcw, Search, Sliders, Sparkles, Building2, Check, ShieldCheck, Plus, Minus } from 'lucide-react';
 
 interface FilterBarProps {
   criteria: FilterCriteria;
@@ -3936,6 +3960,8 @@ interface FilterBarProps {
     sportybet: number;
   };
   onShuffleAndPick: () => void;
+  onAddNextPicks: (count: number) => void;
+  onRemoveGames: (count: number) => void;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -3945,6 +3971,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   totalEligibleMatches,
   companyCounts,
   onShuffleAndPick,
+  onAddNextPicks,
+  onRemoveGames,
 }) => {
   const updateCriteria = <K extends keyof FilterCriteria>(key: K, value: FilterCriteria[K]) => {
     onChange({ ...criteria, [key]: value });
@@ -4316,6 +4344,24 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             >
               <Sparkles className="w-4 h-4" />
               <span>Pick {criteria.pickCount}</span>
+            </button>
+
+            <button
+              onClick={() => onAddNextPicks(criteria.pickCount)}
+              title="Add next N unselected games (earliest kickoff first), keeping existing legs"
+              className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Add Next</span>
+            </button>
+
+            <button
+              onClick={() => onRemoveGames(criteria.pickCount)}
+              title="Remove N games from the end of the slip"
+              className="px-2.5 py-1.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-xs font-semibold flex items-center gap-1 transition-colors"
+            >
+              <Minus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Remove</span>
             </button>
           </div>
         </div>

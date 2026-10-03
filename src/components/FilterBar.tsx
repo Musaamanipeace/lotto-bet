@@ -3,7 +3,7 @@
 import React from 'react';
 import { FilterCriteria, BookieId } from '@/types';
 import { TIMEFRAME_OPTIONS, PICK_COUNT_PRESETS, DEFAULT_FILTER_CRITERIA, BOOKIE_CONFIGS } from '@/lib/constants';
-import { RotateCcw, Search, Sliders, Sparkles, Building2, Check, ShieldCheck } from 'lucide-react';
+import { RotateCcw, Search, Sliders, Sparkles, Building2, Check, ShieldCheck, Plus, Minus } from 'lucide-react';
 
 interface FilterBarProps {
   criteria: FilterCriteria;
@@ -15,6 +15,8 @@ interface FilterBarProps {
     sportybet: number;
   };
   onShuffleAndPick: () => void;
+  onAddNextPicks: (count: number) => void;
+  onRemoveGames: (count: number) => void;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -24,6 +26,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   totalEligibleMatches,
   companyCounts,
   onShuffleAndPick,
+  onAddNextPicks,
+  onRemoveGames,
 }) => {
   const updateCriteria = <K extends keyof FilterCriteria>(key: K, value: FilterCriteria[K]) => {
     onChange({ ...criteria, [key]: value });
@@ -395,6 +399,24 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             >
               <Sparkles className="w-4 h-4" />
               <span>Pick {criteria.pickCount}</span>
+            </button>
+
+            <button
+              onClick={() => onAddNextPicks(criteria.pickCount)}
+              title="Add next N unselected games (earliest kickoff first), keeping existing legs"
+              className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Add Next</span>
+            </button>
+
+            <button
+              onClick={() => onRemoveGames(criteria.pickCount)}
+              title="Remove N games from the end of the slip"
+              className="px-2.5 py-1.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-xs font-semibold flex items-center gap-1 transition-colors"
+            >
+              <Minus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Remove</span>
             </button>
           </div>
         </div>

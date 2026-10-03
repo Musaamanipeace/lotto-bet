@@ -163,6 +163,14 @@ export default function HomePage() {
     setSelectedPicks((prev) => mergePicksIntoSlip(prev, fresh));
   };
 
+  /**
+   * Remove the last N picks from the slip (highest-risk games / latest additions).
+   */
+  const handleRemoveGames = (count: number) => {
+    const n = Math.max(1, Math.min(50, count || criteria.pickCount));
+    setSelectedPicks((prev) => prev.slice(0, Math.max(0, prev.length - n)));
+  };
+
   /** Reset filter criteria to defaults without clearing the betslip */
   const handleResetFiltersKeepSlip = () => {
     setCriteria({ ...DEFAULT_FILTER_CRITERIA });
@@ -314,6 +322,8 @@ export default function HomePage() {
           totalEligibleMatches={evaluations.length}
           companyCounts={companyCounts}
           onShuffleAndPick={handleShuffleAndPick}
+         onAddNextPicks={handleAddNextPicks}
+         onRemoveGames={handleRemoveGames}
         />
 
         {/* Fixtures Section Header */}
@@ -472,7 +482,8 @@ export default function HomePage() {
          onAddAiPicks={handleAddAiPicks}
          onAddRandomPicks={handleAddRandomPicks}
          onAddNextPicks={handleAddNextPicks}
-        onResetFiltersKeepSlip={handleResetFiltersKeepSlip}
+         onRemoveGames={handleRemoveGames}
+         onResetFiltersKeepSlip={handleResetFiltersKeepSlip}
         defaultAddCount={criteria.pickCount}
         eligibleCount={evaluations.length}
         onOpenExportModal={() => setIsExportModalOpen(true)}

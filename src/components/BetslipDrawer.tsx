@@ -24,7 +24,8 @@ import {
   CheckCircle2,
   Info,
   Sparkles,
-  Plus,
+   Plus,
+   Minus,
   RotateCcw,
   Dices,
 } from 'lucide-react';
@@ -39,6 +40,7 @@ interface BetslipDrawerProps {
   onAddAiPicks: (count: number) => void;
   onAddRandomPicks: (count: number) => void;
   onAddNextPicks: (count: number) => void;
+  onRemoveGames: (count: number) => void;
   onResetFiltersKeepSlip: () => void;
   defaultAddCount: number;
   eligibleCount: number;
@@ -57,6 +59,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
    onAddAiPicks,
    onAddRandomPicks,
    onAddNextPicks,
+   onRemoveGames,
   onResetFiltersKeepSlip,
   defaultAddCount,
   eligibleCount,
@@ -308,6 +311,16 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                     >
                       <Plus className="w-3 h-3" />
                       Add Next {addCount}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveGames(addCount)}
+                      disabled={selections.length === 0}
+                      title="Remove N games from the end of the slip"
+                      className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
+                    >
+                      <Minus className="w-3 h-3" />
+                      Remove {addCount}
                     </button>
                     <button
                       type="button"
