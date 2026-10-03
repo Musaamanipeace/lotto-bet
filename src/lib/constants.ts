@@ -1,4 +1,4 @@
-import { FilterCriteria, BookieId } from '@/types';
+import { FilterCriteria, BookieId, SportyBetMarket } from '@/types';
 
 export const DEFAULT_FILTER_CRITERIA: FilterCriteria = {
   selectedCompany: 'ALL',
@@ -33,21 +33,6 @@ export interface BookieMeta {
 }
 
 export const BOOKIE_CONFIGS: Record<BookieId, BookieMeta> = {
-  'betpawa:ke': {
-    id: 'betpawa:ke',
-    name: 'betPawa Kenya',
-    shortName: 'betPawa',
-    tagline: 'Up to 1000% Win Bonus • Min stake KES 1',
-    codePrefix: 'PAW',
-    accentColor: '#10b981',
-    badgeBg: 'bg-emerald-500/15',
-    badgeBorder: 'border-emerald-500/40',
-    badgeText: 'text-emerald-400',
-    homeUrl: 'https://www.betpawa.co.ke/',
-    bookingUrl: 'https://www.betpawa.co.ke/',
-    minStake: 1,
-    bonusLabel: 'Win Bonus',
-  },
   'sportybet:ke': {
     id: 'sportybet:ke',
     name: 'SportyBet Kenya',
@@ -78,30 +63,54 @@ export const PICK_COUNT_PRESETS = [5, 10, 15, 20, 30, 50];
 
 /**
  * Calculates bookie accumulator win bonus percentage based on legs count.
- * E.g. betPawa gives:
- * 3 legs: 3%, 5 legs: 10%, 10 legs: 35%, 15 legs: 60%, 20 legs: 120%, 30 legs: 300%, 45+ legs: up to 1000%!
+ * E.g. SportyBet gives:
+ * 3 legs: 3%, 5 legs: 10%, 10 legs: 30%, 15 legs: 50%, 20 legs: 100%, 30 legs: 250%, 40+ legs: up to 1000%!
  */
 export function getCompanyBonusPercentage(bookie: BookieId, legCount: number): number {
   if (legCount < 3) return 0;
-  if (bookie === 'betpawa:ke') {
-    if (legCount >= 45) return 1000;
-    if (legCount >= 40) return 750;
-    if (legCount >= 35) return 500;
-    if (legCount >= 30) return 300;
-    if (legCount >= 25) return 200;
-    if (legCount >= 20) return 120;
-    if (legCount >= 15) return 60;
-    if (legCount >= 10) return 35;
-    if (legCount >= 5) return 10;
-    return 5;
-  } else {
-    // SportyBet
-    if (legCount >= 40) return 1000;
-    if (legCount >= 30) return 250;
-    if (legCount >= 20) return 100;
-    if (legCount >= 15) return 50;
-    if (legCount >= 10) return 30;
-    if (legCount >= 5) return 10;
-    return 3;
-  }
+  // SportyBet
+  if (legCount >= 40) return 1000;
+  if (legCount >= 30) return 250;
+  if (legCount >= 20) return 100;
+  if (legCount >= 15) return 50;
+  if (legCount >= 10) return 30;
+  if (legCount >= 5) return 10;
+  return 3;
+}
+
+export const SPORTYBET_MARKET_IDS = {
+  MATCH_WINNER: '1', // 1X2
+  DOUBLE_CHANCE: '10', // Double Chance (1X / X2 / 12)
+  OVER_UNDER: '18', // Over/Under (specifier total=X.X)
+} as const;
+
+export const SPORTYBET_API_BASE = 'https://www.sportybet.com/api/ke';
+
+/** Base upcoming-events endpoint; query params are added by oddsFetcher */
+export const SPORTYBET_UPCOMING_EVENTS_URL =
+  'https://www.sportybet.com/api/ke/factsCenter/pcUpcomingEvents';
+
+export const SPORTYBET_SHARE_URL = 'https://www.sportybet.com/api/ke/orders/share';
+
+export const SPORTYBET_DEEP_LINK_BASE = 'https://www.sportybet.com/ke/?shareCode=';
+
+export const MARKET_NAME_TO_ID = new Map<string, string>([
+  ['Double Chance', SPORTYBET_MARKET_IDS.DOUBLE_CHANCE],
+  ['Home Win', SPORTYBET_MARKET_IDS.MATCH_WINNER],
+  ['Over 0.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
+  ['Under 3.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
+  ['Over 1.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
+  ['Under 2.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
+]);
+
+export function getMarketIdForPick(marketName: string): string | undefined {
+  return MARKET_NAME_TO_ID.get(marketName);
+}
+
+export function isSportyBetMarket(market: SportyBetMarket): boolean {
+  return (
+    market.marketId === SPORTYBET_MARKET_IDS.MATCH_WINNER ||
+    market.marketId === SPORTYBET_MARKET_IDS.DOUBLE_CHANCE ||
+    market.marketId === SPORTYBET_MARKET_IDS.OVER_UNDER
+  );
 }

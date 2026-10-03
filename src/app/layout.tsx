@@ -3,10 +3,10 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'LottoBet - Odds Filter & Betslip Generator',
-  description: 'Multi-bookie odds filter and betslip generator for betPawa Kenya and SportyBet Kenya.',
-  openGraph: {
-    title: 'LottoBet - Odds Filter & Betslip Generator',
-    description: 'Multi-bookie odds filter and betslip generator for betPawa Kenya and SportyBet Kenya.',
+   description: 'Multi-bookie odds filter and betslip generator for SportyBet Kenya.',
+   openGraph: {
+     title: 'LottoBet - Odds Filter & Betslip Generator',
+     description: 'Multi-bookie odds filter and betslip generator for SportyBet Kenya.',
     siteName: 'LottoBet',
   },
 };

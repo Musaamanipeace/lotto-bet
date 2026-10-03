@@ -72,8 +72,6 @@ export const GameCard: React.FC<GameCardProps> = ({
                 className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold border transition-colors ${
                   isTarget
                     ? `${cfg.badgeBg} ${cfg.badgeText} ${cfg.badgeBorder} ring-1 ring-current`
-                    : bId === 'betpawa:ke'
-                    ? 'bg-emerald-950/40 text-emerald-400/80 border-emerald-800/40'
                     : 'bg-red-950/40 text-red-400/80 border-red-800/40'
                 }`}
                 title={`Available on ${cfg.name}`}

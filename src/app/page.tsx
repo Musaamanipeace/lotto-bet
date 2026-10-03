@@ -29,7 +29,7 @@ export default function HomePage() {
   const [games, setGames] = useState<StandardGame[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [oddsSource, setOddsSource] = useState<'api' | 'fallback'>('fallback');
+  const [oddsSource, setOddsSource] = useState<'api'>('api');
   const [lastUpdated, setLastUpdated] = useState<string>('');
 
   const [criteria, setCriteria] = useState<FilterCriteria>(DEFAULT_FILTER_CRITERIA);
@@ -49,7 +49,7 @@ export default function HomePage() {
         throw new Error(data.error || 'Failed to ingest match odds');
       }
       setGames(data.games || []);
-      setOddsSource(data.source || 'fallback');
+      setOddsSource(data.source || 'api');
       setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error fetching match odds';
@@ -71,9 +71,8 @@ export default function HomePage() {
   // Compute live counts for each company filter
   const companyCounts = useMemo(() => {
     const all = evaluateAndFilterGames(games, { ...criteria, selectedCompany: 'ALL' }).length;
-    const betpawa = evaluateAndFilterGames(games, { ...criteria, selectedCompany: 'betpawa:ke' }).length;
     const sportybet = evaluateAndFilterGames(games, { ...criteria, selectedCompany: 'sportybet:ke' }).length;
-    return { all, betpawa, sportybet };
+    return { all, sportybet };
   }, [games, criteria]);
 
   // Extract unique available leagues for dropdown filter
@@ -103,9 +102,7 @@ export default function HomePage() {
   // Handle changing target company
   const handleCompanyChange = (bookie: 'ALL' | BookieId) => {
     setCriteria((prev) => ({ ...prev, selectedCompany: bookie }));
-    if (bookie === 'betpawa:ke' && stake < 1) {
-      setStake(1);
-    } else if (bookie === 'sportybet:ke' && stake < 15) {
+    if (bookie === 'sportybet:ke' && stake < 15) {
       setStake(15);
     }
   };
@@ -180,7 +177,7 @@ export default function HomePage() {
           <div className="flex items-center gap-3">
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>{oddsSource === 'api' ? 'Live Odds API' : 'Real-time Feed'}</span>
+              <span>SportyBet Live Odds</span>
               {lastUpdated && <span className="text-slate-400 font-mono">({lastUpdated})</span>}
             </div>
 
@@ -248,7 +245,7 @@ export default function HomePage() {
               <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Active Company</span>
               <span className="text-xs font-bold text-slate-200">
                 {criteria.selectedCompany === 'ALL'
-                  ? 'All (SportyBet & betPawa)'
+                  ? 'All (SportyBet)'
                   : BOOKIE_CONFIGS[criteria.selectedCompany].shortName}
               </span>
             </div>
@@ -417,7 +414,7 @@ export default function HomePage() {
         onClose={() => setIsExportModalOpen(false)}
         selections={selectedPicks}
         stake={stake}
-        initialBookie={criteria.selectedCompany === 'ALL' ? 'betpawa:ke' : criteria.selectedCompany}
+        initialBookie={criteria.selectedCompany === 'ALL' ? 'sportybet:ke' : criteria.selectedCompany}
       />
     </div>
   );

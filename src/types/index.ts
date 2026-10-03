@@ -1,4 +1,4 @@
-export type BookieId = 'sportybet:ke' | 'betpawa:ke';
+export type BookieId = 'sportybet:ke';
 
 export interface MarketPick {
   pick: string;
@@ -14,8 +14,22 @@ export interface GameMarkets {
   overUnder?: { pick: 'Over 0.5' | 'Under 3.5' | 'Over 1.5' | 'Under 2.5' | string; odd: number }[];
 }
 
+export interface SportyBetOutcome {
+  outcomeId: string;
+  name: string;
+  odd: number;
+}
+
+export interface SportyBetMarket {
+  marketId: string;
+  name: string;
+  specifier: string | null;
+  outcomes: SportyBetOutcome[];
+}
+
 export interface StandardGame {
   id: string;
+  eventId?: string; // SportyBet Sportradar event ID (e.g., sr:match:xxxxx)
   homeTeam: string;
   awayTeam: string;
   league: string;
@@ -25,10 +39,12 @@ export interface StandardGame {
   bookies: BookieId[];
   markets: GameMarkets;
   companyOdds?: Partial<Record<BookieId, GameMarkets>>;
+  sportyMarkets?: SportyBetMarket[];
 }
 
 export interface SelectedPick {
   gameId: string;
+  eventId?: string;
   homeTeam: string;
   awayTeam: string;
   league: string;
@@ -36,11 +52,14 @@ export interface SelectedPick {
   marketName: 'Double Chance' | 'Home Win' | 'Over 0.5' | 'Under 3.5' | string;
   pick: string;
   odd: number;
+  marketId?: string;
+  outcomeId?: string;
+  specifier?: string | null;
   bookie?: BookieId;
 }
 
 export interface FilterCriteria {
-  selectedCompany: 'ALL' | BookieId; // Filter by company: ALL, betpawa:ke, sportybet:ke
+  selectedCompany: 'ALL' | BookieId;
   dcMin: number;
   dcMax: number;
   homeWinMin: number;
@@ -49,10 +68,10 @@ export interface FilterCriteria {
   enableHomeWin: boolean;
   enableOver05: boolean;
   enableUnder35: boolean;
-  timeframeHours: number | null; // e.g. 3, 6, 12, 24, 48, null for all
-  pickCount: number; // default: 30
+  timeframeHours: number | null;
+  pickCount: number;
   searchQuery: string;
-  selectedLeague: string; // 'ALL' or specific league name
+  selectedLeague: string;
 }
 
 export interface BookingCodeResponse {
@@ -65,6 +84,7 @@ export interface BookingCodeResponse {
   generatedAt: string;
   expiresAt: string;
   directUrl: string;
+  deepLink?: string;
   selections: SelectedPick[];
   bonusPercentage?: number;
   error?: string;

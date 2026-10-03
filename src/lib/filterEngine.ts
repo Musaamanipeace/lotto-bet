@@ -1,4 +1,4 @@
-import { StandardGame, FilterCriteria, SelectedPick, BookieId, GameMarkets } from '@/types';
+import { StandardGame, FilterCriteria, SelectedPick, BookieId, GameMarkets, SportyBetMarket } from '@/types';
 
 /**
  * Normalizes team or league names: converts to lowercase, strips accents/diacritics,
@@ -19,6 +19,124 @@ export function normalizeTeamName(name: string): string {
 export function cleanString(str: string): string {
   if (!str) return '';
   return normalizeTeamName(str).replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Resolve SportyBet marketId / outcomeId / specifier from live markets.
+ * Uses official market IDs (1=1X2, 10=Double Chance, 18=Over/Under) rather than
+ * brittle name matching against labels like "Home Win".
+ */
+function findSportyBetIds(
+  sportyMarkets: SportyBetMarket[] | undefined,
+  marketName: string,
+  pickName: string
+): { marketId?: string; outcomeId?: string; specifier?: string | null } {
+  if (!sportyMarkets || sportyMarkets.length === 0) return {};
+
+  const lowerMarket = marketName.toLowerCase();
+  const lowerPick = pickName.toLowerCase().trim();
+
+  // --- Match Winner / Home Win (market 1) ---
+  if (
+    lowerMarket === 'home win' ||
+    lowerMarket === 'match winner' ||
+    lowerMarket === '1x2' ||
+    lowerPick === '1' ||
+    lowerPick === 'x' ||
+    lowerPick === '2'
+  ) {
+    const m = sportyMarkets.find((x) => x.marketId === '1');
+    if (m) {
+      let outcome: (typeof m.outcomes)[0] | undefined;
+      if (lowerPick === '1' || lowerPick === 'home' || lowerMarket === 'home win') {
+        outcome =
+          m.outcomes.find((o) => o.outcomeId === '1') ||
+          m.outcomes.find((o) => o.name.toLowerCase().includes('home'));
+      } else if (lowerPick === 'x' || lowerPick === 'draw') {
+        outcome =
+          m.outcomes.find((o) => o.outcomeId === '2') ||
+          m.outcomes.find((o) => o.name.toLowerCase().includes('draw'));
+      } else if (lowerPick === '2' || lowerPick === 'away') {
+        outcome =
+          m.outcomes.find((o) => o.outcomeId === '3') ||
+          m.outcomes.find((o) => o.name.toLowerCase().includes('away'));
+      }
+      if (outcome) {
+        return { marketId: m.marketId, outcomeId: outcome.outcomeId, specifier: m.specifier };
+      }
+    }
+  }
+
+  // --- Double Chance (market 10) ---
+  if (lowerMarket.includes('double chance') || ['1x', 'x2', '12'].includes(lowerPick)) {
+    const m = sportyMarkets.find((x) => x.marketId === '10');
+    if (m) {
+      const outcome =
+        m.outcomes.find((o) => o.name.toLowerCase().includes(lowerPick)) ||
+        m.outcomes.find((o) => o.outcomeId === pickName);
+      if (outcome) {
+        return { marketId: m.marketId, outcomeId: outcome.outcomeId, specifier: m.specifier };
+      }
+    }
+  }
+
+  // --- Over / Under (market 18) ---
+  if (
+    lowerMarket.includes('over') ||
+    lowerMarket.includes('under') ||
+    lowerPick.includes('over') ||
+    lowerPick.includes('under')
+  ) {
+    const isOver = lowerPick.includes('over') || lowerMarket.includes('over 0.5');
+    // Extract total from pick e.g. "Over 0.5" / "Under 3.5"
+    const totalMatch = lowerPick.match(/(\d+(?:\.\d+)?)/) || lowerMarket.match(/(\d+(?:\.\d+)?)/);
+    const total = totalMatch ? totalMatch[1] : isOver ? '0.5' : '3.5';
+    const specifier = `total=${total}`;
+
+    const candidates = sportyMarkets.filter((x) => x.marketId === '18');
+    const m =
+      candidates.find((x) => x.specifier === specifier) ||
+      candidates.find((x) => (x.specifier || '').includes(total)) ||
+      candidates[0];
+
+    if (m) {
+      const label = isOver ? 'over' : 'under';
+      const outcome =
+        m.outcomes.find((o) => o.name.toLowerCase().includes(label)) ||
+        m.outcomes.find((o) => (isOver ? o.outcomeId === '12' : o.outcomeId === '13'));
+      if (outcome) {
+        return {
+          marketId: m.marketId,
+          outcomeId: outcome.outcomeId,
+          specifier: m.specifier ?? specifier,
+        };
+      }
+    }
+  }
+
+  // Generic name fallback (last resort)
+  for (const market of sportyMarkets) {
+    if (
+      market.name.toLowerCase().includes(lowerMarket) ||
+      market.marketId === lowerMarket
+    ) {
+      for (const outcome of market.outcomes) {
+        if (
+          outcome.name.toLowerCase().includes(lowerPick) ||
+          outcome.outcomeId === pickName ||
+          outcome.outcomeId === lowerPick
+        ) {
+          return {
+            marketId: market.marketId,
+            outcomeId: outcome.outcomeId,
+            specifier: market.specifier,
+          };
+        }
+      }
+    }
+  }
+
+  return {};
 }
 
 export interface GameEvaluation {
@@ -100,6 +218,9 @@ export function evaluateAndFilterGames(
       (criteria.selectedCompany !== 'ALL' && game.companyOdds?.[criteria.selectedCompany]) ||
       game.markets;
 
+    // 7b. SportyBet native market data for booking code generation
+    const sportyIds = game.sportyMarkets;
+
     // 8. Market Evaluation
     const eligiblePicks: SelectedPick[] = [];
     const pickBookie: BookieId | undefined =
@@ -109,8 +230,10 @@ export function evaluateAndFilterGames(
     if (criteria.enableDoubleChance && activeMarkets.doubleChance) {
       for (const dc of activeMarkets.doubleChance) {
         if (dc.odd >= criteria.dcMin && dc.odd <= criteria.dcMax) {
+          const ids = findSportyBetIds(sportyIds, 'Double Chance', dc.pick);
           eligiblePicks.push({
             gameId: game.id,
+            eventId: game.eventId,
             homeTeam: game.homeTeam,
             awayTeam: game.awayTeam,
             league: game.league,
@@ -118,6 +241,9 @@ export function evaluateAndFilterGames(
             marketName: 'Double Chance',
             pick: dc.pick,
             odd: dc.odd,
+            marketId: ids.marketId,
+            outcomeId: ids.outcomeId,
+            specifier: ids.specifier,
             bookie: pickBookie,
           });
         }
@@ -128,8 +254,10 @@ export function evaluateAndFilterGames(
     if (criteria.enableHomeWin && activeMarkets.homeWin) {
       const hw = activeMarkets.homeWin;
       if (hw.odd >= criteria.homeWinMin && hw.odd <= criteria.homeWinMax) {
+        const ids = findSportyBetIds(sportyIds, 'Home Win', hw.pick);
         eligiblePicks.push({
           gameId: game.id,
+          eventId: game.eventId,
           homeTeam: game.homeTeam,
           awayTeam: game.awayTeam,
           league: game.league,
@@ -137,6 +265,9 @@ export function evaluateAndFilterGames(
           marketName: 'Home Win',
           pick: '1',
           odd: hw.odd,
+          marketId: ids.marketId,
+          outcomeId: ids.outcomeId,
+          specifier: ids.specifier,
           bookie: pickBookie,
         });
       }
@@ -146,8 +277,10 @@ export function evaluateAndFilterGames(
     if (criteria.enableOver05 && activeMarkets.overUnder) {
       const over05 = activeMarkets.overUnder.find((m) => m.pick === 'Over 0.5');
       if (over05 && over05.odd > 1.01) {
+        const ids = findSportyBetIds(sportyIds, 'Over 0.5', over05.pick);
         eligiblePicks.push({
           gameId: game.id,
+          eventId: game.eventId,
           homeTeam: game.homeTeam,
           awayTeam: game.awayTeam,
           league: game.league,
@@ -155,6 +288,9 @@ export function evaluateAndFilterGames(
           marketName: 'Over 0.5',
           pick: 'Over 0.5',
           odd: over05.odd,
+          marketId: ids.marketId,
+          outcomeId: ids.outcomeId,
+          specifier: ids.specifier,
           bookie: pickBookie,
         });
       }
@@ -164,8 +300,10 @@ export function evaluateAndFilterGames(
     if (criteria.enableUnder35 && activeMarkets.overUnder) {
       const under35 = activeMarkets.overUnder.find((m) => m.pick === 'Under 3.5');
       if (under35 && under35.odd > 1.05) {
+        const ids = findSportyBetIds(sportyIds, 'Under 3.5', under35.pick);
         eligiblePicks.push({
           gameId: game.id,
+          eventId: game.eventId,
           homeTeam: game.homeTeam,
           awayTeam: game.awayTeam,
           league: game.league,
@@ -173,6 +311,9 @@ export function evaluateAndFilterGames(
           marketName: 'Under 3.5',
           pick: 'Under 3.5',
           odd: under35.odd,
+          marketId: ids.marketId,
+          outcomeId: ids.outcomeId,
+          specifier: ids.specifier,
           bookie: pickBookie,
         });
       }

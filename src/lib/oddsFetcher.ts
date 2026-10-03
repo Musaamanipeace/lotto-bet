@@ -1,865 +1,297 @@
-import { StandardGame, BookieId, GameMarkets } from '@/types';
-import { normalizeTeamName } from './filterEngine';
+import { StandardGame, GameMarkets, SportyBetMarket, SportyBetOutcome } from '@/types';
+import {
+  SPORTYBET_MARKET_IDS,
+  SPORTYBET_UPCOMING_EVENTS_URL,
+} from './constants';
 
-interface TheOddsApiGame {
-  id: string;
-  sport_key: string;
-  sport_title: string;
-  commence_time: string;
-  home_team: string;
-  away_team: string;
-  bookmakers?: {
-    key: string;
-    title: string;
-    markets?: {
-      key: string;
-      outcomes?: {
-        name: string;
-        price: number;
-        point?: number;
-      }[];
-    }[];
-  }[];
+/** Raw shapes returned by SportyBet pcUpcomingEvents */
+interface SportyBetRawOutcome {
+  id?: string;
+  desc?: string;
+  odds?: string | number;
+  isActive?: number;
 }
 
-/**
- * Standardize an Odds API response game into our StandardGame model
- */
-function mapOddsApiGame(raw: TheOddsApiGame): StandardGame | null {
-  if (!raw.id || !raw.home_team || !raw.away_team || !raw.commence_time) {
-    return null;
+interface SportyBetRawMarket {
+  id?: string;
+  name?: string;
+  desc?: string;
+  specifier?: string;
+  status?: number;
+  outcomes?: SportyBetRawOutcome[];
+}
+
+interface SportyBetRawEvent {
+  eventId?: string;
+  homeTeamName?: string;
+  awayTeamName?: string;
+  estimateStartTime?: number;
+  matchStatus?: string;
+  markets?: SportyBetRawMarket[];
+  sport?: {
+    category?: {
+      name?: string;
+      tournament?: { name?: string };
+    };
+  };
+  _tournamentName?: string;
+  _categoryName?: string;
+}
+
+interface SportyBetRawTournament {
+  id?: string;
+  name?: string;
+  categoryName?: string;
+  events?: SportyBetRawEvent[];
+}
+
+interface SportyBetApiResponse {
+  bizCode?: number;
+  message?: string;
+  data?: {
+    totalNum?: number;
+    tournaments?: SportyBetRawTournament[];
+  };
+}
+
+const DEFAULT_HEADERS: HeadersInit = {
+  Accept: 'application/json',
+  'Content-Type': 'application/json',
+  'Current-Country': 'KE',
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  Referer: 'https://www.sportybet.com/ke/',
+};
+
+/** Markets we care about: 1X2, Double Chance, Over/Under */
+const REQUESTED_MARKET_IDS = [
+  SPORTYBET_MARKET_IDS.MATCH_WINNER, // 1
+  SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, // 10
+  SPORTYBET_MARKET_IDS.OVER_UNDER, // 18
+].join(',');
+
+function parseOdd(value: string | number | undefined): number {
+  if (value === undefined || value === null) return 0;
+  const n = typeof value === 'number' ? value : parseFloat(String(value));
+  return Number.isFinite(n) && n > 1 ? n : 0;
+}
+
+function parseSportyMarkets(rawMarkets: SportyBetRawMarket[] | undefined): SportyBetMarket[] {
+  if (!rawMarkets?.length) return [];
+  return rawMarkets
+    .map((m) => {
+      const marketId = String(m.id ?? '');
+      const name = m.name || m.desc || '';
+      const outcomes: SportyBetOutcome[] = (m.outcomes || [])
+        .filter((o) => o.isActive !== 0)
+        .map((o) => ({
+          outcomeId: String(o.id ?? ''),
+          name: o.desc || '',
+          odd: parseOdd(o.odds),
+        }))
+        .filter((o) => o.outcomeId && o.odd > 0);
+      return {
+        marketId,
+        name,
+        specifier: m.specifier === undefined ? null : m.specifier,
+        outcomes,
+      };
+    })
+    .filter((m) => m.marketId && m.outcomes.length > 0);
+}
+
+function findOutcomeByDesc(
+  markets: SportyBetMarket[],
+  marketId: string,
+  descIncludes: string
+): SportyBetOutcome | undefined {
+  const lower = descIncludes.toLowerCase();
+  for (const m of markets) {
+    if (m.marketId !== marketId) continue;
+    const found = m.outcomes.find((o) => o.name.toLowerCase().includes(lower));
+    if (found) return found;
   }
+  return undefined;
+}
 
-  const bookmaker = raw.bookmakers?.[0];
-  const markets = bookmaker?.markets || [];
-
-  const h2hMarket = markets.find((m) => m.key === 'h2h');
-  const totalsMarket = markets.find((m) => m.key === 'totals');
-
-  let homeOdd = 0;
-  let drawOdd = 0;
-  let awayOdd = 0;
-
-  if (h2hMarket?.outcomes) {
-    for (const outcome of h2hMarket.outcomes) {
-      if (normalizeTeamName(outcome.name) === normalizeTeamName(raw.home_team)) {
-        homeOdd = outcome.price;
-      } else if (outcome.name.toLowerCase() === 'draw' || outcome.name.toLowerCase() === 'tie') {
-        drawOdd = outcome.price;
-      } else if (normalizeTeamName(outcome.name) === normalizeTeamName(raw.away_team)) {
-        awayOdd = outcome.price;
-      }
-    }
+function findOverUnder(
+  markets: SportyBetMarket[],
+  isOver: boolean,
+  total: number
+): SportyBetOutcome | undefined {
+  const specifier = `total=${total}`;
+  const label = isOver ? 'over' : 'under';
+  for (const m of markets) {
+    if (m.marketId !== SPORTYBET_MARKET_IDS.OVER_UNDER) continue;
+    if (m.specifier !== specifier) continue;
+    const found = m.outcomes.find((o) => o.name.toLowerCase().includes(label));
+    if (found) return found;
   }
+  for (const m of markets) {
+    if (m.marketId !== SPORTYBET_MARKET_IDS.OVER_UNDER) continue;
+    const found = m.outcomes.find(
+      (o) =>
+        o.name.toLowerCase().includes(label) &&
+        (o.name.includes(String(total)) || m.specifier === specifier)
+    );
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: string): StandardGame | null {
+  const eventId = raw.eventId || '';
+  const homeTeam = raw.homeTeamName || '';
+  const awayTeam = raw.awayTeamName || '';
+  if (!eventId || !homeTeam || !awayTeam) return null;
+
+  const kickoffTime = raw.estimateStartTime
+    ? new Date(raw.estimateStartTime).toISOString()
+    : new Date().toISOString();
+
+  const league =
+    tournamentName ||
+    raw.sport?.category?.tournament?.name ||
+    categoryName ||
+    raw.sport?.category?.name ||
+    'Soccer';
+
+  const sportyMarkets = parseSportyMarkets(raw.markets);
+
+  const homeOutcome =
+    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.MATCH_WINNER, 'home') ||
+    sportyMarkets
+      .find((m) => m.marketId === SPORTYBET_MARKET_IDS.MATCH_WINNER)
+      ?.outcomes.find((o) => o.outcomeId === '1');
+  const drawOutcome =
+    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.MATCH_WINNER, 'draw') ||
+    sportyMarkets
+      .find((m) => m.marketId === SPORTYBET_MARKET_IDS.MATCH_WINNER)
+      ?.outcomes.find((o) => o.outcomeId === '2');
+  const awayOutcome =
+    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.MATCH_WINNER, 'away') ||
+    sportyMarkets
+      .find((m) => m.marketId === SPORTYBET_MARKET_IDS.MATCH_WINNER)
+      ?.outcomes.find((o) => o.outcomeId === '3');
+
+  const dc1x =
+    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, '1x') ||
+    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, 'home or draw');
+  const dcX2 =
+    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, 'x2') ||
+    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, 'draw or away');
+  const dc12 =
+    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, '12') ||
+    findOutcomeByDesc(sportyMarkets, SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, 'home or away');
 
   const dcOutcomes: { pick: '1X' | 'X2' | '12'; odd: number }[] = [];
-  if (homeOdd > 1 && drawOdd > 1 && awayOdd > 1) {
-    const p1 = 1 / homeOdd;
-    const pX = 1 / drawOdd;
-    const p2 = 1 / awayOdd;
+  if (dc1x) dcOutcomes.push({ pick: '1X', odd: dc1x.odd });
+  if (dcX2) dcOutcomes.push({ pick: 'X2', odd: dcX2.odd });
+  if (dc12) dcOutcomes.push({ pick: '12', odd: dc12.odd });
 
-    const marginFactor = 1.05;
-    const dc1X = Math.round((1 / (p1 + pX)) * marginFactor * 100) / 100;
-    const dcX2 = Math.round((1 / (pX + p2)) * marginFactor * 100) / 100;
-    const dc12 = Math.round((1 / (p1 + p2)) * marginFactor * 100) / 100;
-
-    if (dc1X >= 1.02) dcOutcomes.push({ pick: '1X', odd: dc1X });
-    if (dcX2 >= 1.02) dcOutcomes.push({ pick: 'X2', odd: dcX2 });
-    if (dc12 >= 1.02) dcOutcomes.push({ pick: '12', odd: dc12 });
-  }
-
-  const overUnder: { pick: string; odd: number }[] = [];
-  if (totalsMarket?.outcomes) {
-    for (const out of totalsMarket.outcomes) {
-      if (out.point === 0.5 && out.name.toLowerCase().includes('over')) {
-        overUnder.push({ pick: 'Over 0.5', odd: out.price });
-      }
-      if (out.point === 3.5 && out.name.toLowerCase().includes('under')) {
-        overUnder.push({ pick: 'Under 3.5', odd: out.price });
-      }
-    }
-  }
-
-  if (overUnder.length === 0 && homeOdd > 1) {
-    overUnder.push({ pick: 'Over 0.5', odd: 1.05 });
-    overUnder.push({ pick: 'Under 3.5', odd: 1.35 });
-  }
+  const over05 = findOverUnder(sportyMarkets, true, 0.5);
+  const under35 = findOverUnder(sportyMarkets, false, 3.5);
 
   const baseMarkets: GameMarkets = {
     doubleChance: dcOutcomes.length > 0 ? dcOutcomes : undefined,
-    homeWin: homeOdd > 1 ? { pick: '1', odd: homeOdd } : undefined,
-    draw: drawOdd > 1 ? { pick: 'X', odd: drawOdd } : undefined,
-    awayWin: awayOdd > 1 ? { pick: '2', odd: awayOdd } : undefined,
-    overUnder: overUnder.length > 0 ? overUnder : undefined,
+    homeWin: homeOutcome ? { pick: '1', odd: homeOutcome.odd } : undefined,
+    draw: drawOutcome ? { pick: 'X', odd: drawOutcome.odd } : undefined,
+    awayWin: awayOutcome ? { pick: '2', odd: awayOutcome.odd } : undefined,
+    overUnder:
+      over05 || under35
+        ? [
+            over05 ? { pick: 'Over 0.5', odd: over05.odd } : undefined,
+            under35 ? { pick: 'Under 3.5', odd: under35.odd } : undefined,
+          ].filter((m): m is { pick: string; odd: number } => m !== undefined)
+        : undefined,
   };
 
   return {
-    id: raw.id,
-    homeTeam: raw.home_team,
-    awayTeam: raw.away_team,
-    league: raw.sport_title || 'Soccer',
-    kickoffTime: raw.commence_time,
+    id: eventId,
+    eventId,
+    homeTeam,
+    awayTeam,
+    league,
+    kickoffTime,
     status: 'SCHEDULED',
-    bookies: ['sportybet:ke', 'betpawa:ke'],
+    bookies: ['sportybet:ke'],
     markets: baseMarkets,
     companyOdds: {
       'sportybet:ke': baseMarkets,
-      'betpawa:ke': baseMarkets,
     },
+    sportyMarkets,
   };
 }
 
-/**
- * Generates an extensive fallback set of high-profile soccer fixtures with
- * realistic timestamps and company-specific odds margins.
- */
-export function generateRealisticUpcomingGames(baseTime = new Date()): StandardGame[] {
-  const now = baseTime.getTime();
-  const hour = 3600 * 1000;
+async function fetchPage(
+  pageNum: number,
+  pageSize: number,
+  timelineHours: number
+): Promise<SportyBetRawEvent[]> {
+  const url = new URL(SPORTYBET_UPCOMING_EVENTS_URL);
+  url.searchParams.set('sportId', 'sr:sport:1');
+  url.searchParams.set('marketId', REQUESTED_MARKET_IDS);
+  url.searchParams.set('pageSize', String(pageSize));
+  url.searchParams.set('pageNum', String(pageNum));
+  url.searchParams.set('timeline', String(timelineHours));
+  url.searchParams.set('todayGames', 'false');
+  url.searchParams.set('_t', String(Date.now()));
 
-  const fixtureTemplates: {
-    home: string;
-    away: string;
-    league: string;
-    delayHours: number;
-    homeWin: number;
-    draw: number;
-    awayWin: number;
-    dc1X: number;
-    dc12: number;
-    dcX2: number;
-    over05: number;
-    under35: number;
-    bookies?: BookieId[];
-  }[] = [
-    // Premier League
-    {
-      home: 'Arsenal',
-      away: 'Bournemouth',
-      league: 'English Premier League',
-      delayHours: 1.5,
-      homeWin: 1.36,
-      draw: 5.2,
-      awayWin: 8.5,
-      dc1X: 1.09,
-      dc12: 1.16,
-      dcX2: 3.1,
-      over05: 1.04,
-      under35: 1.48,
-    },
-    {
-      home: 'Manchester City',
-      away: 'Everton',
-      league: 'English Premier League',
-      delayHours: 2.5,
-      homeWin: 1.32,
-      draw: 5.5,
-      awayWin: 9.2,
-      dc1X: 1.08,
-      dc12: 1.14,
-      dcX2: 3.4,
-      over05: 1.03,
-      under35: 1.55,
-    },
-    {
-      home: 'Liverpool',
-      away: 'Fulham',
-      league: 'English Premier League',
-      delayHours: 4.0,
-      homeWin: 1.38,
-      draw: 5.0,
-      awayWin: 7.8,
-      dc1X: 1.10,
-      dc12: 1.17,
-      dcX2: 2.95,
-      over05: 1.04,
-      under35: 1.52,
-    },
-    {
-      home: 'Chelsea',
-      away: 'Brentford',
-      league: 'English Premier League',
-      delayHours: 5.5,
-      homeWin: 1.48,
-      draw: 4.5,
-      awayWin: 6.2,
-      dc1X: 1.13,
-      dc12: 1.20,
-      dcX2: 2.55,
-      over05: 1.05,
-      under35: 1.42,
-    },
-    {
-      home: 'Tottenham Hotspur',
-      away: 'Wolverhampton Wanderers',
-      league: 'English Premier League',
-      delayHours: 7.0,
-      homeWin: 1.45,
-      draw: 4.6,
-      awayWin: 6.5,
-      dc1X: 1.12,
-      dc12: 1.19,
-      dcX2: 2.65,
-      over05: 1.05,
-      under35: 1.45,
-    },
-    {
-      home: 'Newcastle United',
-      away: 'Crystal Palace',
-      league: 'English Premier League',
-      delayHours: 9.5,
-      homeWin: 1.42,
-      draw: 4.7,
-      awayWin: 7.0,
-      dc1X: 1.11,
-      dc12: 1.18,
-      dcX2: 2.75,
-      over05: 1.05,
-      under35: 1.38,
-    },
-    {
-      home: 'Aston Villa',
-      away: 'Ipswich Town',
-      league: 'English Premier League',
-      delayHours: 12.0,
-      homeWin: 1.35,
-      draw: 5.1,
-      awayWin: 8.0,
-      dc1X: 1.09,
-      dc12: 1.16,
-      dcX2: 3.1,
-      over05: 1.04,
-      under35: 1.5,
-    },
-    {
-      home: 'Brighton & Hove Albion',
-      away: 'Leicester City',
-      league: 'English Premier League',
-      delayHours: 14.0,
-      homeWin: 1.49,
-      draw: 4.4,
-      awayWin: 6.0,
-      dc1X: 1.14,
-      dc12: 1.21,
-      dcX2: 2.5,
-      over05: 1.06,
-      under35: 1.4,
-    },
-    {
-      home: 'Manchester United',
-      away: 'Southampton',
-      league: 'English Premier League',
-      delayHours: 18.0,
-      homeWin: 1.40,
-      draw: 4.8,
-      awayWin: 7.2,
-      dc1X: 1.11,
-      dc12: 1.18,
-      dcX2: 2.85,
-      over05: 1.04,
-      under35: 1.46,
-    },
-
-    // Spanish La Liga
-    {
-      home: 'Real Madrid',
-      away: 'Getafe',
-      league: 'Spanish La Liga',
-      delayHours: 2.0,
-      homeWin: 1.31,
-      draw: 5.5,
-      awayWin: 9.5,
-      dc1X: 1.08,
-      dc12: 1.14,
-      dcX2: 3.4,
-      over05: 1.03,
-      under35: 1.58,
-    },
-    {
-      home: 'FC Barcelona',
-      away: 'Espanyol',
-      league: 'Spanish La Liga',
-      delayHours: 3.5,
-      homeWin: 1.33,
-      draw: 5.4,
-      awayWin: 8.8,
-      dc1X: 1.08,
-      dc12: 1.15,
-      dcX2: 3.2,
-      over05: 1.03,
-      under35: 1.62,
-    },
-    {
-      home: 'Atlético Madrid',
-      away: 'Alavés',
-      league: 'Spanish La Liga',
-      delayHours: 5.0,
-      homeWin: 1.37,
-      draw: 4.8,
-      awayWin: 8.2,
-      dc1X: 1.10,
-      dc12: 1.17,
-      dcX2: 3.0,
-      over05: 1.05,
-      under35: 1.35,
-    },
-    {
-      home: 'Athletic Bilbao',
-      away: 'Las Palmas',
-      league: 'Spanish La Liga',
-      delayHours: 8.0,
-      homeWin: 1.44,
-      draw: 4.5,
-      awayWin: 7.0,
-      dc1X: 1.12,
-      dc12: 1.19,
-      dcX2: 2.7,
-      over05: 1.06,
-      under35: 1.32,
-    },
-    {
-      home: 'Real Sociedad',
-      away: 'Leganés',
-      league: 'Spanish La Liga',
-      delayHours: 11.0,
-      homeWin: 1.46,
-      draw: 4.2,
-      awayWin: 7.5,
-      dc1X: 1.13,
-      dc12: 1.20,
-      dcX2: 2.65,
-      over05: 1.07,
-      under35: 1.28,
-    },
-    {
-      home: 'Villarreal',
-      away: 'Rayo Vallecano',
-      league: 'Spanish La Liga',
-      delayHours: 15.0,
-      homeWin: 1.49,
-      draw: 4.3,
-      awayWin: 6.2,
-      dc1X: 1.14,
-      dc12: 1.21,
-      dcX2: 2.5,
-      over05: 1.05,
-      under35: 1.42,
-    },
-
-    // German Bundesliga
-    {
-      home: 'Bayern München',
-      away: 'VfL Bochum',
-      league: 'German Bundesliga',
-      delayHours: 3.0,
-      homeWin: 1.30,
-      draw: 6.0,
-      awayWin: 10.5,
-      dc1X: 1.08,
-      dc12: 1.13,
-      dcX2: 3.6,
-      over05: 1.02,
-      under35: 1.72,
-    },
-    {
-      home: 'Bayer Leverkusen',
-      away: 'St. Pauli',
-      league: 'German Bundesliga',
-      delayHours: 4.5,
-      homeWin: 1.34,
-      draw: 5.3,
-      awayWin: 8.5,
-      dc1X: 1.09,
-      dc12: 1.15,
-      dcX2: 3.15,
-      over05: 1.03,
-      under35: 1.58,
-    },
-    {
-      home: 'Borussia Dortmund',
-      away: 'Holstein Kiel',
-      league: 'German Bundesliga',
-      delayHours: 6.5,
-      homeWin: 1.35,
-      draw: 5.2,
-      awayWin: 8.0,
-      dc1X: 1.09,
-      dc12: 1.16,
-      dcX2: 3.1,
-      over05: 1.03,
-      under35: 1.6,
-    },
-    {
-      home: 'RB Leipzig',
-      away: 'Augsburg',
-      league: 'German Bundesliga',
-      delayHours: 8.5,
-      homeWin: 1.41,
-      draw: 4.8,
-      awayWin: 7.2,
-      dc1X: 1.11,
-      dc12: 1.18,
-      dcX2: 2.8,
-      over05: 1.04,
-      under35: 1.5,
-    },
-    {
-      home: 'Eintracht Frankfurt',
-      away: 'Heidenheim',
-      league: 'German Bundesliga',
-      delayHours: 13.0,
-      homeWin: 1.47,
-      draw: 4.4,
-      awayWin: 6.4,
-      dc1X: 1.13,
-      dc12: 1.20,
-      dcX2: 2.58,
-      over05: 1.05,
-      under35: 1.45,
-    },
-
-    // Italian Serie A
-    {
-      home: 'Inter Milan',
-      away: 'Empoli',
-      league: 'Italian Serie A',
-      delayHours: 2.2,
-      homeWin: 1.32,
-      draw: 5.2,
-      awayWin: 9.0,
-      dc1X: 1.08,
-      dc12: 1.15,
-      dcX2: 3.3,
-      over05: 1.04,
-      under35: 1.44,
-    },
-    {
-      home: 'Juventus',
-      away: 'Monza',
-      league: 'Italian Serie A',
-      delayHours: 4.2,
-      homeWin: 1.39,
-      draw: 4.6,
-      awayWin: 8.0,
-      dc1X: 1.10,
-      dc12: 1.18,
-      dcX2: 2.9,
-      over05: 1.05,
-      under35: 1.34,
-    },
-    {
-      home: 'Napoli',
-      away: 'Venezia',
-      league: 'Italian Serie A',
-      delayHours: 6.0,
-      homeWin: 1.34,
-      draw: 5.1,
-      awayWin: 8.5,
-      dc1X: 1.09,
-      dc12: 1.15,
-      dcX2: 3.15,
-      over05: 1.04,
-      under35: 1.4,
-    },
-    {
-      home: 'AC Milan',
-      away: 'Cagliari',
-      league: 'Italian Serie A',
-      delayHours: 7.5,
-      homeWin: 1.43,
-      draw: 4.6,
-      awayWin: 6.8,
-      dc1X: 1.11,
-      dc12: 1.19,
-      dcX2: 2.7,
-      over05: 1.05,
-      under35: 1.42,
-    },
-    {
-      home: 'Atalanta',
-      away: 'Parma',
-      league: 'Italian Serie A',
-      delayHours: 10.0,
-      homeWin: 1.45,
-      draw: 4.7,
-      awayWin: 6.6,
-      dc1X: 1.12,
-      dc12: 1.19,
-      dcX2: 2.65,
-      over05: 1.04,
-      under35: 1.52,
-    },
-
-    // Kenyan Premier League (KPL) - Both companies love local Kenyan football
-    {
-      home: 'Gor Mahia',
-      away: 'Bidco United',
-      league: 'Kenyan Premier League',
-      delayHours: 1.8,
-      homeWin: 1.38,
-      draw: 4.4,
-      awayWin: 7.8,
-      dc1X: 1.10,
-      dc12: 1.18,
-      dcX2: 2.9,
-      over05: 1.08,
-      under35: 1.25,
-      bookies: ['betpawa:ke', 'sportybet:ke'],
-    },
-    {
-      home: 'Tusker FC',
-      away: 'Murang’a Seal',
-      league: 'Kenyan Premier League',
-      delayHours: 3.2,
-      homeWin: 1.45,
-      draw: 4.0,
-      awayWin: 6.8,
-      dc1X: 1.12,
-      dc12: 1.20,
-      dcX2: 2.6,
-      over05: 1.09,
-      under35: 1.22,
-      bookies: ['betpawa:ke', 'sportybet:ke'],
-    },
-    {
-      home: 'Kenya Police FC',
-      away: 'Kariobangi Sharks',
-      league: 'Kenyan Premier League',
-      delayHours: 5.8,
-      homeWin: 1.49,
-      draw: 3.9,
-      awayWin: 6.2,
-      dc1X: 1.14,
-      dc12: 1.21,
-      dcX2: 2.45,
-      over05: 1.09,
-      under35: 1.24,
-      bookies: ['betpawa:ke', 'sportybet:ke'],
-    },
-    {
-      home: 'AFC Leopards',
-      away: 'Posta Rangers',
-      league: 'Kenyan Premier League',
-      delayHours: 9.0,
-      homeWin: 1.47,
-      draw: 4.1,
-      awayWin: 6.5,
-      dc1X: 1.13,
-      dc12: 1.20,
-      dcX2: 2.55,
-      over05: 1.08,
-      under35: 1.26,
-      bookies: ['betpawa:ke', 'sportybet:ke'],
-    },
-    {
-      home: 'Bandari FC',
-      away: 'Sofapaka',
-      league: 'Kenyan Premier League',
-      delayHours: 14.5,
-      homeWin: 1.48,
-      draw: 4.0,
-      awayWin: 6.4,
-      dc1X: 1.13,
-      dc12: 1.20,
-      dcX2: 2.52,
-      over05: 1.09,
-      under35: 1.25,
-      bookies: ['betpawa:ke', 'sportybet:ke'],
-    },
-    {
-      home: 'Shabana FC',
-      away: 'Nairobi City Stars',
-      league: 'Kenyan Premier League',
-      delayHours: 16.0,
-      homeWin: 1.49,
-      draw: 3.9,
-      awayWin: 6.1,
-      dc1X: 1.14,
-      dc12: 1.21,
-      dcX2: 2.48,
-      over05: 1.09,
-      under35: 1.24,
-      bookies: ['betpawa:ke'], // betPawa special
-    },
-    {
-      home: 'Ulinzi Stars',
-      away: 'Mara Sugar',
-      league: 'Kenyan Premier League',
-      delayHours: 19.0,
-      homeWin: 1.46,
-      draw: 4.0,
-      awayWin: 6.6,
-      dc1X: 1.12,
-      dc12: 1.19,
-      dcX2: 2.58,
-      over05: 1.08,
-      under35: 1.25,
-      bookies: ['sportybet:ke'], // SportyBet special
-    },
-
-    // French Ligue 1
-    {
-      home: 'Paris Saint-Germain',
-      away: 'Le Havre',
-      league: 'French Ligue 1',
-      delayHours: 2.8,
-      homeWin: 1.30,
-      draw: 5.6,
-      awayWin: 9.8,
-      dc1X: 1.08,
-      dc12: 1.14,
-      dcX2: 3.45,
-      over05: 1.03,
-      under35: 1.62,
-    },
-    {
-      home: 'AS Monaco',
-      away: 'Angers SCO',
-      league: 'French Ligue 1',
-      delayHours: 6.2,
-      homeWin: 1.39,
-      draw: 4.8,
-      awayWin: 7.5,
-      dc1X: 1.10,
-      dc12: 1.18,
-      dcX2: 2.9,
-      over05: 1.04,
-      under35: 1.48,
-    },
-    {
-      home: 'Marseille',
-      away: 'Saint-Étienne',
-      league: 'French Ligue 1',
-      delayHours: 11.5,
-      homeWin: 1.44,
-      draw: 4.6,
-      awayWin: 6.8,
-      dc1X: 1.12,
-      dc12: 1.19,
-      dcX2: 2.7,
-      over05: 1.05,
-      under35: 1.44,
-    },
-
-    // UEFA Champions League
-    {
-      home: 'Real Madrid',
-      away: 'Salzburg',
-      league: 'UEFA Champions League',
-      delayHours: 23.0,
-      homeWin: 1.32,
-      draw: 5.4,
-      awayWin: 9.0,
-      dc1X: 1.08,
-      dc12: 1.15,
-      dcX2: 3.25,
-      over05: 1.03,
-      under35: 1.6,
-    },
-    {
-      home: 'Bayern München',
-      away: 'Shakhtar Donetsk',
-      league: 'UEFA Champions League',
-      delayHours: 24.5,
-      homeWin: 1.31,
-      draw: 5.6,
-      awayWin: 9.4,
-      dc1X: 1.08,
-      dc12: 1.14,
-      dcX2: 3.35,
-      over05: 1.02,
-      under35: 1.65,
-    },
-    {
-      home: 'Manchester City',
-      away: 'Sparta Prague',
-      league: 'UEFA Champions League',
-      delayHours: 26.0,
-      homeWin: 1.30,
-      draw: 6.0,
-      awayWin: 10.0,
-      dc1X: 1.08,
-      dc12: 1.13,
-      dcX2: 3.5,
-      over05: 1.02,
-      under35: 1.68,
-    },
-    {
-      home: 'Liverpool',
-      away: 'Bologna',
-      league: 'UEFA Champions League',
-      delayHours: 27.5,
-      homeWin: 1.35,
-      draw: 5.2,
-      awayWin: 8.2,
-      dc1X: 1.09,
-      dc12: 1.16,
-      dcX2: 3.1,
-      over05: 1.04,
-      under35: 1.5,
-    },
-    {
-      home: 'Inter Milan',
-      away: 'Red Star Belgrade',
-      league: 'UEFA Champions League',
-      delayHours: 29.0,
-      homeWin: 1.34,
-      draw: 5.2,
-      awayWin: 8.5,
-      dc1X: 1.09,
-      dc12: 1.15,
-      dcX2: 3.15,
-      over05: 1.03,
-      under35: 1.52,
-    },
-    {
-      home: 'Barcelona',
-      away: 'Young Boys',
-      league: 'UEFA Champions League',
-      delayHours: 31.0,
-      homeWin: 1.30,
-      draw: 5.8,
-      awayWin: 9.8,
-      dc1X: 1.08,
-      dc12: 1.14,
-      dcX2: 3.4,
-      over05: 1.03,
-      under35: 1.7,
-    },
-    {
-      home: 'Arsenal',
-      away: 'Dinamo Zagreb',
-      league: 'UEFA Champions League',
-      delayHours: 33.5,
-      homeWin: 1.33,
-      draw: 5.3,
-      awayWin: 8.8,
-      dc1X: 1.08,
-      dc12: 1.15,
-      dcX2: 3.2,
-      over05: 1.03,
-      under35: 1.55,
-    },
-  ];
-
-  return fixtureTemplates.map((item, index) => {
-    const kickoffMs = now + item.delayHours * hour;
-    const kickoffIso = new Date(kickoffMs).toISOString();
-
-    const bookies: BookieId[] = item.bookies || ['sportybet:ke', 'betpawa:ke'];
-
-    // SportyBet version of markets (slightly higher on 1X2, standard DC)
-    const sportyDoubleChance = [
-      { pick: '1X', odd: item.dc1X },
-      { pick: '12', odd: item.dc12 },
-      { pick: 'X2', odd: item.dcX2 },
-    ];
-    const sportyMarkets: GameMarkets = {
-      doubleChance: sportyDoubleChance,
-      homeWin: { pick: '1', odd: Math.round((item.homeWin + 0.01) * 100) / 100 },
-      draw: { pick: 'X', odd: item.draw },
-      awayWin: { pick: '2', odd: item.awayWin },
-      overUnder: [
-        { pick: 'Over 0.5', odd: item.over05 },
-        { pick: 'Under 3.5', odd: item.under35 },
-      ],
-    };
-
-    // betPawa version of markets (famous for high boost on multi-bets, slightly tighter DC)
-    const pawaDoubleChance = [
-      { pick: '1X', odd: Math.max(1.06, Math.round((item.dc1X + 0.01) * 100) / 100) },
-      { pick: '12', odd: item.dc12 },
-      { pick: 'X2', odd: item.dcX2 },
-    ];
-    const pawaMarkets: GameMarkets = {
-      doubleChance: pawaDoubleChance,
-      homeWin: { pick: '1', odd: item.homeWin },
-      draw: { pick: 'X', odd: item.draw },
-      awayWin: { pick: '2', odd: item.awayWin },
-      overUnder: [
-        { pick: 'Over 0.5', odd: Math.round((item.over05 + 0.01) * 100) / 100 },
-        { pick: 'Under 3.5', odd: item.under35 },
-      ],
-    };
-
-    const defaultMarkets: GameMarkets = {
-      doubleChance: sportyDoubleChance,
-      homeWin: { pick: '1', odd: item.homeWin },
-      draw: { pick: 'X', odd: item.draw },
-      awayWin: { pick: '2', odd: item.awayWin },
-      overUnder: [
-        { pick: 'Over 0.5', odd: item.over05 },
-        { pick: 'Under 3.5', odd: item.under35 },
-      ],
-    };
-
-    return {
-      id: `fix-${index + 1}-${normalizeTeamName(item.home).substring(0, 4)}-${normalizeTeamName(item.away).substring(0, 4)}`,
-      homeTeam: item.home,
-      awayTeam: item.away,
-      league: item.league,
-      kickoffTime: kickoffIso,
-      status: 'SCHEDULED',
-      bookies,
-      markets: defaultMarkets,
-      companyOdds: {
-        'sportybet:ke': sportyMarkets,
-        'betpawa:ke': pawaMarkets,
-      },
-    };
+  const response = await fetch(url.toString(), {
+    headers: DEFAULT_HEADERS,
+    next: { revalidate: 60 },
   });
+
+  if (!response.ok) {
+    throw new Error(`SportyBet upcoming events API returned ${response.status}`);
+  }
+
+  const data: SportyBetApiResponse = await response.json();
+  if (data.bizCode !== undefined && data.bizCode !== 10000) {
+    throw new Error(`SportyBet API bizCode ${data.bizCode}: ${data.message || 'unknown'}`);
+  }
+
+  const tournaments = data.data?.tournaments || [];
+  const events: SportyBetRawEvent[] = [];
+  for (const t of tournaments) {
+    for (const e of t.events || []) {
+      e._tournamentName = t.name || '';
+      e._categoryName = t.categoryName || '';
+      events.push(e);
+    }
+  }
+  return events;
 }
 
-/**
- * Main odds fetcher: fetches from The Odds API if apiKey exists,
- * or gracefully returns the realistic upcoming fixtures with company tags.
- */
-export async function fetchLiveOdds(): Promise<{ games: StandardGame[]; source: 'api' | 'fallback' }> {
-  const apiKey = process.env.ODDS_API_KEY;
+export async function fetchLiveOdds(): Promise<{
+  games: StandardGame[];
+  source: 'api';
+}> {
+  // Fetch a few pages in parallel (pageSize 50 × 3 ≈ 150 events) — no N+1 detail calls
+  const pageSize = 50;
+  const timelineHours = 48;
+  const pageCount = 3;
 
-  if (apiKey) {
-    try {
-      const sports = [
-        'soccer_epl',
-        'soccer_spain_la_liga',
-        'soccer_germany_bundesliga',
-        'soccer_italy_serie_a',
-        'soccer_france_ligue_one',
-        'soccer_uefa_champs_league',
-      ];
+  const pages = await Promise.all(
+    Array.from({ length: pageCount }, (_, i) => fetchPage(i + 1, pageSize, timelineHours))
+  );
 
-      const allGames: StandardGame[] = [];
+  const allGames: StandardGame[] = [];
+  const seen = new Set<string>();
 
-      for (const sport of sports) {
-        const url = `https://api.the-odds-api.com/v4/sports/${sport}/odds/?apiKey=${encodeURIComponent(
-          apiKey
-        )}&regions=eu&markets=h2h,totals&oddsFormat=decimal`;
-
-        const res = await fetch(url, { next: { revalidate: 120 } });
-        if (!res.ok) {
-          console.warn(`[The Odds API] Response status ${res.status} for sport ${sport}`);
-          continue;
-        }
-
-        const data: TheOddsApiGame[] = await res.json();
-        if (Array.isArray(data)) {
-          for (const item of data) {
-            const mapped = mapOddsApiGame(item);
-            if (mapped) {
-              allGames.push(mapped);
-            }
-          }
-        }
+  for (const events of pages) {
+    for (const raw of events) {
+      const mapped = mapEvent(raw, raw._tournamentName || '', raw._categoryName || '');
+      if (mapped && !seen.has(mapped.id)) {
+        seen.add(mapped.id);
+        allGames.push(mapped);
       }
-
-      if (allGames.length > 0) {
-        return { games: allGames, source: 'api' };
-      }
-    } catch (err) {
-      console.warn('[The Odds API] Fetch failed, falling back to local dataset', err);
     }
   }
 
-  const fallbackGames = generateRealisticUpcomingGames();
-  return { games: fallbackGames, source: 'fallback' };
+  if (allGames.length === 0) {
+    throw new Error('No upcoming events found from SportyBet API');
+  }
+
+  return { games: allGames, source: 'api' };
 }

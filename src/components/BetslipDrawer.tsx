@@ -52,7 +52,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
   const [activeTab, setActiveTab] = useState<'picks' | 'simulator'>('picks');
 
   // Active target company for the slip
-  const targetBookie: BookieId = selectedCompany === 'ALL' ? 'betpawa:ke' : selectedCompany;
+  const targetBookie: BookieId = selectedCompany === 'ALL' ? 'sportybet:ke' : selectedCompany;
   const bookieConfig = BOOKIE_CONFIGS[targetBookie];
 
   // Base calculations
@@ -120,8 +120,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
     return null;
   }
 
-  const quickStakes =
-    targetBookie === 'betpawa:ke' ? [1, 10, 20, 50, 100, 200, 500] : [15, 30, 50, 100, 200, 500, 1000];
+  const quickStakes = [15, 30, 50, 100, 200, 500, 1000];
 
   return (
     <>
@@ -245,30 +244,20 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                     </button>
                   </div>
 
-                  {/* Target Bookie selector */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-slate-400 hidden sm:inline">Bookie:</span>
-                    <button
-                      onClick={() => onCompanyChange('betpawa:ke')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                        targetBookie === 'betpawa:ke'
-                          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
-                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-                      }`}
-                    >
-                      betPawa
-                    </button>
-                    <button
-                      onClick={() => onCompanyChange('sportybet:ke')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                        targetBookie === 'sportybet:ke'
-                          ? 'bg-red-500/20 text-red-400 border-red-500/50'
-                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-                      }`}
-                    >
-                      SportyBet
-                    </button>
-                  </div>
+                   {/* Target Bookie selector */}
+                   <div className="flex items-center gap-2">
+                     <span className="text-[11px] text-slate-400 hidden sm:inline">Bookie:</span>
+                     <button
+                       onClick={() => onCompanyChange('sportybet:ke')}
+                       className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                         targetBookie === 'sportybet:ke'
+                           ? 'bg-red-500/20 text-red-400 border-red-500/50'
+                           : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                       }`}
+                     >
+                       SportyBet
+                     </button>
+                   </div>
                 </div>
 
                 {/* TAB 1: MATCH PICKS LIST */}
@@ -343,7 +332,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                           type="range"
                           min={bookieConfig.minStake}
                           max="2000"
-                          step={targetBookie === 'betpawa:ke' ? '5' : '10'}
+                          step="10"
                           value={Math.min(stake, 2000)}
                           onChange={(e) => onStakeChange(parseInt(e.target.value) || bookieConfig.minStake)}
                           className="w-full accent-amber-400 cursor-pointer h-2 bg-slate-800 rounded-lg"
@@ -545,7 +534,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                         <input
                           type="number"
                           min={bookieConfig.minStake}
-                          step={targetBookie === 'betpawa:ke' ? '1' : '10'}
+                          step="10"
                           value={stake}
                           onChange={(e) =>
                             onStakeChange(

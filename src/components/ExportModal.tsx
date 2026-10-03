@@ -54,20 +54,25 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const generateCode = useCallback(async (bookie: BookieId) => {
     setLoading(true);
     setError(null);
+    setResult(null);
     try {
+      // Server-side proxy avoids browser CORS blocks against sportybet.com
       const res = await fetch('/api/generate-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           destination_bookie: bookie,
           selections,
-          stake,
         }),
       });
-
-      const data = await res.json();
+      const data: BookingCodeResponse = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to generate destination booking code.');
+        throw new Error(
+          data.error || 'Failed to generate booking code. SportyBet may be unreachable or markets expired.'
+        );
+      }
+      if (!data.bookingCode) {
+        throw new Error('SportyBet did not return a booking code.');
       }
       setResult(data);
     } catch (err: unknown) {
@@ -76,7 +81,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [selections, stake]);
+  }, [selections]);
 
   useEffect(() => {
     if (isOpen && selections.length > 0) {
@@ -137,7 +142,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white">Generate Booking Code</h3>
-              <p className="text-xs text-slate-400">Target Kenya Bookmakers (SportyBet & betPawa)</p>
+              <p className="text-xs text-slate-400">Target Kenya Bookmakers (SportyBet)</p>
             </div>
           </div>
           <button
@@ -148,42 +153,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </button>
         </div>
 
-        {/* Modal Content */}
-        <div className="p-5 overflow-y-auto space-y-5 flex-1">
-          {/* Bookie Switcher Tabs */}
-          <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-2">
-              Select Destination Bookmaker:
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              {(['betpawa:ke', 'sportybet:ke'] as BookieId[]).map((bookieId) => {
-                const cfg = BOOKIE_CONFIGS[bookieId];
-                const active = selectedBookie === bookieId;
-                return (
-                  <button
-                    key={bookieId}
-                    type="button"
-                    onClick={() => setSelectedBookie(bookieId)}
-                    className={`p-3 rounded-xl border text-left flex flex-col justify-between transition-all ${
-                      active
-                        ? bookieId === 'betpawa:ke'
-                          ? 'bg-emerald-500/15 border-emerald-500 text-white shadow-md shadow-emerald-950/40 ring-1 ring-emerald-500'
-                          : 'bg-red-500/15 border-red-500 text-white shadow-md shadow-red-950/40 ring-1 ring-red-500'
-                        : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-white">{cfg.name}</span>
-                      <span className="text-sm">🇰🇪</span>
-                    </div>
-                    <span className={`text-[11px] font-mono ${cfg.badgeText}`}>{cfg.tagline}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Loading State */}
+          {/* Modal Content */}
+          <div className="p-5 overflow-y-auto space-y-5 flex-1">
+            {/* Loading State */}
           {loading && (
             <div className="py-8 text-center space-y-3">
               <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
@@ -215,7 +187,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <div className="space-y-4">
               <div
                 className={`p-4 bg-[#090e18] border-2 rounded-2xl text-center space-y-2 relative overflow-hidden ${
-                  selectedBookie === 'betpawa:ke' ? 'border-emerald-500/50' : 'border-red-500/50'
+                  'border-red-500/50'
                 }`}
               >
                 <span className="text-[11px] font-mono uppercase tracking-widest text-slate-400 block">
@@ -225,7 +197,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <div className="flex items-center justify-center gap-3 py-1">
                   <span
                     className={`text-2xl sm:text-3xl font-mono font-black tracking-wider select-all ${
-                      selectedBookie === 'betpawa:ke' ? 'text-emerald-400' : 'text-red-400'
+                      'text-red-400'
                     }`}
                   >
                     {result.bookingCode}
@@ -233,9 +205,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   <button
                     onClick={handleCopy}
                     className={`p-2 rounded-xl transition-all font-bold active:scale-90 ${
-                      selectedBookie === 'betpawa:ke'
-                        ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
-                        : 'bg-red-500 hover:bg-red-400 text-white'
+                      'bg-red-500 hover:bg-red-400 text-white'
                     }`}
                     title="Copy Booking Code"
                   >
@@ -293,11 +263,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   href={BOOKIE_CONFIGS[selectedBookie].homeUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={`w-full py-2.5 px-4 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors shadow-md ${
-                    selectedBookie === 'betpawa:ke'
-                      ? 'bg-emerald-600 hover:bg-emerald-500'
-                      : 'bg-red-600 hover:bg-red-500'
-                  }`}
+                   className={`w-full py-2.5 px-4 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors shadow-md ${
+                     'bg-red-600 hover:bg-red-500'
+                   }`}
                 >
                   <span>Open {BOOKIE_CONFIGS[selectedBookie].name}</span>
                   <ExternalLink className="w-4 h-4" />
@@ -305,17 +273,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
                 <div className="grid grid-cols-2 gap-2">
                   <a
-                    href={
-                      selectedBookie === 'sportybet:ke'
-                        ? BOOKIE_CONFIGS['betpawa:ke'].homeUrl
-                        : BOOKIE_CONFIGS['sportybet:ke'].homeUrl
-                    }
+                    href={BOOKIE_CONFIGS['sportybet:ke'].bookingUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors border border-slate-700"
                   >
                     <span>
-                      Open {selectedBookie === 'sportybet:ke' ? 'betPawa' : 'SportyBet'}
+                      Open SportyBet
                     </span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>

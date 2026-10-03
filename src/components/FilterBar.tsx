@@ -12,7 +12,6 @@ interface FilterBarProps {
   totalEligibleMatches: number;
   companyCounts: {
     all: number;
-    betpawa: number;
     sportybet: number;
   };
   onShuffleAndPick: () => void;
@@ -36,7 +35,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   return (
     <div className="bg-[#111927] border border-slate-800 rounded-2xl p-4 md:p-6 shadow-xl mb-6">
-      {/* SECTION 1: Company Filter (betPawa vs SportyBet vs All) */}
+      {/* SECTION 1: Company Filter (SportyBet vs All) */}
       <div className="pb-5 mb-5 border-b border-slate-800/80">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2">
@@ -50,7 +49,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {/* Option 1: ALL COMPANIES */}
           <button
             onClick={() => updateCriteria('selectedCompany', 'ALL')}
@@ -72,7 +71,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               </div>
               <div>
                 <span className="text-xs font-bold text-white block">All Bookmakers</span>
-                <span className="text-[10px] text-slate-400">betPawa & SportyBet</span>
+                <span className="text-[10px] text-slate-400">SportyBet</span>
               </div>
             </div>
             <div className="text-right">
@@ -82,35 +81,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </div>
           </button>
 
-          {/* Option 2: BETPAWA KENYA */}
-          <button
-            onClick={() => updateCriteria('selectedCompany', 'betpawa:ke')}
-            className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-              criteria.selectedCompany === 'betpawa:ke'
-                ? 'bg-gradient-to-r from-emerald-950/40 to-slate-900 border-emerald-500 text-white shadow-lg shadow-emerald-950/40 ring-1 ring-emerald-500/50'
-                : 'bg-slate-900/60 border-slate-800/90 text-slate-400 hover:border-emerald-500/30 hover:text-slate-300'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center font-bold text-xs text-emerald-400">
-                PAW
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-white">betPawa Kenya</span>
-                  <span className="text-xs">🇰🇪</span>
-                </div>
-                <span className="text-[10px] text-emerald-400 font-medium">Up to 1000% Win Bonus</span>
-              </div>
-            </div>
-            <div className="text-right">
-              <span className="text-xs font-mono font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-                {companyCounts.betpawa}
-              </span>
-            </div>
-          </button>
-
-          {/* Option 3: SPORTYBET KENYA */}
+          {/* Option 2: SPORTYBET KENYA */}
           <button
             onClick={() => updateCriteria('selectedCompany', 'sportybet:ke')}
             className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
