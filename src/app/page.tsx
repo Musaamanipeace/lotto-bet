@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { StandardGame, FilterCriteria, SelectedPick, BookieId } from '@/types';
+import { StandardGame, FilterCriteria, SelectedPick, BookieId, UserProfile } from '@/types';
 import { DEFAULT_FILTER_CRITERIA, BOOKIE_CONFIGS } from '@/lib/constants';
 import {
   evaluateAndFilterGames,
@@ -14,6 +14,8 @@ import { FilterBar } from '@/components/FilterBar';
 import { GameCard } from '@/components/GameCard';
 import { BetslipDrawer } from '@/components/BetslipDrawer';
 import { ExportModal } from '@/components/ExportModal';
+import { AccountPanel } from '@/components/AccountPanel';
+import { AiCoachPanel } from '@/components/AiCoachPanel';
 import {
   Dices,
   RefreshCw,
@@ -39,6 +41,8 @@ export default function HomePage() {
   const [stake, setStake] = useState<number>(50);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'picked'>('all');
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [lastBookingCode, setLastBookingCode] = useState<string | undefined>();
 
   // Fetch games from /api/odds
   const loadOdds = async () => {
@@ -93,13 +97,7 @@ export default function HomePage() {
     return map;
   }, [selectedPicks]);
 
-  // Initial automatic random pick once games are loaded
-  useEffect(() => {
-    if (evaluations.length > 0 && selectedPicks.length === 0) {
-      const initialPicks = pickRandomSelections(evaluations, criteria.pickCount);
-      setSelectedPicks(initialPicks);
-    }
-  }, [evaluations, criteria.pickCount, selectedPicks.length]);
+  // Betslip starts empty — user adds picks via Add Next / AI add
 
   // Handle changing target company
   const handleCompanyChange = (bookie: 'ALL' | BookieId) => {
@@ -470,6 +468,19 @@ export default function HomePage() {
               })}
           </div>
         )}
+        <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-4 pb-28">
+          <AccountPanel
+            selections={selectedPicks}
+            stake={stake}
+            bookingCode={lastBookingCode}
+            onLoadSlip={(sels) => {
+              setSelectedPicks(sels);
+              setActiveTab('picked');
+            }}
+            onUserChange={setUser}
+          />
+          <AiCoachPanel selections={selectedPicks} games={games} user={user} />
+        </div>
       </main>
 
       {/* Docked Betslip Drawer */}

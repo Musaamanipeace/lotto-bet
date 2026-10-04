@@ -412,10 +412,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </p>
         </div>
 
-        {/* Even/Odd Goals Toggle */}
+        {/* Both Teams To Score (GG) */}
         <div
           className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
-            criteria.enableEvenOdd
+            criteria.enableBtts
               ? 'bg-[#0f172a] border-cyan-500/40 shadow-sm'
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
           }`}
@@ -424,18 +424,18 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={criteria.enableEvenOdd}
-                onChange={(e) => updateCriteria('enableEvenOdd', e.target.checked)}
+                checked={criteria.enableBtts}
+                onChange={(e) => updateCriteria('enableBtts', e.target.checked)}
                 className="w-4 h-4 rounded text-cyan-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
               />
-              <span className="text-xs font-bold text-cyan-300">Even/Odd</span>
+              <span className="text-xs font-bold text-cyan-300">Both Teams Score (GG)</span>
             </label>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-cyan-950/60 text-cyan-400 border border-cyan-800/50">
-              Total Goals
+              GG / NG
             </span>
           </div>
           <p className="text-[11px] text-slate-400 mt-2">
-            Picks whether total match goals will be even or odd — single-leg market.
+            Prefer GG (both teams score) when available on SportyBet market 29.
           </p>
         </div>
       </div>

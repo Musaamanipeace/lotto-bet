@@ -145,6 +145,42 @@ function findSportyBetIds(
     }
   }
 
+  // --- BTTS / GG-NG (market 29) ---
+  if (
+    lowerMarket.includes('btts') ||
+    lowerMarket.includes('both teams') ||
+    lowerMarket === 'gg' ||
+    lowerMarket === 'ng' ||
+    lowerPick === 'gg' ||
+    lowerPick === 'ng' ||
+    lowerPick === 'yes' ||
+    lowerPick === 'no'
+  ) {
+    const m =
+      sportyMarkets.find((x) => x.marketId === '29') ||
+      sportyMarkets.find((x) => {
+        const n = x.name.toLowerCase();
+        return n.includes('both teams') || n.includes('gg') || n.includes('btts');
+      });
+    if (m) {
+      const wantGg = lowerPick === 'gg' || lowerPick === 'yes' || lowerMarket.includes('gg');
+      const wantNg = lowerPick === 'ng' || lowerPick === 'no';
+      let outcome = m.outcomes.find((o) => {
+        const n = o.name.toLowerCase();
+        if (wantNg) return n === 'no' || n.includes('ng') || n.includes('not');
+        return n === 'yes' || n.includes('gg') || n.includes('both');
+      });
+      if (!outcome) {
+        outcome = m.outcomes.find((o) =>
+          wantNg ? o.outcomeId === '76' : o.outcomeId === '74'
+        );
+      }
+      if (outcome) {
+        return { marketId: m.marketId || '29', outcomeId: outcome.outcomeId, specifier: m.specifier ?? null };
+      }
+    }
+  }
+
   // Generic name fallback (last resort)
   for (const market of sportyMarkets) {
     if (
@@ -259,7 +295,7 @@ export function evaluateAndFilterGames(
         sportyIds.length > 0 &&
         sportyIds.some(
           (m) =>
-            (m.marketId === '1' || m.marketId === '10' || m.marketId === '18') &&
+            (m.marketId === '1' || m.marketId === '10' || m.marketId === '18' || m.marketId === '29') &&
             m.outcomes.length > 0
         );
       if (!hasBookableMarkets) {
@@ -397,11 +433,12 @@ export function evaluateAndFilterGames(
       }
     }
 
-    // Even/Odd goals
-    if (criteria.enableEvenOdd && activeMarkets.evenOdd) {
-      const eo = activeMarkets.evenOdd;
-      const ids = findSportyBetIds(sportyIds, 'Even/Odd', eo.pick);
-      if (ids.marketId && ids.outcomeId) {
+    // Both teams to score (GG / NG)
+    if (criteria.enableBtts && activeMarkets.btts) {
+      for (const bt of activeMarkets.btts) {
+        if (bt.odd <= 1.01) continue;
+        const ids = findSportyBetIds(sportyIds, 'BTTS', bt.pick);
+        if (!ids.marketId || !ids.outcomeId) continue;
         eligiblePicks.push({
           gameId: game.id,
           eventId: game.eventId,
@@ -409,12 +446,12 @@ export function evaluateAndFilterGames(
           awayTeam: game.awayTeam,
           league: game.league,
           kickoffTime: game.kickoffTime,
-          marketName: eo.pick,
-          pick: eo.pick,
-          odd: eo.odd,
+          marketName: 'BTTS',
+          pick: bt.pick,
+          odd: bt.odd,
           marketId: ids.marketId,
           outcomeId: ids.outcomeId,
-          specifier: ids.specifier ?? null,
+          specifier: ids.specifier,
           bookie: pickBookie,
         });
       }

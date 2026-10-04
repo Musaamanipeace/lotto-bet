@@ -15,7 +15,7 @@ export const DEFAULT_FILTER_CRITERIA: FilterCriteria = {
   overGoalLine: '0.5',
   enableUnder: true,
   underGoalLine: '3.5',
-  enableEvenOdd: true,
+  enableBtts: true,
   timeframeHours: 24,
   pickCount: 30,
   searchQuery: '',
@@ -89,7 +89,7 @@ export const SPORTYBET_MARKET_IDS = {
   MATCH_WINNER: '1',
   DOUBLE_CHANCE: '10',
   OVER_UNDER: '18',
-  EVEN_ODD: '14',
+  BTTS: '29', // GG/NG both teams to score
 } as const;
 
 export const SPORTYBET_API_BASE = 'https://www.sportybet.com/api/ke';
@@ -109,8 +109,9 @@ export const MARKET_NAME_TO_ID = new Map<string, string>([
   ['Over 1.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
   ['Under 3.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
   ['Under 4.5', SPORTYBET_MARKET_IDS.OVER_UNDER],
-  ['Even', SPORTYBET_MARKET_IDS.EVEN_ODD],
-  ['Odd', SPORTYBET_MARKET_IDS.EVEN_ODD],
+  ['BTTS', SPORTYBET_MARKET_IDS.BTTS],
+  ['GG', SPORTYBET_MARKET_IDS.BTTS],
+  ['NG', SPORTYBET_MARKET_IDS.BTTS],
 ]);
 
 export function getMarketIdForPick(marketName: string): string | undefined {
@@ -121,6 +122,7 @@ export function isSportyBetMarket(market: SportyBetMarket): boolean {
   return (
     market.marketId === SPORTYBET_MARKET_IDS.MATCH_WINNER ||
     market.marketId === SPORTYBET_MARKET_IDS.DOUBLE_CHANCE ||
-    market.marketId === SPORTYBET_MARKET_IDS.OVER_UNDER
+    market.marketId === SPORTYBET_MARKET_IDS.OVER_UNDER ||
+    market.marketId === SPORTYBET_MARKET_IDS.BTTS
   );
 }

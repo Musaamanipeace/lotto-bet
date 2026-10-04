@@ -68,6 +68,7 @@ const REQUESTED_MARKET_IDS = [
   SPORTYBET_MARKET_IDS.MATCH_WINNER, // 1
   SPORTYBET_MARKET_IDS.DOUBLE_CHANCE, // 10
   SPORTYBET_MARKET_IDS.OVER_UNDER, // 18
+  SPORTYBET_MARKET_IDS.BTTS, // 29 GG/NG
 ].join(',');
 
 function parseOdd(value: string | number | undefined): number {
@@ -178,26 +179,25 @@ function findOverUnder(
   return undefined;
 }
 
-function findEvenOddOutcome(markets: SportyBetMarket[]): { even: SportyBetOutcome | undefined; odd: SportyBetOutcome | undefined } {
-  const even: SportyBetOutcome | undefined = undefined;
-  const odd: SportyBetOutcome | undefined = undefined;
-  for (const m of markets) {
-    if (m.marketId === SPORTYBET_MARKET_IDS.EVEN_ODD) {
-      const e = m.outcomes.find((o) => o.name.toLowerCase().includes('even'));
-      const o = m.outcomes.find((o) => o.name.toLowerCase().includes('odd'));
-      return { even: e, odd: o };
-    }
-  }
-  // Also try markets whose name includes "even" or "odd"
-  for (const m of markets) {
-    const lowerName = m.name.toLowerCase();
-    if (lowerName.includes('even') || lowerName.includes('odd') || lowerName.includes('goal total')) {
-      const e = m.outcomes.find((o) => o.name.toLowerCase().includes('even'));
-      const o = m.outcomes.find((o) => o.name.toLowerCase().includes('odd'));
-      if (e || o) return { even: e, odd: o };
-    }
-  }
-  return { even, odd };
+function findBttsOutcomes(markets: SportyBetMarket[]): { gg?: SportyBetOutcome; ng?: SportyBetOutcome } {
+  const m =
+    markets.find((x) => x.marketId === SPORTYBET_MARKET_IDS.BTTS) ||
+    markets.find((x) => {
+      const n = x.name.toLowerCase();
+      return n.includes('both teams') || n.includes('gg') || n.includes('btts') || n.includes('goal/goal');
+    });
+  if (!m) return {};
+  const gg =
+    m.outcomes.find((o) => {
+      const n = o.name.toLowerCase();
+      return n === 'yes' || n.includes('gg') || n === 'both teams score' || n.includes('both to score');
+    }) || m.outcomes.find((o) => o.outcomeId === '74');
+  const ng =
+    m.outcomes.find((o) => {
+      const n = o.name.toLowerCase();
+      return n === 'no' || n.includes('ng') || n.includes('not score') || n.includes('no goal');
+    }) || m.outcomes.find((o) => o.outcomeId === '76');
+  return { gg, ng };
 }
 
 function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: string): StandardGame | null {
@@ -248,7 +248,7 @@ function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: 
   const over15 = findOverUnder(sportyMarkets, true, 1.5);
   const under35 = findOverUnder(sportyMarkets, false, 3.5);
   const under45 = findOverUnder(sportyMarkets, false, 4.5);
-  const { even: evenOutcome, odd: oddOutcome } = findEvenOddOutcome(sportyMarkets);
+  const { gg: ggOutcome, ng: ngOutcome } = findBttsOutcomes(sportyMarkets);
 
   const ouPicks: { pick: string; odd: number }[] = [];
   if (over05) ouPicks.push({ pick: 'Over 0.5', odd: over05.odd });
@@ -262,13 +262,12 @@ function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: 
     draw: drawOutcome ? { pick: 'X', odd: drawOutcome.odd } : undefined,
     awayWin: awayOutcome ? { pick: '2', odd: awayOutcome.odd } : undefined,
     overUnder: ouPicks.length > 0 ? ouPicks : undefined,
-    evenOdd: evenOutcome && oddOutcome
-      ? { pick: 'Even', odd: evenOutcome.odd }
-      : evenOutcome
-        ? { pick: 'Even', odd: evenOutcome.odd }
-        : oddOutcome
-          ? { pick: 'Odd', odd: oddOutcome.odd }
-          : undefined,
+    btts: (() => {
+      const arr: { pick: 'GG' | 'NG'; odd: number }[] = [];
+      if (ggOutcome) arr.push({ pick: 'GG', odd: ggOutcome.odd });
+      if (ngOutcome) arr.push({ pick: 'NG', odd: ngOutcome.odd });
+      return arr.length ? arr : undefined;
+    })(),
   };
 
   return {

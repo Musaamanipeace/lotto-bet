@@ -12,7 +12,8 @@ export interface GameMarkets {
   draw?: { pick: 'X'; odd: number };
   awayWin?: { pick: '2'; odd: number };
   overUnder?: { pick: 'Over 0.5' | 'Under 3.5' | 'Over 1.5' | 'Under 4.5' | string; odd: number }[];
-  evenOdd?: { pick: 'Even' | 'Odd'; odd: number };
+  /** Both teams to score (GG / NG) */
+  btts?: { pick: 'GG' | 'NG'; odd: number }[];
 }
 
 export interface SportyBetOutcome {
@@ -50,7 +51,7 @@ export interface SelectedPick {
   awayTeam: string;
   league: string;
   kickoffTime: string;
-  marketName: 'Double Chance' | 'Home Win' | 'Over 0.5' | 'Under 3.5' | 'Over 1.5' | 'Under 4.5' | 'Even' | 'Odd' | string;
+  marketName: 'Double Chance' | 'Home Win' | 'Over 0.5' | 'Under 3.5' | 'Over 1.5' | 'Under 4.5' | 'BTTS' | string;
   pick: string;
   odd: number;
   marketId?: string;
@@ -74,13 +75,43 @@ export interface FilterCriteria {
   overGoalLine: '0.5' | '1.5';
   enableUnder: boolean;
   underGoalLine: '3.5' | '4.5';
-  enableEvenOdd: boolean;
+  enableBtts: boolean;
   timeframeHours: number | null;
   pickCount: number;
   searchQuery: string;
   selectedLeague: string;
   /** When true, only games with complete SportyBet market IDs (bookable) are used */
   requireFullMarketData: boolean;
+}
+
+export type SlipResultStatus = 'open' | 'won' | 'lost' | 'void' | 'unknown';
+
+export interface SavedBetslip {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  selections: SelectedPick[];
+  totalOdds: number;
+  bookingCode?: string;
+  stake?: number;
+  status: SlipResultStatus;
+  notes?: string;
+  /** ISO kickoff of earliest leg — used to flag expired tickets */
+  earliestKickoff?: string;
+}
+
+export interface UserProfile {
+  email: string;
+  /** SHA-256 hex of password+salt — client-side only, not a bank */
+  passwordHash: string;
+  createdAt: string;
+  /** Optional LLM API key stored only in this browser */
+  llmApiKey?: string;
+  /** openai | gemini | compatible */
+  llmProvider?: 'openai' | 'gemini' | 'compatible';
+  llmBaseUrl?: string;
+  llmModel?: string;
 }
 
 export interface BookingCodeResponse {
