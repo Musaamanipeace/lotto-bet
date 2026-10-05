@@ -18,9 +18,8 @@ import { AccountPanel } from '@/components/AccountPanel';
 import { AiCoachPanel } from '@/components/AiCoachPanel';
 import {
   Dices,
-  RefreshCw,
-  Sparkles,
-  ShieldCheck,
+   RefreshCw,
+   ShieldCheck,
   CheckCheck,
   AlertTriangle,
   Flame,
@@ -38,11 +37,37 @@ export default function HomePage() {
 
   const [criteria, setCriteria] = useState<FilterCriteria>(DEFAULT_FILTER_CRITERIA);
   const [selectedPicks, setSelectedPicks] = useState<SelectedPick[]>([]);
+  /** Undo stack: previous slip states (most recent at end) */
+  const [picksHistory, setPicksHistory] = useState<SelectedPick[][]>([]);
   const [stake, setStake] = useState<number>(50);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'picked'>('all');
   const [user, setUser] = useState<UserProfile | null>(null);
   const [lastBookingCode, setLastBookingCode] = useState<string | undefined>();
+
+  /** Push current slip onto undo history, then apply next state */
+  const commitPicks = (next: SelectedPick[] | ((prev: SelectedPick[]) => SelectedPick[])) => {
+    setSelectedPicks((prev) => {
+      const resolved = typeof next === 'function' ? next(prev) : next;
+      // Avoid stacking identical snapshots
+      const same =
+        prev.length === resolved.length &&
+        prev.every((p, i) => p.gameId === resolved[i]?.gameId && p.pick === resolved[i]?.pick);
+      if (!same) {
+        setPicksHistory((h) => [...h.slice(-29), prev]);
+      }
+      return resolved;
+    });
+  };
+
+  const handleUndo = () => {
+    setPicksHistory((h) => {
+      if (h.length === 0) return h;
+      const prev = h[h.length - 1];
+      setSelectedPicks(prev);
+      return h.slice(0, -1);
+    });
+  };
 
   // Fetch games from /api/odds
   const loadOdds = async () => {
@@ -107,20 +132,13 @@ export default function HomePage() {
     }
   };
 
-  // Shuffle & replace entire slip using Fisher-Yates
-  const handleShuffleAndPick = () => {
-    if (evaluations.length === 0) return;
-    const newPicks = pickRandomSelections(evaluations, criteria.pickCount);
-    setSelectedPicks(newPicks);
-  };
-
   /** Enable full-market-data filter and rebuild slip — for testing real booking codes */
   const handleUseBookableOnly = () => {
     const next: FilterCriteria = { ...criteria, requireFullMarketData: true };
     setCriteria(next);
     const evals = evaluateAndFilterGames(games, next);
     const newPicks = pickRandomSelections(evals, next.pickCount);
-    setSelectedPicks(newPicks);
+    commitPicks(newPicks);
   };
 
   /**
@@ -128,45 +146,34 @@ export default function HomePage() {
    * Filters stay as-is so you can tweak and add again; use resetFilters to clear criteria only.
    */
   const handleAddAiPicks = (count: number) => {
-    const n = Math.max(1, Math.min(50, count || criteria.pickCount));
+    const n = Math.max(1, Math.min(100, count || criteria.pickCount));
     const exclude = new Set(selectedPicks.map((p) => p.gameId));
     const fresh = pickSmartSelections(evaluations, n, exclude);
     if (fresh.length === 0) return;
-    setSelectedPicks((prev) => mergePicksIntoSlip(prev, fresh));
+    commitPicks((prev) => mergePicksIntoSlip(prev, fresh));
   };
 
-  /** Same as AI add but pure random under current filters */
-  const handleAddRandomPicks = (count: number) => {
-    const n = Math.max(1, Math.min(50, count || criteria.pickCount));
+  /**
+   * Pick N: randomly select up to N games from remaining eligible pool
+   * (games that pass current filters and are NOT already on the slip), then APPEND
+   * them to the existing slip. Does not clear or replace the slip.
+   * Re-clicking picks a different random subset from whatever is still remaining.
+   */
+  const handlePickPicks = (count: number) => {
+    const n = Math.max(1, Math.min(100, count || criteria.pickCount));
     const exclude = new Set(selectedPicks.map((p) => p.gameId));
     const pool = evaluations.filter((ev) => !exclude.has(ev.game.id));
     const fresh = pickRandomSelections(pool, n);
     if (fresh.length === 0) return;
-    setSelectedPicks((prev) => mergePicksIntoSlip(prev, fresh));
+    commitPicks((prev) => mergePicksIntoSlip(prev, fresh));
   };
 
   /**
-   * Add the next N unselected games (earliest kickoff first) using current filters.
-   * Keeps all pre-existing picks in the slip — only appends new games.
-   */
-  const handleAddNextPicks = (count: number) => {
-    const n = Math.max(1, Math.min(50, count || criteria.pickCount));
-    const exclude = new Set(selectedPicks.map((p) => p.gameId));
-    const pool = evaluations.filter((ev) => !exclude.has(ev.game.id));
-    const sorted = [...pool].sort(
-      (a, b) => new Date(a.game.kickoffTime).getTime() - new Date(b.game.kickoffTime).getTime()
-    );
-    const fresh = pickRandomSelections(sorted.slice(0, n), n);
-    if (fresh.length === 0) return;
-    setSelectedPicks((prev) => mergePicksIntoSlip(prev, fresh));
-  };
-
-  /**
-   * Remove the last N picks from the slip (highest-risk games / latest additions).
+   * Remove the last N picks from the slip (latest additions).
    */
   const handleRemoveGames = (count: number) => {
-    const n = Math.max(1, Math.min(50, count || criteria.pickCount));
-    setSelectedPicks((prev) => prev.slice(0, Math.max(0, prev.length - n)));
+    const n = Math.max(1, Math.min(100, count || criteria.pickCount));
+    commitPicks((prev) => prev.slice(0, Math.max(0, prev.length - n)));
   };
 
   /** Reset filter criteria to defaults without clearing the betslip */
@@ -176,7 +183,7 @@ export default function HomePage() {
 
   // Toggle selection on/off for a given pick
   const handleTogglePick = (pick: SelectedPick) => {
-    setSelectedPicks((prev) => {
+    commitPicks((prev) => {
       const exists = prev.some((p) => p.gameId === pick.gameId);
       if (exists) {
         return prev.filter((p) => p.gameId !== pick.gameId);
@@ -188,7 +195,7 @@ export default function HomePage() {
 
   // Select a specific market pick for a match
   const handleSelectSpecificPick = (pick: SelectedPick) => {
-    setSelectedPicks((prev) => {
+    commitPicks((prev) => {
       const filtered = prev.filter((p) => p.gameId !== pick.gameId);
       return [...filtered, pick];
     });
@@ -196,12 +203,12 @@ export default function HomePage() {
 
   // Remove pick
   const handleRemovePick = (gameId: string) => {
-    setSelectedPicks((prev) => prev.filter((p) => p.gameId !== gameId));
+    commitPicks((prev) => prev.filter((p) => p.gameId !== gameId));
   };
 
   // Clear entire slip
   const handleClearSlip = () => {
-    setSelectedPicks([]);
+    commitPicks([]);
   };
 
   const totalOdds = calculateAccumulatorOdds(selectedPicks);
@@ -319,11 +326,12 @@ export default function HomePage() {
           availableLeagues={availableLeagues}
           totalEligibleMatches={evaluations.length}
           companyCounts={companyCounts}
-         onShuffleAndPick={handleShuffleAndPick}
-         onAddNextPicks={handleAddNextPicks}
-         onRemoveGames={handleRemoveGames}
-         onClearSlip={handleClearSlip}
-       />
+          onPickPicks={handlePickPicks}
+          onRemoveGames={handleRemoveGames}
+          onClearSlip={handleClearSlip}
+          onUndo={handleUndo}
+          canUndo={picksHistory.length > 0}
+        />
 
         {/* Fixtures Section Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -359,13 +367,6 @@ export default function HomePage() {
                 ? 'Showing fixtures for all companies'
                 : `Showing fixtures available on ${BOOKIE_CONFIGS[criteria.selectedCompany].name}`}
             </span>
-            <button
-              onClick={handleShuffleAndPick}
-              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1 border border-slate-700"
-            >
-              <Sparkles className="w-3 h-3 text-emerald-400" />
-              Shuffle
-            </button>
             <button
               onClick={handleUseBookableOnly}
               title="Only fixtures with complete SportyBet market IDs, then shuffle — use this to test real booking codes"
@@ -474,7 +475,7 @@ export default function HomePage() {
             stake={stake}
             bookingCode={lastBookingCode}
             onLoadSlip={(sels) => {
-              setSelectedPicks(sels);
+              commitPicks(sels);
               setActiveTab('picked');
             }}
             onUserChange={setUser}
@@ -490,12 +491,12 @@ export default function HomePage() {
         onCompanyChange={handleCompanyChange}
         onRemovePick={handleRemovePick}
         onClearSlip={handleClearSlip}
-        onShuffleAndPick={handleShuffleAndPick}
-         onAddAiPicks={handleAddAiPicks}
-         onAddRandomPicks={handleAddRandomPicks}
-         onAddNextPicks={handleAddNextPicks}
-         onRemoveGames={handleRemoveGames}
-         onResetFiltersKeepSlip={handleResetFiltersKeepSlip}
+        onAddAiPicks={handleAddAiPicks}
+        onPickPicks={handlePickPicks}
+        onRemoveGames={handleRemoveGames}
+        onResetFiltersKeepSlip={handleResetFiltersKeepSlip}
+        onUndo={handleUndo}
+        canUndo={picksHistory.length > 0}
         defaultAddCount={criteria.pickCount}
         eligibleCount={evaluations.length}
         onOpenExportModal={() => setIsExportModalOpen(true)}

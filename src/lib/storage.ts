@@ -29,12 +29,12 @@ export async function hashPassword(password: string, salt: string): Promise<stri
     .join('');
 }
 
-export function getSessionEmail(): string | null {
+export function getSessionUsername(): string | null {
   return readJson<string | null>(SESSION_KEY, null);
 }
 
-export function setSessionEmail(email: string | null) {
-  if (email) writeJson(SESSION_KEY, email);
+export function setSessionUsername(username: string | null) {
+  if (username) writeJson(SESSION_KEY, username);
   else if (typeof window !== 'undefined') localStorage.removeItem(SESSION_KEY);
 }
 
@@ -43,20 +43,20 @@ export function listUsers(): UserProfile[] {
 }
 
 export async function registerUser(
-  email: string,
+  username: string,
   password: string
 ): Promise<{ ok: true; user: UserProfile } | { ok: false; error: string }> {
-  const normalized = email.trim().toLowerCase();
-  if (!normalized.includes('@') || password.length < 4) {
-    return { ok: false, error: 'Use a valid email and password (min 4 chars).' };
+  const normalized = username.trim().toLowerCase();
+  if (!normalized || password.length < 4) {
+    return { ok: false, error: 'Use a valid username and password (min 4 chars).' };
   }
   const users = listUsers();
-  if (users.some((u) => u.email === normalized)) {
+  if (users.some((u) => u.username === normalized)) {
     return { ok: false, error: 'Account already exists. Sign in instead.' };
   }
   const passwordHash = await hashPassword(password, normalized);
   const user: UserProfile = {
-    email: normalized,
+    username: normalized,
     passwordHash,
     createdAt: new Date().toISOString(),
     llmProvider: 'openai',
@@ -64,67 +64,65 @@ export async function registerUser(
   };
   users.push(user);
   writeJson(USERS_KEY, users);
-  setSessionEmail(normalized);
+  setSessionUsername(normalized);
   return { ok: true, user };
 }
 
 export async function signInUser(
-  email: string,
+  username: string,
   password: string
 ): Promise<{ ok: true; user: UserProfile } | { ok: false; error: string }> {
-  const normalized = email.trim().toLowerCase();
+  const normalized = username.trim().toLowerCase();
   const users = listUsers();
-  const user = users.find((u) => u.email === normalized);
-  if (!user) return { ok: false, error: 'No account with that email.' };
+  const user = users.find((u) => u.username === normalized);
+  if (!user) return { ok: false, error: 'No account with that username.' };
   const hash = await hashPassword(password, normalized);
   if (hash !== user.passwordHash) return { ok: false, error: 'Wrong password.' };
-  setSessionEmail(normalized);
+  setSessionUsername(normalized);
   return { ok: true, user };
 }
 
 export function signOutUser() {
-  setSessionEmail(null);
+  setSessionUsername(null);
 }
 
 export function getCurrentUser(): UserProfile | null {
-  const email = getSessionEmail();
-  if (!email) return null;
-  return listUsers().find((u) => u.email === email) || null;
+  const username = getSessionUsername();
+  if (!username) return null;
+  return listUsers().find((u) => u.username === username) || null;
 }
 
 export function updateCurrentUser(patch: Partial<UserProfile>): UserProfile | null {
-  const email = getSessionEmail();
-  if (!email) return null;
+  const username = getSessionUsername();
+  if (!username) return null;
   const users = listUsers();
-  const idx = users.findIndex((u) => u.email === email);
+  const idx = users.findIndex((u) => u.username === username);
   if (idx < 0) return null;
-  users[idx] = { ...users[idx], ...patch, email: users[idx].email, passwordHash: users[idx].passwordHash };
+  users[idx] = { ...users[idx], ...patch, username: users[idx].username, passwordHash: users[idx].passwordHash };
   writeJson(USERS_KEY, users);
   return users[idx];
 }
 
-function slipsKey(email: string) {
-  return `${SLIPS_KEY}:${email}`;
+function slipsKey(username: string) {
+  return `${SLIPS_KEY}:${username}`;
 }
 
-export function listSavedSlips(email?: string | null): SavedBetslip[] {
-  const e = email || getSessionEmail();
-  if (!e) return [];
-  const slips = readJson<SavedBetslip[]>(slipsKey(e), []);
-  // Auto-mark open slips past last kickoff as unknown if still open
+export function listSavedSlips(username?: string | null): SavedBetslip[] {
+  const u = username || getSessionUsername();
+  if (!u) return [];
+  const slips = readJson<SavedBetslip[]>(slipsKey(u), []);
   const now = Date.now();
   let changed = false;
   for (const s of slips) {
     if (s.status === 'open' && s.earliestKickoff) {
       const t = new Date(s.earliestKickoff).getTime();
-      // 3h after earliest kickoff → mark unknown (user can set won/lost)
       if (!isNaN(t) && now > t + 3 * 3600_000) {
         s.status = 'unknown';
         changed = true;
       }
     }
   }
-  if (changed) writeJson(slipsKey(e), slips);
+  if (changed) writeJson(slipsKey(u), slips);
   return slips;
 }
 
@@ -133,9 +131,9 @@ export function saveBetslip(
   selections: SelectedPick[],
   opts: { bookingCode?: string; stake?: number; notes?: string } = {}
 ): SavedBetslip | null {
-  const email = getSessionEmail();
-  if (!email || selections.length === 0) return null;
-  const slips = listSavedSlips(email);
+  const username = getSessionUsername();
+  if (!username || selections.length === 0) return null;
+  const slips = listSavedSlips(username);
   const earliest = selections
     .map((s) => new Date(s.kickoffTime).getTime())
     .filter((n) => !isNaN(n))
@@ -154,17 +152,54 @@ export function saveBetslip(
     earliestKickoff: earliest ? new Date(earliest).toISOString() : undefined,
   };
   slips.unshift(slip);
-  writeJson(slipsKey(email), slips);
+  writeJson(slipsKey(username), slips);
   return slip;
+}
+
+export function appendToBetslip(
+  slipId: string,
+  newSelections: SelectedPick[]
+): SavedBetslip | null {
+  const username = getSessionUsername();
+  if (!username || newSelections.length === 0) return null;
+  const slips = listSavedSlips(username);
+  const idx = slips.findIndex((s) => s.id === slipId);
+  if (idx < 0) return null;
+
+  const existing = slips[idx];
+  const mergedSelections = [...existing.selections];
+  const existingGameIds = new Set(existing.selections.map((s) => s.gameId));
+
+  for (const pick of newSelections) {
+    if (!existingGameIds.has(pick.gameId)) {
+      mergedSelections.push(pick);
+      existingGameIds.add(pick.gameId);
+    }
+  }
+
+  const earliest = mergedSelections
+    .map((s) => new Date(s.kickoffTime).getTime())
+    .filter((n) => !isNaN(n))
+    .sort((a, b) => a - b)[0];
+
+  slips[idx] = {
+    ...existing,
+    selections: mergedSelections,
+    totalOdds: calculateAccumulatorOdds(mergedSelections),
+    updatedAt: new Date().toISOString(),
+    earliestKickoff: earliest ? new Date(earliest).toISOString() : undefined,
+  };
+  writeJson(slipsKey(username), slips);
+  return slips[idx];
 }
 
 export function updateSavedSlip(
   id: string,
   patch: Partial<SavedBetslip>
 ): SavedBetslip | null {
-  const email = getSessionEmail();
-  if (!email) return null;
-  const slips = listSavedSlips(email);
+  const username = getSessionUsername();
+  if (!username) return null;
+  const slips = listSavedSlips(username);
   const idx = slips.findIndex((s) => s.id === id);
   if (idx < 0) return null;
   slips[idx] = {
@@ -174,22 +209,22 @@ export function updateSavedSlip(
     createdAt: slips[idx].createdAt,
     updatedAt: new Date().toISOString(),
   };
-  writeJson(slipsKey(email), slips);
+  writeJson(slipsKey(username), slips);
   return slips[idx];
 }
 
 export function deleteSavedSlip(id: string): boolean {
-  const email = getSessionEmail();
-  if (!email) return false;
-  const slips = listSavedSlips(email).filter((s) => s.id !== id);
-  writeJson(slipsKey(email), slips);
+  const username = getSessionUsername();
+  if (!username) return false;
+  const slips = listSavedSlips(username).filter((s) => s.id !== id);
+  writeJson(slipsKey(username), slips);
   return true;
 }
 
 export function deleteAllSavedSlips(): number {
-  const email = getSessionEmail();
-  if (!email) return 0;
-  const n = listSavedSlips(email).length;
-  writeJson(slipsKey(email), []);
+  const username = getSessionUsername();
+  if (!username) return 0;
+  const n = listSavedSlips(username).length;
+  writeJson(slipsKey(username), []);
   return n;
 }

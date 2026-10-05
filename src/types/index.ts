@@ -31,17 +31,18 @@ export interface SportyBetMarket {
 
 export interface StandardGame {
   id: string;
-  eventId?: string; // SportyBet Sportradar event ID (e.g., sr:match:xxxxx)
+  eventId?: string;
   homeTeam: string;
   awayTeam: string;
   league: string;
   country?: string;
-  kickoffTime: string; // ISO 8601 string
+  kickoffTime: string;
   status: 'SCHEDULED' | 'TIMED' | 'IN_PLAY' | 'CANCELLED' | 'POSTPONED';
   bookies: BookieId[];
   markets: GameMarkets;
   companyOdds?: Partial<Record<BookieId, GameMarkets>>;
   sportyMarkets?: SportyBetMarket[];
+  insights?: MatchInsights;
 }
 
 export interface SelectedPick {
@@ -73,9 +74,18 @@ export interface FilterCriteria {
   awayWinMax: number;
   enableOver: boolean;
   overGoalLine: '0.5' | '1.5';
+  /** Odds range for Over markets */
+  overMin: number;
+  overMax: number;
   enableUnder: boolean;
   underGoalLine: '3.5' | '4.5';
+  /** Odds range for Under markets */
+  underMin: number;
+  underMax: number;
   enableBtts: boolean;
+  /** Odds range for BTTS (GG/NG) */
+  bttsMin: number;
+  bttsMax: number;
   timeframeHours: number | null;
   pickCount: number;
   searchQuery: string;
@@ -102,7 +112,7 @@ export interface SavedBetslip {
 }
 
 export interface UserProfile {
-  email: string;
+  username: string;
   /** SHA-256 hex of password+salt — client-side only, not a bank */
   passwordHash: string;
   createdAt: string;
@@ -128,4 +138,36 @@ export interface BookingCodeResponse {
   selections: SelectedPick[];
   bonusPercentage?: number;
   error?: string;
+}
+
+export interface TeamFormStats {
+  teamName: string;
+  form: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  formScore: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  avgGoalsFor: number;
+  avgGoalsAgainst: number;
+  source: string;
+}
+
+export interface InjuryInfo {
+  teamName: string;
+  players: { name: string; position: string; severity: number }[];
+  severity: number;
+  source: string;
+}
+
+export interface MatchInsights {
+  homeForm?: TeamFormStats | null;
+  awayForm?: TeamFormStats | null;
+  homeInjuries?: InjuryInfo | null;
+  awayInjuries?: InjuryInfo | null;
+  formEdge: number;
+  injuryDrag: number;
+  enrichedAt: string;
 }

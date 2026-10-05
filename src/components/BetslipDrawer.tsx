@@ -8,7 +8,6 @@ import {
   ChevronUp,
   ChevronDown,
   Trash2,
-  Shuffle,
   Send,
   Ticket,
   X,
@@ -24,10 +23,11 @@ import {
   CheckCircle2,
   Info,
   Sparkles,
-   Plus,
-   Minus,
+  Plus,
+  Minus,
   RotateCcw,
-  Dices,
+  Undo2,
+  Shuffle,
 } from 'lucide-react';
 
 interface BetslipDrawerProps {
@@ -36,12 +36,13 @@ interface BetslipDrawerProps {
   onCompanyChange: (bookie: 'ALL' | BookieId) => void;
   onRemovePick: (gameId: string) => void;
   onClearSlip: () => void;
-  onShuffleAndPick: () => void;
   onAddAiPicks: (count: number) => void;
-  onAddRandomPicks: (count: number) => void;
-  onAddNextPicks: (count: number) => void;
+  onPickPicks: (count: number) => void;
+  onShufflePicks: (count: number) => void;
   onRemoveGames: (count: number) => void;
   onResetFiltersKeepSlip: () => void;
+  onUndo: () => void;
+  canUndo: boolean;
   defaultAddCount: number;
   eligibleCount: number;
   onOpenExportModal: () => void;
@@ -55,12 +56,13 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
   onCompanyChange,
   onRemovePick,
   onClearSlip,
-  onShuffleAndPick,
-   onAddAiPicks,
-   onAddRandomPicks,
-   onAddNextPicks,
-   onRemoveGames,
+  onAddAiPicks,
+  onPickPicks,
+  onShufflePicks,
+  onRemoveGames,
   onResetFiltersKeepSlip,
+  onUndo,
+  canUndo,
   defaultAddCount,
   eligibleCount,
   onOpenExportModal,
@@ -134,11 +136,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
         netTakeHome: takeHome,
       };
     });
-  }, [totalOdds, bonusPct]);
-
-  if (selections.length === 0) {
-    return null;
-  }
+   }, [totalOdds, bonusPct]);
 
   const quickStakes = [15, 30, 50, 100, 200, 500, 1000];
 
@@ -202,15 +200,6 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                 >
                   <Calculator className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Stake Simulator</span>
-                </button>
-
-                <button
-                  onClick={onShuffleAndPick}
-                  title="Shuffle & re-pick matches using Fisher-Yates algorithm"
-                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors border border-slate-700 active:scale-95"
-                >
-                  <Shuffle className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="hidden sm:inline">Shuffle</span>
                 </button>
 
                 <button
@@ -280,7 +269,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                    </div>
                 </div>
 
-                {/* Add-to-slip controls: use current filters, AI or random, then reset filters if needed */}
+                {/* Add-to-slip controls: Pick N from remaining only (no shuffle) */}
                 <div className="px-3 py-2.5 border-b border-slate-800/80 bg-[#0d1420] space-y-2">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span className="text-slate-400 font-medium">Add to slip</span>
@@ -289,38 +278,48 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                       <input
                         type="number"
                         min={1}
-                        max={50}
+                        max={100}
                         value={addCount}
                         onChange={(e) =>
-                          setAddCount(Math.max(1, Math.min(50, parseInt(e.target.value, 10) || 1)))
+                          setAddCount(Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1)))
                         }
                         className="w-14 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
                       />
                     </label>
                     <span className="text-[10px] text-slate-500">
-                      {eligibleCount} eligible under filters
+                      {eligibleCount} eligible under filters · {selections.length} in slip
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"
-                      onClick={() => onAddNextPicks(addCount)}
+                      onClick={() => onPickPicks(addCount)}
                       disabled={eligibleCount === 0}
-                      title="Add next N unselected games (earliest kickoff first), keeping existing legs"
-                      className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
+                      title="Pick N random games from remaining eligible (not already on slip) and append. Does not clear the slip."
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
                     >
                       <Plus className="w-3 h-3" />
-                      Add Next {addCount}
+                      Pick {addCount}
                     </button>
                     <button
                       type="button"
-                      onClick={() => onRemoveGames(addCount)}
-                      disabled={selections.length === 0}
-                      title="Remove N games from the end of the slip"
-                      className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
+                      onClick={() => onShufflePicks(addCount)}
+                      disabled={eligibleCount === 0}
+                      title="Shuffle: clear the slip then pick N fresh random games from all eligible"
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-700 text-slate-900 text-[11px] font-semibold flex items-center gap-1 disabled:opacity-40"
                     >
-                      <Minus className="w-3 h-3" />
-                      Remove {addCount}
+                      <Shuffle className="w-3 h-3" />
+                      Shuffle
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onUndo}
+                      disabled={!canUndo}
+                      title="Undo last slip change"
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold flex items-center gap-1 disabled:opacity-40"
+                    >
+                      <Undo2 className="w-3 h-3" />
+                      Undo
                     </button>
                     <button
                       type="button"
@@ -334,13 +333,13 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => onAddRandomPicks(addCount)}
-                      disabled={eligibleCount === 0}
-                      title="Random picks under current filters, added to slip"
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold flex items-center gap-1 disabled:opacity-40"
+                      onClick={() => onRemoveGames(addCount)}
+                      disabled={selections.length === 0}
+                      title="Remove N games from the end of the slip"
+                      className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
                     >
-                      <Dices className="w-3 h-3" />
-                      Random add {addCount}
+                      <Minus className="w-3 h-3" />
+                      Remove {addCount}
                     </button>
                     <button
                       type="button"
@@ -350,15 +349,6 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                     >
                       <RotateCcw className="w-3 h-3" />
                       Reset filters
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onShuffleAndPick}
-                      title="Replace entire slip with a new shuffle"
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[11px] font-semibold flex items-center gap-1"
-                    >
-                      <Shuffle className="w-3 h-3" />
-                      Replace slip
                     </button>
                     <button
                       type="button"
@@ -372,8 +362,8 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                     </button>
                   </div>
                   <p className="text-[10px] text-slate-500 leading-snug">
-                    Change filters above, then AI/Random add. Reset filters keeps your legs so you can
-                    stack different criteria.
+                    Pick N adds up to N random games from remaining eligible matches (never
+                    duplicates). Undo restores the previous slip. AI add scores and picks the best.
                   </p>
                 </div>
 

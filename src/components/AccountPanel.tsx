@@ -13,8 +13,9 @@ import {
   updateSavedSlip,
   deleteSavedSlip,
   deleteAllSavedSlips,
+  appendToBetslip,
 } from '@/lib/storage';
-import { LogIn, LogOut, Save, Trash2, User, KeyRound, Archive } from 'lucide-react';
+import { LogIn, LogOut, Save, Trash2, User, KeyRound, Archive, Edit2, Copy, PlusCircle, Loader2, Check, X } from 'lucide-react';
 
 interface AccountPanelProps {
   selections: SelectedPick[];
@@ -32,7 +33,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   onUserChange,
 }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [slips, setSlips] = useState<SavedBetslip[]>([]);
@@ -41,13 +42,17 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   const [provider, setProvider] = useState<'openai' | 'gemini' | 'compatible'>('openai');
   const [model, setModel] = useState('gpt-4o-mini');
   const [baseUrl, setBaseUrl] = useState('');
+  const [editingSlipId, setEditingSlipId] = useState<string | null>(null);
+  const [editSlipName, setEditSlipName] = useState('');
+  const [appendTargetId, setAppendTargetId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const refresh = () => {
     const u = getCurrentUser();
     setUser(u);
     onUserChange?.(u);
     if (u) {
-      setSlips(listSavedSlips(u.email));
+      setSlips(listSavedSlips(u.username));
       setApiKey(u.llmApiKey || '');
       setProvider(u.llmProvider || 'openai');
       setModel(u.llmModel || 'gpt-4o-mini');
@@ -63,15 +68,19 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   }, []);
 
   const handleRegister = async () => {
-    const r = await registerUser(email, password);
+    setSaving(true);
+    const r = await registerUser(username, password);
     setMsg(r.ok ? 'Account created — signed in.' : r.error);
     refresh();
+    setSaving(false);
   };
 
   const handleSignIn = async () => {
-    const r = await signInUser(email, password);
+    setSaving(true);
+    const r = await signInUser(username, password);
     setMsg(r.ok ? 'Signed in.' : r.error);
     refresh();
+    setSaving(false);
   };
 
   const handleSignOut = () => {
@@ -93,14 +102,39 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
 
   const handleSaveSlip = () => {
     const s = saveBetslip(slipName, selections, { stake, bookingCode });
-    setMsg(s ? `Saved “${s.name}”.` : 'Sign in and add legs before saving.');
+    setMsg(s ? `Saved "${s.name}".` : 'Sign in and add legs before saving.');
     setSlipName('');
+    refresh();
+  };
+
+  const handleAppendSlip = (slipId: string) => {
+    const result = appendToBetslip(slipId, selections);
+    setMsg(result ? `Appended ${selections.length} legs to "${result.name}".` : 'Sign in and add legs before appending.');
+    setAppendTargetId(null);
     refresh();
   };
 
   const setStatus = (id: string, status: SlipResultStatus) => {
     updateSavedSlip(id, { status });
     refresh();
+  };
+
+  const startEditSlip = (slip: SavedBetslip) => {
+    setEditingSlipId(slip.id);
+    setEditSlipName(slip.name);
+  };
+
+  const saveEditSlip = (slipId: string) => {
+    const result = updateSavedSlip(slipId, { name: editSlipName });
+    setMsg(result ? `Renamed to "${result.name}".` : 'Failed to rename.');
+    setEditingSlipId(null);
+    setEditSlipName('');
+    refresh();
+  };
+
+  const cancelEditSlip = () => {
+    setEditingSlipId(null);
+    setEditSlipName('');
   };
 
   if (!user) {
@@ -114,10 +148,10 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
           Accounts are stored only in this browser (no cloud server). Optional for AI analysis with your own API key.
         </p>
         <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
           className="w-full bg-[#0b111e] border border-slate-700 rounded-xl px-3 py-2 text-sm text-white"
         />
         <input
@@ -131,13 +165,16 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
           <button
             type="button"
             onClick={handleSignIn}
+            disabled={saving}
             className="flex-1 px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-bold flex items-center justify-center gap-1"
           >
-            <LogIn className="w-3.5 h-3.5" /> Sign in
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogIn className="w-3.5 h-3.5" />}
+            Sign in
           </button>
           <button
             type="button"
             onClick={handleRegister}
+            disabled={saving}
             className="flex-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-semibold text-white"
           >
             Register
@@ -151,7 +188,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   return (
     <div className="bg-[#111927] border border-slate-800 rounded-2xl p-4 space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-sm font-bold text-white truncate">{user.email}</div>
+        <div className="text-sm font-bold text-white truncate">{user.username}</div>
         <button
           type="button"
           onClick={handleSignOut}
@@ -247,7 +284,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
             </button>
           )}
         </div>
-        <div className="max-h-48 overflow-y-auto space-y-2">
+        <div className="max-h-64 overflow-y-auto space-y-2">
           {slips.length === 0 && (
             <p className="text-[11px] text-slate-500">No saved slips yet.</p>
           )}
@@ -257,16 +294,52 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
               className="p-2 rounded-xl border border-slate-800 bg-[#0b111e] text-[11px] space-y-1"
             >
               <div className="flex justify-between gap-2">
-                <span className="font-semibold text-white truncate">{s.name}</span>
+                {editingSlipId === s.id ? (
+                  <div className="flex-1 flex gap-1">
+                    <input
+                      type="text"
+                      value={editSlipName}
+                      onChange={(e) => setEditSlipName(e.target.value)}
+                      className="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => saveEditSlip(s.id)}
+                      className="px-2 py-1 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold"
+                    >
+                      <Check className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEditSlip}
+                      className="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-400 text-xs"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="font-semibold text-white truncate">{s.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => startEditSlip(s)}
+                      className="p-1 text-slate-400 hover:text-white"
+                      title="Rename slip"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
                 <span
                   className={`font-mono ${
                     s.status === 'won'
                       ? 'text-emerald-400'
                       : s.status === 'lost'
-                        ? 'text-red-400'
-                        : s.status === 'open'
-                          ? 'text-sky-400'
-                          : 'text-amber-400'
+                      ? 'text-red-400'
+                      : s.status === 'open'
+                      ? 'text-sky-400'
+                      : 'text-amber-400'
                   }`}
                 >
                   {s.status}
@@ -280,16 +353,25 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => onLoadSlip(s.selections)}
-                  className="px-2 py-0.5 rounded bg-slate-800 text-slate-200"
+                  className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-medium"
                 >
                   Load
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAppendTargetId(s.id)}
+                  className="px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/40 text-blue-300 text-[10px] font-medium"
+                >
+                  <PlusCircle className="w-3 h-3" /> Append
                 </button>
                 {(['open', 'won', 'lost', 'void', 'unknown'] as SlipResultStatus[]).map((st) => (
                   <button
                     key={st}
                     type="button"
                     onClick={() => setStatus(s.id, st)}
-                    className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-400"
+                    className={`px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-400 text-[10px] ${
+                      s.status === st ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : ''
+                    }`}
                   >
                     {st}
                   </button>
@@ -297,14 +379,34 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    deleteSavedSlip(s.id);
-                    refresh();
+                    if (confirm(`Delete "${s.name}"?`)) {
+                      deleteSavedSlip(s.id);
+                      refresh();
+                    }
                   }}
-                  className="px-2 py-0.5 rounded text-red-400"
+                  className="px-2 py-0.5 rounded text-red-400 text-[10px]"
                 >
-                  Delete
+                  <Trash2 className="w-3 h-3" /> Delete
                 </button>
               </div>
+              {appendTargetId === s.id && (
+                <div className="pt-1 border-t border-slate-800 flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleAppendSlip(s.id)}
+                    className="flex-1 px-2 py-1 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold"
+                  >
+                    Confirm Append ({selections.length} legs)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAppendTargetId(null)}
+                    className="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-400 text-[10px]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

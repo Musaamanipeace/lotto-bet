@@ -29,7 +29,7 @@ export const AiCoachPanel: React.FC<AiCoachPanelProps> = ({ selections, games, u
     setError(null);
     setAnalysis(null);
     try {
-      const saved: SavedBetslip[] = listSavedSlips(u.email);
+      const saved: SavedBetslip[] = listSavedSlips(u.username);
       const sample = games.slice(0, 40).map((g) => ({
         id: g.id,
         eventId: g.eventId,

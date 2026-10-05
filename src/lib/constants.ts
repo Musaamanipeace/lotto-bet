@@ -1,5 +1,8 @@
 import { FilterCriteria, BookieId, SportyBetMarket } from '@/types';
 
+/** Shared odds-slider ceiling so ranges are not hard-capped too low */
+export const ODDS_SLIDER_MAX = 10;
+
 export const DEFAULT_FILTER_CRITERIA: FilterCriteria = {
   selectedCompany: 'ALL',
   dcMin: 1.08,
@@ -13,9 +16,15 @@ export const DEFAULT_FILTER_CRITERIA: FilterCriteria = {
   awayWinMax: 1.60,
   enableOver: true,
   overGoalLine: '0.5',
+  overMin: 1.01,
+  overMax: 1.50,
   enableUnder: true,
   underGoalLine: '3.5',
+  underMin: 1.05,
+  underMax: 1.80,
   enableBtts: true,
+  bttsMin: 1.20,
+  bttsMax: 2.50,
   timeframeHours: 24,
   pickCount: 30,
   searchQuery: '',
