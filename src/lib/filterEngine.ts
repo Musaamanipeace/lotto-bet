@@ -548,7 +548,7 @@ function scoreEvaluation(ev: GameEvaluation, usedLeagues: Set<string>): number {
 export function pickSmartSelections(
   evaluations: GameEvaluation[],
   count: number,
-  excludeGameIds: Set<string> = new Set()
+  excludeGameIds: Set<string> | Set<unknown> = new Set()
 ): SelectedPick[] {
   if (evaluations.length === 0 || count <= 0) return [];
 

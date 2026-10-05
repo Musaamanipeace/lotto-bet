@@ -16,16 +16,25 @@ import { BetslipDrawer } from '@/components/BetslipDrawer';
 import { ExportModal } from '@/components/ExportModal';
 import { AccountPanel } from '@/components/AccountPanel';
 import { AiCoachPanel } from '@/components/AiCoachPanel';
+import { AuthModal } from '@/components/AuthModal';
+import { SavedSlipsModal } from '@/components/SavedSlipsModal';
+import { AiAgentDrawer } from '@/components/AiAgentDrawer';
+import { getCurrentUser, signOutUser, listSavedSlips, saveBetslip } from '@/lib/storage';
 import {
   Dices,
-   RefreshCw,
-   ShieldCheck,
+  RefreshCw,
+  ShieldCheck,
   CheckCheck,
   AlertTriangle,
   Flame,
   Layers,
   Zap,
   Building2,
+  Sparkles,
+  User,
+  LogOut,
+  Bookmark,
+  Bot,
 } from 'lucide-react';
 
 function useDebouncedValue<T>(value: T, delay: number): T {
@@ -53,9 +62,23 @@ export default function HomePage() {
   const [picksHistory, setPicksHistory] = useState<SelectedPick[][]>([]);
   const [stake, setStake] = useState<number>(50);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'picked'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'algo' | 'picked'>('all');
+  const [algoPicks, setAlgoPicks] = useState<SelectedPick[]>([]);
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isSavedSlipsModalOpen, setIsSavedSlipsModalOpen] = useState(false);
+  const [isAiAgentOpen, setIsAiAgentOpen] = useState(false);
+  const [savedSlipsCount, setSavedSlipsCount] = useState<number>(0);
   const [lastBookingCode, setLastBookingCode] = useState<string | undefined>();
+
+  // Initialize user session and saved slips count
+  useEffect(() => {
+    const u = getCurrentUser();
+    setUser(u);
+    if (u) {
+      setSavedSlipsCount(listSavedSlips(u.username).length);
+    }
+  }, []);
 
   /** Push current slip onto undo history, then apply next state */
   const commitPicks = (next: SelectedPick[] | ((prev: SelectedPick[]) => SelectedPick[])) => {
@@ -127,14 +150,33 @@ export default function HomePage() {
     return Array.from(set).sort();
   }, [games]);
 
-  // Map of currently selected picks by gameId for fast lookup
+  // Map of currently selected picks on the betslip by gameId for fast lookup
   const selectedPicksMap = useMemo(() => {
     const map = new Map<string, SelectedPick>();
     selectedPicks.forEach((p) => map.set(p.gameId, p));
     return map;
   }, [selectedPicks]);
 
-  // Betslip starts empty — user adds picks via Add Next / AI add
+  // Remaining available games (evaluations not already in the betslip)
+  const remainingEvaluations = useMemo(() => {
+    return evaluations.filter((ev) => !selectedPicksMap.has(ev.game.id));
+  }, [evaluations, selectedPicksMap]);
+
+  // Keep algo candidate picks in sync with remaining available games and pickCount
+  useEffect(() => {
+    setAlgoPicks((prev) => {
+      // Exclude any picks that got added to the betslip (either one-by-one or via Add Next)
+      const valid = prev.filter((p) => !selectedPicksMap.has(p.gameId));
+      const targetCount = Math.max(1, Math.min(100, criteria.pickCount));
+      if (valid.length === targetCount) return valid;
+      // If count changed or picks moved to the slip, draw fresh candidate selections from remaining games
+      return pickRandomSelections(remainingEvaluations, targetCount);
+    });
+  }, [remainingEvaluations, criteria.pickCount, selectedPicksMap]);
+
+  const algoPicksGameIdSet = useMemo(() => {
+    return new Set(algoPicks.map((p) => p.gameId));
+  }, [algoPicks]);
 
   // Handle changing target company
   const handleCompanyChange = (bookie: 'ALL' | BookieId) => {
@@ -144,47 +186,46 @@ export default function HomePage() {
     }
   };
 
-  /** Enable full-market-data filter and rebuild slip — for testing real booking codes */
+  /** Toggle full-market-data filter — for testing real booking codes */
   const handleUseBookableOnly = () => {
-    const next: FilterCriteria = { ...criteria, requireFullMarketData: true };
-    setCriteria(next);
-    const evals = evaluateAndFilterGames(games, next);
-    const newPicks = pickRandomSelections(evals, next.pickCount);
-    commitPicks(newPicks);
+    setCriteria((prev) => ({ ...prev, requireFullMarketData: !prev.requireFullMarketData }));
   };
 
   /**
-   * Apply current filters, AI-pick `count` new games, ADD to slip (no duplicates).
+   * Apply current filters, AI-pick `count` new games from remaining, ADD to slip (no duplicates).
    * Filters stay as-is so you can tweak and add again; use resetFilters to clear criteria only.
    */
   const handleAddAiPicks = (count: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
-    const exclude = new Set(selectedPicks.map((p) => p.gameId));
+    const exclude = new Set<string>(selectedPicks.map((p) => p.gameId));
     const fresh = pickSmartSelections(evaluations, n, exclude);
     if (fresh.length === 0) return;
     commitPicks((prev) => mergePicksIntoSlip(prev, fresh));
   };
 
   /**
-   * Pick N: randomly select up to N games from remaining eligible pool
-   * (games that pass current filters and are NOT already on the slip), then APPEND
-   * them to the existing slip. Does not clear or replace the slip.
-   * Re-clicking picks a different random subset from whatever is still remaining.
+   * Shuffle:
+   * Randomly reshuffles the candidate Pick N selections from remaining available games
+   * (games not already on the betslip).
+   * Does NOT add or remove games from the betslip.
+   * Does NOT reset or clear the betslip.
    */
-  const handleShufflePicks = (count: number) => {
+  const handleShufflePicks = (count?: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
-    const fresh = pickRandomSelections(evaluations, n);
-    if (fresh.length === 0) return;
-    commitPicks(fresh);
+    const fresh = pickRandomSelections(remainingEvaluations, n);
+    setAlgoPicks(fresh);
   };
 
-  const handlePickPicks = (count: number) => {
+  /**
+   * Add Next:
+   * Adds the current candidate Pick N games (or up to N from remaining games) to the betslip.
+   * As they enter the betslip, they leave the remaining available games.
+   */
+  const handlePickPicks = (count?: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
-    const exclude = new Set(selectedPicks.map((p) => p.gameId));
-    const pool = evaluations.filter((ev) => !exclude.has(ev.game.id));
-    const fresh = pickRandomSelections(pool, n);
-    if (fresh.length === 0) return;
-    commitPicks((prev) => mergePicksIntoSlip(prev, fresh));
+    const toAdd = algoPicks.length > 0 ? algoPicks.slice(0, n) : pickRandomSelections(remainingEvaluations, n);
+    if (toAdd.length === 0) return;
+    commitPicks((prev) => mergePicksIntoSlip(prev, toAdd));
   };
 
   /**
@@ -260,8 +301,8 @@ export default function HomePage() {
           </div>
 
           {/* Right Header Status Controls */}
-          <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
+          <div className="flex items-center gap-2.5">
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span>SportyBet Live Odds</span>
               {lastUpdated && <span className="text-slate-400 font-mono">({lastUpdated})</span>}
@@ -277,13 +318,67 @@ export default function HomePage() {
               <span className="hidden sm:inline">Refresh</span>
             </button>
 
+            {/* AI Agent Button */}
+            <button
+              onClick={() => setIsAiAgentOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
+              title="Open AI Betting Agent to discuss and build slips"
+            >
+              <Bot className="w-3.5 h-3.5 text-emerald-400" />
+              <span>AI Agent</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            </button>
+
+            {/* Saved Slips & User Account */}
+            {user ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsSavedSlipsModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition-colors"
+                  title="View, edit, or concatenate saved betslips"
+                >
+                  <Bookmark className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Saved Slips</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] text-amber-400 font-mono font-bold">
+                    {savedSlipsCount}
+                  </span>
+                </button>
+
+                <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-800">
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-mono font-bold text-emerald-400">
+                    <User className="w-3 h-3" />
+                    <span>@{user.username}</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      signOutUser();
+                      setUser(null);
+                      setSavedSlipsCount(0);
+                    }}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                    title="Sign out"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+              >
+                <User className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Sign In</span>
+              </button>
+            )}
+
             <button
               onClick={() => setIsExportModalOpen(true)}
               disabled={selectedPicks.length === 0}
               className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-bold text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition-all"
             >
               <Zap className="w-3.5 h-3.5" />
-              <span>Get Booking Code</span>
+              <span>Get Code</span>
             </button>
           </div>
         </div>
@@ -308,8 +403,8 @@ export default function HomePage() {
               <CheckCheck className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Slip Selections</span>
-              <span className="text-lg font-black text-white font-mono">{selectedPicks.length} Games</span>
+              <span className="text-[11px] text-slate-400 uppercase tracking-wider block">In Slip Matches</span>
+              <span className="text-lg font-black text-white font-mono">{selectedPicks.length} Matches</span>
             </div>
           </div>
 
@@ -343,7 +438,7 @@ export default function HomePage() {
           criteria={criteria}
           onChange={setCriteria}
           availableLeagues={availableLeagues}
-          totalEligibleMatches={evaluations.length}
+          totalEligibleMatches={remainingEvaluations.length}
           companyCounts={companyCounts}
           onPickPicks={handlePickPicks}
           onShufflePicks={handleShufflePicks}
@@ -366,6 +461,18 @@ export default function HomePage() {
             >
               <Layers className="w-3.5 h-3.5" />
               <span>All Qualifying Fixtures ({evaluations.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('algo')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'algo'
+                  ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold'
+                  : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Algo Pick N ({algoPicks.length})</span>
             </button>
 
             <button
@@ -471,10 +578,14 @@ export default function HomePage() {
                 if (activeTab === 'picked') {
                   return selectedPicksMap.has(ev.game.id);
                 }
+                if (activeTab === 'algo') {
+                  return algoPicksGameIdSet.has(ev.game.id);
+                }
                 return true;
               })
               .map((evaluation) => {
                 const currentSelection = selectedPicksMap.get(evaluation.game.id) || null;
+                const isAlgoCandidate = algoPicksGameIdSet.has(evaluation.game.id);
                 return (
                   <GameCard
                     key={evaluation.game.id}
@@ -482,6 +593,7 @@ export default function HomePage() {
                     eligiblePicks={evaluation.eligiblePicks}
                     currentSelection={currentSelection}
                     selectedCompany={criteria.selectedCompany}
+                    isAlgoCandidate={isAlgoCandidate}
                     onTogglePick={handleTogglePick}
                     onSelectSpecificPick={handleSelectSpecificPick}
                   />
@@ -513,6 +625,7 @@ export default function HomePage() {
         onClearSlip={handleClearSlip}
         onAddAiPicks={handleAddAiPicks}
         onPickPicks={handlePickPicks}
+        onShufflePicks={handleShufflePicks}
         onRemoveGames={handleRemoveGames}
         onResetFiltersKeepSlip={handleResetFiltersKeepSlip}
         onUndo={handleUndo}
@@ -522,6 +635,21 @@ export default function HomePage() {
         onOpenExportModal={() => setIsExportModalOpen(true)}
         stake={stake}
         onStakeChange={setStake}
+        onOpenSavedSlips={() => {
+          if (!user) {
+            setIsAuthModalOpen(true);
+          } else {
+            setIsSavedSlipsModalOpen(true);
+          }
+        }}
+        onSaveCurrentSlip={() => {
+          if (!user) {
+            setIsAuthModalOpen(true);
+          } else {
+            setIsSavedSlipsModalOpen(true);
+          }
+        }}
+        savedSlipsCount={savedSlipsCount}
       />
 
       {/* Booking Code Export Modal */}
@@ -531,6 +659,57 @@ export default function HomePage() {
         selections={selectedPicks}
         stake={stake}
         initialBookie={criteria.selectedCompany === 'ALL' ? 'sportybet:ke' : criteria.selectedCompany}
+      />
+
+      {/* Auth Modal (Username & Password only) */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={(u) => {
+          setUser(u);
+          setSavedSlipsCount(listSavedSlips(u.username).length);
+        }}
+      />
+
+      {/* Saved Betslips Modal (Named, Edited, Deleted, Concatenate) */}
+      {user && (
+        <SavedSlipsModal
+          isOpen={isSavedSlipsModalOpen}
+          onClose={() => {
+            setIsSavedSlipsModalOpen(false);
+            setSavedSlipsCount(listSavedSlips(user.username).length);
+          }}
+          username={user.username}
+          currentSlip={selectedPicks}
+          onLoadSlip={(sels) => {
+            commitPicks(sels);
+            setActiveTab('picked');
+          }}
+          onAppendToSlip={(sels) => {
+            commitPicks((prev) => mergePicksIntoSlip(prev, sels));
+            setActiveTab('picked');
+          }}
+        />
+      )}
+
+      {/* AI Betting Agent Drawer (Discuss, Build, Save Slips) */}
+      <AiAgentDrawer
+        isOpen={isAiAgentOpen}
+        onClose={() => setIsAiAgentOpen(false)}
+        activeSlip={selectedPicks}
+        availableMatches={games}
+        user={user}
+        onLoadSlip={(sels) => {
+          commitPicks(sels);
+          setActiveTab('picked');
+        }}
+        onAppendToSlip={(sels) => {
+          commitPicks((prev) => mergePicksIntoSlip(prev, sels));
+          setActiveTab('picked');
+        }}
+        onRefreshSavedSlips={() => {
+          if (user) setSavedSlipsCount(listSavedSlips(user.username).length);
+        }}
       />
     </div>
   );

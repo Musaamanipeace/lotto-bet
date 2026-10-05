@@ -38,7 +38,7 @@ async function fetchJson(url: string): Promise<unknown | null> {
       signal: controller.signal,
       headers: { Accept: 'application/json' },
       next: { revalidate: 1800 },
-    });
+    } as RequestInit & { next?: { revalidate?: number } });
     if (!res.ok) return null;
     return res.json();
   } catch {

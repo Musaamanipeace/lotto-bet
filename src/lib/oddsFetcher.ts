@@ -304,7 +304,7 @@ async function fetchPage(
   const response = await fetch(url.toString(), {
     headers: DEFAULT_HEADERS,
     next: { revalidate: 60 },
-  });
+  } as RequestInit & { next?: { revalidate?: number } });
 
   if (!response.ok) {
     throw new Error(`SportyBet upcoming events API returned ${response.status}`);

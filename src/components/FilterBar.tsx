@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FilterCriteria, BookieId } from '@/types';
 import { TIMEFRAME_OPTIONS, PICK_COUNT_PRESETS, DEFAULT_FILTER_CRITERIA, BOOKIE_CONFIGS } from '@/lib/constants';
-import { RotateCcw, Search, Sliders, Building2, Check, ShieldCheck, Plus, Minus, Trash2, Shuffle } from 'lucide-react';
+import { RotateCcw, Search, Sliders, Building2, Check, ShieldCheck, Plus, Minus, Trash2, Shuffle, Undo2 } from 'lucide-react';
 
 interface FilterBarProps {
   criteria: FilterCriteria;
@@ -18,6 +18,8 @@ interface FilterBarProps {
   onShufflePicks: (count: number) => void;
   onRemoveGames: (count: number) => void;
   onClearSlip: () => void;
+  onUndo?: () => void;
+  canUndo?: boolean;
 }
 
 /**
@@ -263,6 +265,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onShufflePicks,
   onRemoveGames,
   onClearSlip,
+  onUndo,
+  canUndo = false,
 }) => {
   const updateCriteria = <K extends keyof FilterCriteria>(key: K, value: FilterCriteria[K]) => {
     onChange({ ...criteria, [key]: value });
@@ -764,16 +768,16 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
             <button
               onClick={() => onPickPicks(criteria.pickCount)}
-              title="Pick N random games from remaining (excludes games already on slip)"
+              title="Add Next: add candidate Pick N games to your betslip"
               className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Pick</span>
+              <span className="hidden sm:inline">Add Next</span>
             </button>
 
             <button
               onClick={() => onShufflePicks(criteria.pickCount)}
-              title="Shuffle: clear slip then pick N fresh random games from remaining"
+              title="Shuffle candidate Pick N from remaining available games (does not alter betslip)"
               className="px-2.5 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 border border-slate-700 text-slate-900 text-xs font-semibold flex items-center gap-1 transition-colors"
             >
               <Shuffle className="w-3.5 h-3.5" />
@@ -788,6 +792,22 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               <Minus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Remove</span>
             </button>
+
+            {onUndo && (
+              <button
+                onClick={onUndo}
+                disabled={!canUndo}
+                title="Undo last slip change"
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-colors ${
+                  canUndo
+                    ? 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/40 text-amber-300'
+                    : 'bg-slate-800/50 border-slate-700/50 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Undo</span>
+              </button>
+            )}
 
             <button
               onClick={onClearSlip}

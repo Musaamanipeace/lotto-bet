@@ -3,13 +3,14 @@
 import React from 'react';
 import { StandardGame, SelectedPick, BookieId } from '@/types';
 import { BOOKIE_CONFIGS } from '@/lib/constants';
-import { Clock, Plus, Check, ShieldCheck, Trophy } from 'lucide-react';
+import { Clock, Plus, Check, ShieldCheck, Trophy, Sparkles } from 'lucide-react';
 
 interface GameCardProps {
   game: StandardGame;
   eligiblePicks: SelectedPick[];
   currentSelection: SelectedPick | null;
   selectedCompany: 'ALL' | BookieId;
+  isAlgoCandidate?: boolean;
   onTogglePick: (pick: SelectedPick) => void;
   onSelectSpecificPick: (pick: SelectedPick) => void;
 }
@@ -19,6 +20,7 @@ export const GameCard: React.FC<GameCardProps> = ({
   eligiblePicks,
   currentSelection,
   selectedCompany,
+  isAlgoCandidate = false,
   onTogglePick,
   onSelectSpecificPick,
 }) => {
@@ -61,8 +63,18 @@ export const GameCard: React.FC<GameCardProps> = ({
           <span className="truncate">{game.league}</span>
         </div>
 
-        {/* Bookie Availability Badges */}
+        {/* Status & Bookie Availability Badges */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {isSelected ? (
+            <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/40 flex items-center gap-1">
+              <Check className="w-3 h-3 stroke-[2.5]" /> In Slip
+            </span>
+          ) : isAlgoCandidate ? (
+            <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px] font-bold border border-amber-500/30 flex items-center gap-1">
+              <Sparkles className="w-3 h-3" /> Algo Pick
+            </span>
+          ) : null}
+
           {game.bookies?.map((bId) => {
             const cfg = BOOKIE_CONFIGS[bId];
             const isTarget = selectedCompany === bId;

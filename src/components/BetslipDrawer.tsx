@@ -28,6 +28,8 @@ import {
   RotateCcw,
   Undo2,
   Shuffle,
+  Bookmark,
+  BookmarkPlus,
 } from 'lucide-react';
 
 interface BetslipDrawerProps {
@@ -48,6 +50,9 @@ interface BetslipDrawerProps {
   onOpenExportModal: () => void;
   stake: number;
   onStakeChange: (stake: number) => void;
+  onOpenSavedSlips?: () => void;
+  onSaveCurrentSlip?: () => void;
+  savedSlipsCount?: number;
 }
 
 export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
@@ -68,6 +73,9 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
   onOpenExportModal,
   stake,
   onStakeChange,
+  onOpenSavedSlips,
+  onSaveCurrentSlip,
+  savedSlipsCount = 0,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'picks' | 'simulator'>('picks');
@@ -165,7 +173,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-bold text-white">Betslip</span>
                     <span className="px-2 py-0.5 text-xs font-mono font-bold bg-emerald-500/20 text-emerald-400 rounded-full border border-emerald-500/30">
-                      {selections.length} {selections.length === 1 ? 'Pick' : 'Picks'}
+                      {selections.length} in Slip
                     </span>
 
                     {/* Bookie Pill */}
@@ -175,14 +183,25 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                       {bookieConfig.shortName}
                     </span>
                   </div>
-                  <div className="text-xs text-slate-400 flex items-center gap-2 font-mono">
+                  <div className="text-xs text-slate-400 flex flex-wrap items-center gap-2 font-mono">
                     <span>
-                      Odds: <strong className="text-emerald-400">{totalOdds.toLocaleString()}x</strong>
+                      Betslip Total Odds: <strong className="text-emerald-400 font-bold">{totalOdds.toLocaleString()}x</strong>
                     </span>
+                    {selections.length > 0 && (
+                      <>
+                        <span className="text-slate-600">•</span>
+                        <span>
+                          Avg Pick Odd: <strong className="text-slate-300">@{(totalOdds ** (1 / selections.length)).toFixed(2)}</strong>
+                        </span>
+                      </>
+                    )}
                     {bonusPct > 0 && (
-                      <span className="text-amber-400 font-semibold flex items-center gap-0.5">
-                        <Gift className="w-3 h-3" /> +{bonusPct}% Bonus
-                      </span>
+                      <>
+                        <span className="text-slate-600">•</span>
+                        <span className="text-amber-400 font-semibold flex items-center gap-0.5">
+                          <Gift className="w-3 h-3" /> +{bonusPct}% Bonus
+                        </span>
+                      </>
                     )}
                   </div>
                 </div>
@@ -190,6 +209,28 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
 
               {/* Action Buttons in Header */}
               <div className="flex items-center gap-2">
+                {onSaveCurrentSlip && selections.length > 0 && (
+                  <button
+                    onClick={onSaveCurrentSlip}
+                    className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors border border-amber-500/30"
+                    title="Save this betslip with custom name"
+                  >
+                    <BookmarkPlus className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Save Slip</span>
+                  </button>
+                )}
+
+                {onOpenSavedSlips && (
+                  <button
+                    onClick={onOpenSavedSlips}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors border border-slate-700"
+                    title="View and concatenate saved betslips"
+                  >
+                    <Bookmark className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Saved ({savedSlipsCount})</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => {
                     setIsOpen(true);
@@ -236,8 +277,18 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                       }`}
                     >
                       <Ticket className="w-3.5 h-3.5" />
-                      <span>Match Picks ({selections.length})</span>
+                      <span>In Slip ({selections.length})</span>
                     </button>
+
+                    {onOpenSavedSlips && (
+                      <button
+                        onClick={onOpenSavedSlips}
+                        className="px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 text-slate-400 hover:text-amber-400"
+                      >
+                        <Bookmark className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Saved Slips ({savedSlipsCount})</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => setActiveTab('simulator')}
@@ -295,17 +346,17 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                       type="button"
                       onClick={() => onPickPicks(addCount)}
                       disabled={eligibleCount === 0}
-                      title="Pick N random games from remaining eligible (not already on slip) and append. Does not clear the slip."
+                      title="Add Next: add up to N candidate games from remaining available matches to the slip"
                       className="px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
                     >
                       <Plus className="w-3 h-3" />
-                      Pick {addCount}
+                      Add Next {addCount}
                     </button>
                     <button
                       type="button"
                       onClick={() => onShufflePicks(addCount)}
                       disabled={eligibleCount === 0}
-                      title="Shuffle: clear the slip then pick N fresh random games from all eligible"
+                      title="Shuffle candidate Pick N from remaining available matches (does not touch your slip)"
                       className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-700 text-slate-900 text-[11px] font-semibold flex items-center gap-1 disabled:opacity-40"
                     >
                       <Shuffle className="w-3 h-3" />
@@ -367,11 +418,11 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                   </p>
                 </div>
 
-                {/* TAB 1: MATCH PICKS LIST */}
+                {/* TAB 1: IN SLIP MATCHES LIST */}
                 {activeTab === 'picks' && (
                   <div className="overflow-y-auto p-4 space-y-2 flex-1">
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80 text-xs text-slate-400">
-                      <span>Selected Match Legs ({selections.length}):</span>
+                      <span>Matches in Slip ({selections.length}):</span>
                       <button
                         onClick={onClearSlip}
                         className="text-red-400 hover:text-red-300 flex items-center gap-1 text-[11px] font-medium"
@@ -392,21 +443,26 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                             <p className="font-semibold text-white truncate">
                               {sel.homeTeam} <span className="text-slate-400 font-normal">vs</span> {sel.awayTeam}
                             </p>
-                            <p className="text-[11px] text-slate-400 truncate">{sel.league}</p>
+                            <p className="text-[11px] text-slate-400 truncate">
+                              {sel.league} • <span className="text-slate-300 font-medium">{sel.marketName}</span>
+                            </p>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-2.5 shrink-0">
                           <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold font-mono">
                             {sel.pick}
                           </span>
-                          <span className="font-mono font-bold text-white text-xs">
-                            @{sel.odd.toFixed(2)}
-                          </span>
+                          <div className="text-right">
+                            <span className="text-[9px] text-slate-400 block font-mono uppercase tracking-wider">Pick Odd</span>
+                            <span className="font-mono font-bold text-emerald-400 text-xs">
+                              @{sel.odd.toFixed(2)}
+                            </span>
+                          </div>
                           <button
                             onClick={() => onRemovePick(sel.gameId)}
-                            className="p-1 text-slate-400 hover:text-red-400 transition-colors"
-                            title="Remove pick"
+                            className="p-1 text-slate-400 hover:text-red-400 transition-colors ml-1"
+                            title="Remove pick from betslip"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
