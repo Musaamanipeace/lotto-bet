@@ -1,9 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FilterCriteria, BookieId } from '@/types';
 import { TIMEFRAME_OPTIONS, PICK_COUNT_PRESETS, DEFAULT_FILTER_CRITERIA, BOOKIE_CONFIGS } from '@/lib/constants';
-import { RotateCcw, Search, Sliders, Sparkles, Building2, Check, ShieldCheck, Plus, Minus, Trash2 } from 'lucide-react';
+import { RotateCcw, Search, Sliders, Building2, Check, ShieldCheck, Plus, Minus, Trash2, Shuffle } from 'lucide-react';
 
 interface FilterBarProps {
   criteria: FilterCriteria;
@@ -14,11 +14,168 @@ interface FilterBarProps {
     all: number;
     sportybet: number;
   };
-  onShuffleAndPick: () => void;
-  onAddNextPicks: (count: number) => void;
+  onPickPicks: (count: number) => void;
+  onShufflePicks: (count: number) => void;
   onRemoveGames: (count: number) => void;
   onClearSlip: () => void;
 }
+
+/**
+ * Dual-handle range slider that can be dragged from both the left (min)
+ * and right (max) handles. Both handles can be moved independently.
+ * Uses refs for drag state to avoid React re-render churn during dragging.
+ */
+interface DualRangeSliderProps {
+  min: number;
+  max: number;
+  step: number;
+  minVal: number;
+  maxVal: number;
+  onChange: (min: number, max: number) => void;
+  labelMin?: string;
+  labelMax?: string;
+}
+
+const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
+  min,
+  max,
+  step,
+  minVal,
+  maxVal,
+  onChange,
+  labelMin = 'min',
+  labelMax = 'max',
+}) => {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [draggingHandle, setDraggingHandle] = useState<'min' | 'max' | null>(null);
+  const [, forceUpdate] = useState(0);
+
+  // Refs for mutable drag state — no React re-renders on mousemove
+  const localMinRef = useRef(minVal);
+  const localMaxRef = useRef(maxVal);
+  const onChangeRef = useRef(onChange);
+
+  // Keep refs synced with props when not dragging
+  useEffect(() => {
+    if (!draggingHandle) {
+      localMinRef.current = minVal;
+      localMaxRef.current = maxVal;
+    }
+  }, [minVal, maxVal, draggingHandle]);
+
+  // Keep onChange ref current
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  const clamp = (val: number, lo: number, hi: number) => Math.min(Math.max(val, lo), hi);
+
+  const toPercent = (val: number) => ((val - min) / (max - min)) * 100;
+
+  const posToValue = useCallback((clientX: number) => {
+    if (!trackRef.current) return min;
+    const rect = trackRef.current.getBoundingClientRect();
+    const x = clamp(clientX - rect.left, 0, rect.width);
+    const pct = x / rect.width;
+    return min + pct * (max - min);
+  }, [min, max]);
+
+  const handleMouseDown = (handle: 'min' | 'max') => (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDraggingHandle(handle);
+  };
+
+  const handleTouchStart = (handle: 'min' | 'max') => (e: React.TouchEvent) => {
+    e.stopPropagation();
+    setDraggingHandle(handle);
+  };
+
+  // Drag effect — ONLY re-runs when draggingHandle changes
+  useEffect(() => {
+    if (!draggingHandle) return;
+
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+      e.preventDefault();
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const newRawValue = posToValue(clientX);
+      const snapped = Math.round(newRawValue / step) * step;
+
+      if (draggingHandle === 'min') {
+        const newMin = clamp(snapped, min, localMaxRef.current - step * 2);
+        localMinRef.current = newMin;
+        onChangeRef.current?.(newMin, localMaxRef.current);
+      } else {
+        const newMax = clamp(snapped, localMinRef.current + step * 2, max);
+        localMaxRef.current = newMax;
+        onChangeRef.current?.(localMinRef.current, newMax);
+      }
+      forceUpdate(n => n + 1); // visual update only
+    };
+
+    const handleEnd = () => {
+      setDraggingHandle(null);
+    };
+
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleEnd);
+    document.addEventListener('touchmove', handleMove, { passive: false });
+    document.addEventListener('touchend', handleEnd);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleEnd);
+      document.removeEventListener('touchmove', handleMove);
+      document.removeEventListener('touchend', handleEnd);
+    };
+  }, [draggingHandle, min, max, step, posToValue]);
+
+  const displayMin = localMinRef.current;
+  const displayMax = localMaxRef.current;
+
+  return (
+    <div className="space-y-2">
+      <div ref={trackRef} className="relative h-6 flex items-center touch-none">
+        {/* Track background */}
+        <div className="absolute inset-0 h-2 bg-slate-800 rounded-lg" />
+
+        {/* Highlighted range between min and max */}
+        <div
+          className="absolute h-2 bg-emerald-500/30 rounded-lg"
+          style={{
+            left: `${toPercent(displayMin)}%`,
+            width: `${toPercent(displayMax) - toPercent(displayMin)}%`,
+          }}
+        />
+
+        {/* Min handle - draggable from left */}
+        <button
+          type="button"
+          onMouseDown={handleMouseDown('min')}
+          onTouchStart={handleTouchStart('min')}
+          className="absolute w-5 h-5 bg-slate-900 border-2 border-emerald-500 rounded-full shadow-lg cursor-pointer hover:scale-110 transition-transform z-10"
+          style={{ left: `calc(${toPercent(displayMin)}% - 10px)` }}
+          title={`Set minimum ${labelMin}`}
+        />
+
+        {/* Max handle - draggable from right */}
+        <button
+          type="button"
+          onMouseDown={handleMouseDown('max')}
+          onTouchStart={handleTouchStart('max')}
+          className="absolute w-5 h-5 bg-slate-900 border-2 border-emerald-500 rounded-full shadow-lg cursor-pointer hover:scale-110 transition-transform z-10"
+          style={{ left: `calc(${toPercent(displayMax)}% - 10px)` }}
+          title={`Set maximum ${labelMax}`}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400 font-mono">
+        <span>{displayMin.toFixed(2)}</span>
+        <span>{displayMax.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+};
 
 export const FilterBar: React.FC<FilterBarProps> = ({
   criteria,
@@ -26,8 +183,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   availableLeagues,
   totalEligibleMatches,
   companyCounts,
-  onShuffleAndPick,
-  onAddNextPicks,
+  onPickPicks,
+  onShufflePicks,
   onRemoveGames,
   onClearSlip,
 }) => {
@@ -37,6 +194,15 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
   const handleReset = () => {
     onChange({ ...DEFAULT_FILTER_CRITERIA });
+  };
+
+  const handleRangeChange = (
+    setMinKey: 'dcMin' | 'homeWinMin' | 'awayWinMin',
+    setMaxKey: 'dcMax' | 'homeWinMax' | 'awayWinMax',
+    newMin: number,
+    newMax: number
+  ) => {
+    onChange({ ...criteria, [setMinKey]: newMin, [setMaxKey]: newMax });
   };
 
   return (
@@ -202,26 +368,27 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               />
               <span className="text-xs font-bold text-emerald-300">Double Chance (1X, 12, X2)</span>
             </label>
-            <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/50">
+            <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-500/20">
               {criteria.dcMin.toFixed(2)} - {criteria.dcMax.toFixed(2)}
             </span>
           </div>
-          <div className="space-y-1.5 pt-1">
-            <div className="flex items-center justify-between text-[11px] text-slate-400">
-              <span>Min: {criteria.dcMin.toFixed(2)}</span>
-              <span>Max: {criteria.dcMax.toFixed(2)}</span>
-            </div>
-            <input
-              type="range"
-              min="1.05"
-              max="1.60"
-              step="0.01"
-              value={criteria.dcMax}
-              disabled={!criteria.enableDoubleChance}
-              onChange={(e) => updateCriteria('dcMax', parseFloat(e.target.value))}
-              className="w-full accent-emerald-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+          {criteria.enableDoubleChance && (
+            <DualRangeSlider
+              min={1.0}
+              max={2.0}
+              step={0.01}
+              minVal={criteria.dcMin}
+              maxVal={criteria.dcMax}
+              labelMin="dc"
+              labelMax="dc"
+              onChange={(newMin, newMax) =>
+                handleRangeChange('dcMin', 'dcMax', newMin, newMax)
+              }
             />
-          </div>
+          )}
+          <p className="text-[11px] text-slate-400 mt-1">
+            Drag handles to set odds range. Widening includes more games.
+          </p>
         </div>
 
         {/* Home Win (1) Controls */}
@@ -246,22 +413,23 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               {criteria.homeWinMin.toFixed(2)} - {criteria.homeWinMax.toFixed(2)}
             </span>
           </div>
-          <div className="space-y-1.5 pt-1">
-            <div className="flex items-center justify-between text-[11px] text-slate-400">
-              <span>Min: {criteria.homeWinMin.toFixed(2)}</span>
-              <span>Max: {criteria.homeWinMax.toFixed(2)}</span>
-            </div>
-            <input
-              type="range"
-              min="1.20"
-              max="1.80"
-              step="0.02"
-              value={criteria.homeWinMax}
-              disabled={!criteria.enableHomeWin}
-              onChange={(e) => updateCriteria('homeWinMax', parseFloat(e.target.value))}
-              className="w-full accent-blue-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+          {criteria.enableHomeWin && (
+            <DualRangeSlider
+              min={1.0}
+              max={3.0}
+              step={0.02}
+              minVal={criteria.homeWinMin}
+              maxVal={criteria.homeWinMax}
+              labelMin="home"
+              labelMax="home"
+              onChange={(newMin, newMax) =>
+                handleRangeChange('homeWinMin', 'homeWinMax', newMin, newMax)
+              }
             />
-          </div>
+          )}
+          <p className="text-[11px] text-slate-400 mt-1">
+            Drag handles to set odds range. Widening includes more games.
+          </p>
         </div>
 
         {/* Away Win (2) Controls */}
@@ -286,28 +454,23 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               {criteria.awayWinMin.toFixed(2)} - {criteria.awayWinMax.toFixed(2)}
             </span>
           </div>
-          <div className="space-y-1.5 pt-1">
-            <div className="flex items-center justify-between text-[11px] text-slate-400">
-              <span>Min: {criteria.awayWinMin.toFixed(2)}</span>
-              <span>Max: {criteria.awayWinMax.toFixed(2)}</span>
-            </div>
-            <input
-              type="range"
-              min="1.50"
-              max="1.60"
-              step="0.02"
-              value={criteria.awayWinMax}
-              disabled={!criteria.enableAwayWin}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                updateCriteria('awayWinMax', val);
-                if (criteria.awayWinMin > val) {
-                  updateCriteria('awayWinMin', val - 0.3);
-                }
-              }}
-              className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+          {criteria.enableAwayWin && (
+            <DualRangeSlider
+              min={1.0}
+              max={3.0}
+              step={0.02}
+              minVal={criteria.awayWinMin}
+              maxVal={criteria.awayWinMax}
+              labelMin="away"
+              labelMax="away"
+              onChange={(newMin, newMax) =>
+                handleRangeChange('awayWinMin', 'awayWinMax', newMin, newMax)
+              }
             />
-          </div>
+          )}
+          <p className="text-[11px] text-slate-400 mt-1">
+            Drag handles to set odds range. Widening includes more games.
+          </p>
         </div>
 
         {/* Over Goal Line Selector */}
@@ -486,7 +649,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </select>
         </div>
 
-        {/* Pick Count Selector & Shuffle Action */}
+        {/* Pick Count Selector */}
         <div className="space-y-1.5 w-full lg:w-auto">
           <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
             Betslip Size (N):
@@ -524,12 +687,21 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </span>
 
             <button
-              onClick={() => onAddNextPicks(criteria.pickCount)}
-              title="Add next N unselected games (earliest kickoff first), keeping existing legs"
+              onClick={() => onPickPicks(criteria.pickCount)}
+              title="Pick N random games from remaining (excludes games already on slip)"
               className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Add Next</span>
+              <span className="hidden sm:inline">Pick</span>
+            </button>
+
+            <button
+              onClick={() => onShufflePicks(criteria.pickCount)}
+              title="Shuffle: clear slip then pick N fresh random games from remaining"
+              className="px-2.5 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 border border-slate-700 text-slate-900 text-xs font-semibold flex items-center gap-1 transition-colors"
+            >
+              <Shuffle className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Shuffle</span>
             </button>
 
             <button
