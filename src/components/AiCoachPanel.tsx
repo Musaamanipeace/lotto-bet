@@ -117,3 +117,4 @@ export const AiCoachPanel: React.FC<AiCoachPanelProps> = ({ selections, games, u
     </div>
   );
 };
+

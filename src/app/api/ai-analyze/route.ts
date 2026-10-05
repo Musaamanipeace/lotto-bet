@@ -105,3 +105,4 @@ Do not encourage reckless gambling; mention bankroll discipline briefly when rel
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
+

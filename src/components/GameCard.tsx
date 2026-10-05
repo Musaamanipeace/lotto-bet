@@ -175,3 +175,4 @@ export const GameCard: React.FC<GameCardProps> = ({
     </div>
   );
 };
+

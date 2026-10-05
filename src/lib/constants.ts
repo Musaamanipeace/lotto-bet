@@ -135,3 +135,4 @@ export function isSportyBetMarket(market: SportyBetMarket): boolean {
     market.marketId === SPORTYBET_MARKET_IDS.BTTS
   );
 }
+

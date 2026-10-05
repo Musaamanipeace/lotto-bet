@@ -216,3 +216,4 @@ export async function convertSelectionsToBookingCode(
 
   return emptyErrorResponse(bookie, selections, lastError);
 }
+

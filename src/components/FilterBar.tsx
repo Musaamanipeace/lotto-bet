@@ -47,135 +47,211 @@ const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
   labelMax = 'max',
 }) => {
   const trackRef = useRef<HTMLDivElement>(null);
-  const [draggingHandle, setDraggingHandle] = useState<'min' | 'max' | null>(null);
-  const [, forceUpdate] = useState(0);
+  const minHandleRef = useRef<HTMLButtonElement>(null);
+  const maxHandleRef = useRef<HTMLButtonElement>(null);
+  const rangeRef = useRef<HTMLDivElement>(null);
+  const minLabelRef = useRef<HTMLSpanElement>(null);
+  const maxLabelRef = useRef<HTMLSpanElement>(null);
 
-  // Refs for mutable drag state — no React re-renders on mousemove
-  const localMinRef = useRef(minVal);
-  const localMaxRef = useRef(maxVal);
+  const draggingRef = useRef<'min' | 'max' | null>(null);
+  const minValueRef = useRef(minVal);
+  const maxValueRef = useRef(maxVal);
   const onChangeRef = useRef(onChange);
+  const frameRef = useRef<number | null>(null);
+  const pendingClientXRef = useRef<number | null>(null);
 
-  // Keep refs synced with props when not dragging
-  useEffect(() => {
-    if (!draggingHandle) {
-      localMinRef.current = minVal;
-      localMaxRef.current = maxVal;
+  const clamp = useCallback(
+    (value: number, lower: number, upper: number) => Math.min(Math.max(value, lower), upper),
+    []
+  );
+
+  const snap = useCallback(
+    (value: number) => {
+      const steps = Math.round((value - min) / step);
+      return clamp(min + steps * step, min, max);
+    },
+    [min, max, step, clamp]
+  );
+
+  const toPercent = useCallback(
+    (value: number) => ((value - min) / (max - min)) * 100,
+    [min, max]
+  );
+
+  const updateVisuals = useCallback(
+    (nextMin: number, nextMax: number) => {
+      const minPercent = toPercent(nextMin);
+      const maxPercent = toPercent(nextMax);
+
+      if (minHandleRef.current) {
+        minHandleRef.current.style.left = `${minPercent}%`;
+      }
+      if (maxHandleRef.current) {
+        maxHandleRef.current.style.left = `${maxPercent}%`;
+      }
+      if (rangeRef.current) {
+        rangeRef.current.style.left = `${minPercent}%`;
+        rangeRef.current.style.width = `${maxPercent - minPercent}%`;
+      }
+      if (minLabelRef.current) {
+        minLabelRef.current.textContent = nextMin.toFixed(2);
+      }
+      if (maxLabelRef.current) {
+        maxLabelRef.current.textContent = nextMax.toFixed(2);
+      }
+    },
+    [toPercent]
+  );
+
+  const positionToValue = useCallback(
+    (clientX: number) => {
+      const track = trackRef.current;
+      if (!track) return min;
+      const rect = track.getBoundingClientRect();
+      if (rect.width <= 0) return min;
+      const x = clamp(clientX - rect.left, 0, rect.width);
+      return min + (x / rect.width) * (max - min);
+    },
+    [min, max, clamp]
+  );
+
+  const renderPendingPosition = useCallback(() => {
+    frameRef.current = null;
+    const clientX = pendingClientXRef.current;
+    const handle = draggingRef.current;
+    if (clientX === null || !handle) return;
+
+    const value = snap(positionToValue(clientX));
+    let nextMin = minValueRef.current;
+    let nextMax = maxValueRef.current;
+
+    if (handle === 'min') {
+      nextMin = clamp(value, min, nextMax - step);
+    } else {
+      nextMax = clamp(value, nextMin + step, max);
     }
-  }, [minVal, maxVal, draggingHandle]);
 
-  // Keep onChange ref current
+    minValueRef.current = nextMin;
+    maxValueRef.current = nextMax;
+    updateVisuals(nextMin, nextMax);
+  }, [min, max, step, clamp, positionToValue, snap, updateVisuals]);
+
+  const scheduleVisualUpdate = useCallback(
+    (clientX: number) => {
+      pendingClientXRef.current = clientX;
+      if (frameRef.current === null) {
+        frameRef.current = requestAnimationFrame(renderPendingPosition);
+      }
+    },
+    [renderPendingPosition]
+  );
+
+  const stopDragging = useCallback(() => {
+    if (!draggingRef.current) return;
+
+    if (pendingClientXRef.current !== null) {
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      renderPendingPosition();
+    }
+
+    draggingRef.current = null;
+    pendingClientXRef.current = null;
+    onChangeRef.current(minValueRef.current, maxValueRef.current);
+  }, [renderPendingPosition]);
+
+  const handlePointerMove = useCallback(
+    (event: PointerEvent) => {
+      if (!draggingRef.current) return;
+      event.preventDefault();
+      scheduleVisualUpdate(event.clientX);
+    },
+    [scheduleVisualUpdate]
+  );
+
+  const handlePointerUp = useCallback(
+    (event: PointerEvent) => {
+      if (!draggingRef.current) return;
+      event.preventDefault();
+      stopDragging();
+    },
+    [stopDragging]
+  );
+
+  const startDragging = useCallback(
+    (handle: 'min' | 'max') => (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      minValueRef.current = minVal;
+      maxValueRef.current = maxVal;
+      draggingRef.current = handle;
+      pendingClientXRef.current = null;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    },
+    [minVal, maxVal]
+  );
+
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  const clamp = (val: number, lo: number, hi: number) => Math.min(Math.max(val, lo), hi);
-
-  const toPercent = (val: number) => ((val - min) / (max - min)) * 100;
-
-  const posToValue = useCallback((clientX: number) => {
-    if (!trackRef.current) return min;
-    const rect = trackRef.current.getBoundingClientRect();
-    const x = clamp(clientX - rect.left, 0, rect.width);
-    const pct = x / rect.width;
-    return min + pct * (max - min);
-  }, [min, max]);
-
-  const handleMouseDown = (handle: 'min' | 'max') => (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDraggingHandle(handle);
-  };
-
-  const handleTouchStart = (handle: 'min' | 'max') => (e: React.TouchEvent) => {
-    e.stopPropagation();
-    setDraggingHandle(handle);
-  };
-
-  // Drag effect — ONLY re-runs when draggingHandle changes
   useEffect(() => {
-    if (!draggingHandle) return;
+    if (draggingRef.current !== null) return;
+    minValueRef.current = minVal;
+    maxValueRef.current = maxVal;
+    updateVisuals(minVal, maxVal);
+  }, [minVal, maxVal, updateVisuals]);
 
-    const handleMove = (e: MouseEvent | TouchEvent) => {
-      e.preventDefault();
-      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
-      const newRawValue = posToValue(clientX);
-      const snapped = Math.round(newRawValue / step) * step;
-
-      if (draggingHandle === 'min') {
-        const newMin = clamp(snapped, min, localMaxRef.current - step * 2);
-        localMinRef.current = newMin;
-        onChangeRef.current?.(newMin, localMaxRef.current);
-      } else {
-        const newMax = clamp(snapped, localMinRef.current + step * 2, max);
-        localMaxRef.current = newMax;
-        onChangeRef.current?.(localMinRef.current, newMax);
-      }
-      forceUpdate(n => n + 1); // visual update only
-    };
-
-    const handleEnd = () => {
-      setDraggingHandle(null);
-    };
-
-    document.addEventListener('mousemove', handleMove);
-    document.addEventListener('mouseup', handleEnd);
-    document.addEventListener('touchmove', handleMove, { passive: false });
-    document.addEventListener('touchend', handleEnd);
-
+  useEffect(() => {
+    document.addEventListener('pointermove', handlePointerMove, { passive: false });
+    document.addEventListener('pointerup', handlePointerUp, { passive: false });
+    document.addEventListener('pointercancel', handlePointerUp, { passive: false });
     return () => {
-      document.removeEventListener('mousemove', handleMove);
-      document.removeEventListener('mouseup', handleEnd);
-      document.removeEventListener('touchmove', handleMove);
-      document.removeEventListener('touchend', handleEnd);
+      document.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('pointerup', handlePointerUp);
+      document.removeEventListener('pointercancel', handlePointerUp);
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     };
-  }, [draggingHandle, min, max, step, posToValue]);
-
-  const displayMin = localMinRef.current;
-  const displayMax = localMaxRef.current;
+  }, [handlePointerMove, handlePointerUp]);
 
   return (
     <div className="space-y-2">
-      <div ref={trackRef} className="relative h-6 flex items-center touch-none">
-        {/* Track background */}
-        <div className="absolute inset-0 h-2 bg-slate-800 rounded-lg" />
-
-        {/* Highlighted range between min and max */}
+      <div ref={trackRef} className="relative h-6 flex items-center touch-none select-none">
+        <div className="absolute left-0 right-0 h-2 bg-slate-800 rounded-lg" />
         <div
+          ref={rangeRef}
           className="absolute h-2 bg-emerald-500/30 rounded-lg"
-          style={{
-            left: `${toPercent(displayMin)}%`,
-            width: `${toPercent(displayMax) - toPercent(displayMin)}%`,
-          }}
+          style={{ left: `${toPercent(minVal)}%`, width: `${toPercent(maxVal) - toPercent(minVal)}%` }}
         />
-
-        {/* Min handle - draggable from left */}
         <button
+          ref={minHandleRef}
           type="button"
-          onMouseDown={handleMouseDown('min')}
-          onTouchStart={handleTouchStart('min')}
-          className="absolute w-5 h-5 bg-slate-900 border-2 border-emerald-500 rounded-full shadow-lg cursor-pointer hover:scale-110 transition-transform z-10"
-          style={{ left: `calc(${toPercent(displayMin)}% - 10px)` }}
+          onPointerDown={startDragging('min')}
+          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 bg-slate-900 border-2 border-emerald-500 rounded-full shadow-lg cursor-grab active:cursor-grabbing hover:scale-110 transition-transform z-10"
+          style={{ left: `${toPercent(minVal)}%`, touchAction: 'none' }}
           title={`Set minimum ${labelMin}`}
+          aria-label={`Set minimum ${labelMin}`}
         />
-
-        {/* Max handle - draggable from right */}
         <button
+          ref={maxHandleRef}
           type="button"
-          onMouseDown={handleMouseDown('max')}
-          onTouchStart={handleTouchStart('max')}
-          className="absolute w-5 h-5 bg-slate-900 border-2 border-emerald-500 rounded-full shadow-lg cursor-pointer hover:scale-110 transition-transform z-10"
-          style={{ left: `calc(${toPercent(displayMax)}% - 10px)` }}
+          onPointerDown={startDragging('max')}
+          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 bg-slate-900 border-2 border-emerald-500 rounded-full shadow-lg cursor-grab active:cursor-grabbing hover:scale-110 transition-transform z-10"
+          style={{ left: `${toPercent(maxVal)}%`, touchAction: 'none' }}
           title={`Set maximum ${labelMax}`}
+          aria-label={`Set maximum ${labelMax}`}
         />
       </div>
-
       <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400 font-mono">
-        <span>{displayMin.toFixed(2)}</span>
-        <span>{displayMax.toFixed(2)}</span>
+        <span ref={minLabelRef}>{minVal.toFixed(2)}</span>
+        <span ref={maxLabelRef}>{maxVal.toFixed(2)}</span>
       </div>
     </div>
   );
 };
+
 
 export const FilterBar: React.FC<FilterBarProps> = ({
   criteria,

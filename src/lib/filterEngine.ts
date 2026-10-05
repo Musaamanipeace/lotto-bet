@@ -604,3 +604,4 @@ export function calculateAccumulatorOdds(picks: SelectedPick[]): number {
   const raw = picks.reduce((acc, curr) => acc * curr.odd, 1.0);
   return Math.round(raw * 100) / 100;
 }
+

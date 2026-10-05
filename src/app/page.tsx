@@ -28,6 +28,17 @@ import {
   Building2,
 } from 'lucide-react';
 
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedValue(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [value, delay]);
+
+  return debouncedValue;
+}
+
 export default function HomePage() {
   const [games, setGames] = useState<StandardGame[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +47,7 @@ export default function HomePage() {
   const [lastUpdated, setLastUpdated] = useState<string>('');
 
   const [criteria, setCriteria] = useState<FilterCriteria>(DEFAULT_FILTER_CRITERIA);
+  const debouncedCriteria = useDebouncedValue(criteria, 100);
   const [selectedPicks, setSelectedPicks] = useState<SelectedPick[]>([]);
   /** Undo stack: previous slip states (most recent at end) */
   const [picksHistory, setPicksHistory] = useState<SelectedPick[][]>([]);
@@ -96,15 +108,15 @@ export default function HomePage() {
 
   // Compute evaluations and filtering for the active criteria
   const evaluations = useMemo(() => {
-    return evaluateAndFilterGames(games, criteria);
-  }, [games, criteria]);
+    return evaluateAndFilterGames(games, debouncedCriteria);
+  }, [games, debouncedCriteria]);
 
   // Compute live counts for each company filter
   const companyCounts = useMemo(() => {
-    const all = evaluateAndFilterGames(games, { ...criteria, selectedCompany: 'ALL' }).length;
-    const sportybet = evaluateAndFilterGames(games, { ...criteria, selectedCompany: 'sportybet:ke' }).length;
+    const all = evaluateAndFilterGames(games, { ...debouncedCriteria, selectedCompany: 'ALL' }).length;
+    const sportybet = evaluateAndFilterGames(games, { ...debouncedCriteria, selectedCompany: 'sportybet:ke' }).length;
     return { all, sportybet };
-  }, [games, criteria]);
+  }, [games, debouncedCriteria]);
 
   // Extract unique available leagues for dropdown filter
   const availableLeagues = useMemo(() => {
@@ -159,6 +171,13 @@ export default function HomePage() {
    * them to the existing slip. Does not clear or replace the slip.
    * Re-clicking picks a different random subset from whatever is still remaining.
    */
+  const handleShufflePicks = (count: number) => {
+    const n = Math.max(1, Math.min(100, count || criteria.pickCount));
+    const fresh = pickRandomSelections(evaluations, n);
+    if (fresh.length === 0) return;
+    commitPicks(fresh);
+  };
+
   const handlePickPicks = (count: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
     const exclude = new Set(selectedPicks.map((p) => p.gameId));
@@ -327,6 +346,7 @@ export default function HomePage() {
           totalEligibleMatches={evaluations.length}
           companyCounts={companyCounts}
           onPickPicks={handlePickPicks}
+          onShufflePicks={handleShufflePicks}
           onRemoveGames={handleRemoveGames}
           onClearSlip={handleClearSlip}
           onUndo={handleUndo}
@@ -515,3 +535,4 @@ export default function HomePage() {
     </div>
   );
 }
+
