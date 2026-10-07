@@ -290,8 +290,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   };
 
   const handleRangeChange = (
-    setMinKey: 'dcMin' | 'homeWinMin' | 'awayWinMin',
-    setMaxKey: 'dcMax' | 'homeWinMax' | 'awayWinMax',
+    setMinKey: 'dcMin' | 'homeWinMin' | 'awayWinMin' | 'overMin' | 'underMin' | 'bttsMin',
+    setMaxKey: 'dcMax' | 'homeWinMax' | 'awayWinMax' | 'overMax' | 'underMax' | 'bttsMax',
     newMin: number,
     newMax: number
   ) => {
@@ -356,12 +356,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       onChange({ ...criteria, homeWinMin: 1.00, homeWinMax: 3.00, enableHomeWin: true });
     } else if (box === 'awaywin') {
       onChange({ ...criteria, awayWinMin: 1.00, awayWinMax: 3.00, enableAwayWin: true });
-    } else if (box === 'over') {
-      onChange({ ...criteria, overGoalLine: '0.5', overMin: 1.01, overMax: 5.00, enableOver: true });
+     } else if (box === 'over') {
+      onChange({ ...criteria, overGoalLine: '0.5', overMin: 1.01, overMax: 3.00, enableOver: true });
     } else if (box === 'under') {
-      onChange({ ...criteria, underGoalLine: '4.5', underMin: 1.01, underMax: 5.00, enableUnder: true });
+      onChange({ ...criteria, underGoalLine: '4.5', underMin: 1.05, underMax: 3.00, enableUnder: true });
     } else if (box === 'btts') {
-      onChange({ ...criteria, bttsMin: 1.01, bttsMax: 5.00, enableBtts: true });
+      onChange({ ...criteria, bttsMin: 1.01, bttsMax: 3.00, enableBtts: true });
     }
   };
 
@@ -577,48 +577,21 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               </span>
             </div>
           </div>
-          {/* Double Chance Outcome Toggles: 1X2, 1X, 12, X2 */}
-          <div className="flex items-center gap-1.5 my-2.5">
-            <button
-              type="button"
-              onClick={() => {
-                const allOn =
-                  criteria.enableDc1X !== false &&
-                  criteria.enableDc12 !== false &&
-                  criteria.enableDcX2 !== false;
-                onChange({
-                  ...criteria,
-                  enableDc1X: !allOn,
-                  enableDc12: !allOn,
-                  enableDcX2: !allOn,
-                });
-              }}
-              disabled={!criteria.enableDoubleChance}
-              className={`px-2 py-1 rounded-lg text-xs font-bold font-mono transition-all border ${
-                criteria.enableDc1X !== false &&
-                criteria.enableDc12 !== false &&
-                criteria.enableDcX2 !== false
-                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-extrabold shadow-sm'
-                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-              } disabled:opacity-40`}
-              title="Toggle all Double Chance picks (1X2)"
-            >
-              1X2
-            </button>
-
-            <button
-              type="button"
-              onClick={() => updateCriteria('enableDc1X', criteria.enableDc1X === false)}
-              disabled={!criteria.enableDoubleChance}
-              className={`flex-1 py-1 rounded-lg text-xs font-bold font-mono text-center transition-all border ${
-                criteria.enableDc1X !== false
-                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
-                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-              } disabled:opacity-40`}
-              title="Toggle 1X (Home or Draw)"
-            >
-              1X
-            </button>
+           {/* Double Chance Outcome Toggles: 1X, 12, X2 */}
+           <div className="flex items-center gap-1.5 my-2.5">
+             <button
+               type="button"
+               onClick={() => updateCriteria('enableDc1X', criteria.enableDc1X === false)}
+               disabled={!criteria.enableDoubleChance}
+               className={`flex-1 py-1 rounded-lg text-xs font-bold font-mono text-center transition-all border ${
+                 criteria.enableDc1X !== false
+                   ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
+                   : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+               } disabled:opacity-40`}
+               title="Toggle 1X (Home or Draw)"
+             >
+               1X
+             </button>
 
             <button
               type="button"
@@ -832,7 +805,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 type="button"
                 onClick={() => handleResetBox('over')}
                 className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                title="Reset Over Goals to bare min & max (0.5 line, 1.01 - 5.00)"
+                 title="Reset Over Goals to bare min & max (0.5 line, 1.01 - 3.00)"
               >
                 <RotateCcw className="w-3 h-3" />
               </button>
@@ -864,11 +837,25 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             >
               Over 1.5
             </button>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-2">
-            Toggle on/off, Solo to isolate, or Reset to bare min &amp; max.
-          </p>
-        </div>
+           </div>
+           {criteria.enableOver && (
+             <DualRangeSlider
+               min={1.01}
+               max={3.0}
+               step={0.02}
+               minVal={criteria.overMin}
+               maxVal={criteria.overMax}
+               labelMin="over"
+               labelMax="over"
+               onChange={(newMin, newMax) =>
+                 handleRangeChange('overMin', 'overMax', newMin, newMax)
+               }
+             />
+           )}
+           <p className="text-[11px] text-slate-400 mt-2">
+             Toggle on/off, Solo to isolate, or Reset to bare min &amp; max (1.01 - 3.00).
+           </p>
+         </div>
 
         {/* Box 5: Under Goal Line Selector */}
         <div
@@ -906,7 +893,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 type="button"
                 onClick={() => handleResetBox('under')}
                 className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                title="Reset Under Goals to bare min & max (4.5 line, 1.01 - 5.00)"
+                 title="Reset Under Goals to bare min & max (4.5 line, 1.01 - 3.00)"
               >
                 <RotateCcw className="w-3 h-3" />
               </button>
@@ -938,20 +925,34 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             >
               Under 4.5
             </button>
-          </div>
-          <p className="text-[11px] text-slate-400 mt-2">
-            Safe ceiling for accumulators. Solo to snap selecting area.
-          </p>
+           </div>
+           {criteria.enableUnder && (
+             <DualRangeSlider
+               min={1.01}
+               max={3.0}
+               step={0.02}
+               minVal={criteria.underMin}
+               maxVal={criteria.underMax}
+               labelMin="under"
+               labelMax="under"
+               onChange={(newMin, newMax) =>
+                 handleRangeChange('underMin', 'underMax', newMin, newMax)
+               }
+             />
+           )}
+           <p className="text-[11px] text-slate-400 mt-2">
+             Safe ceiling for accumulators. Solo to snap selecting area.
+           </p>
         </div>
 
-        {/* Box 6: Both Teams To Score (GG) */}
-        <div
-          className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
-            criteria.enableBtts
-              ? 'bg-[#0f172a] border-cyan-500/40 shadow-sm'
-              : 'bg-slate-900/40 border-slate-800/70 opacity-60'
-          }`}
-        >
+         {/* Box 6: Both Teams To Score (GG) */}
+         <div
+           className={`p-3.5 rounded-xl border transition-all flex flex-col ${
+             criteria.enableBtts
+               ? 'bg-[#0f172a] border-cyan-500/40 shadow-sm'
+               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
+           }`}
+         >
           <div className="flex items-center justify-between mb-2">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -980,7 +981,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 type="button"
                 onClick={() => handleResetBox('btts')}
                 className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                title="Reset BTTS to bare min & max (1.01 - 5.00)"
+                title="Reset BTTS (GG/NG) to bare min & max (1.01 - 3.00)"
               >
                 <RotateCcw className="w-3 h-3" />
               </button>
@@ -989,8 +990,22 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               </span>
             </div>
           </div>
+          {criteria.enableBtts && (
+            <DualRangeSlider
+              min={1.01}
+              max={3.0}
+              step={0.02}
+              minVal={criteria.bttsMin}
+              maxVal={criteria.bttsMax}
+              labelMin="gg"
+              labelMax="gg"
+              onChange={(newMin, newMax) =>
+                handleRangeChange('bttsMin', 'bttsMax', newMin, newMax)
+              }
+            />
+          )}
           <p className="text-[11px] text-slate-400 mt-2">
-            Both teams score on SportyBet market 29. Toggle on/off or Solo.
+            Both teams score on SportyBet market 29. Toggle on/off, Solo to snap selecting area, or Reset to bare min &amp; max (1.01 - 3.00).
           </p>
         </div>
       </div>
