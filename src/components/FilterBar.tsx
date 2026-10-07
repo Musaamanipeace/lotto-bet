@@ -3,7 +3,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FilterCriteria, BookieId } from '@/types';
 import { TIMEFRAME_OPTIONS, PICK_COUNT_PRESETS, DEFAULT_FILTER_CRITERIA, BOOKIE_CONFIGS } from '@/lib/constants';
-import { RotateCcw, Search, Sliders, Building2, Check, ShieldCheck, Plus, Minus, Trash2, Shuffle, Undo2 } from 'lucide-react';
+import {
+  RotateCcw,
+  Search,
+  Sliders,
+  Building2,
+  Check,
+  ShieldCheck,
+  Plus,
+  Minus,
+  Trash2,
+  Shuffle,
+  ChevronDown,
+} from 'lucide-react';
 
 interface FilterBarProps {
   criteria: FilterCriteria;
@@ -14,19 +26,13 @@ interface FilterBarProps {
     all: number;
     sportybet: number;
   };
-  onPickPicks: (count: number) => void;
-  onShufflePicks: (count: number) => void;
+  onNextAdd: (count: number) => void;
+  onShuffle: (target: 'staging' | 'slip', count: number) => void;
   onRemoveGames: (count: number) => void;
   onClearSlip: () => void;
-  onUndo?: () => void;
-  canUndo?: boolean;
+  onSoloFilter?: (market: string) => void;
 }
 
-/**
- * Dual-handle range slider that can be dragged from both the left (min)
- * and right (max) handles. Both handles can be moved independently.
- * Uses refs for drag state to avoid React re-render churn during dragging.
- */
 interface DualRangeSliderProps {
   min: number;
   max: number;
@@ -254,25 +260,32 @@ const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
   );
 };
 
-
 export const FilterBar: React.FC<FilterBarProps> = ({
   criteria,
   onChange,
   availableLeagues,
   totalEligibleMatches,
   companyCounts,
-  onPickPicks,
-  onShufflePicks,
+  onNextAdd,
+  onShuffle,
   onRemoveGames,
   onClearSlip,
-  onUndo,
-  canUndo = false,
+  onSoloFilter,
 }) => {
+  // Typable pick input local state
+  const [pickInputStr, setPickInputStr] = useState<string>(String(criteria.pickCount || 10));
+  const [shuffleTarget, setShuffleTarget] = useState<'staging' | 'slip'>('staging');
+  const [isShuffleMenuOpen, setIsShuffleMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setPickInputStr(String(criteria.pickCount));
+  }, [criteria.pickCount]);
+
   const updateCriteria = <K extends keyof FilterCriteria>(key: K, value: FilterCriteria[K]) => {
     onChange({ ...criteria, [key]: value });
   };
 
-  const handleReset = () => {
+  const handleResetAll = () => {
     onChange({ ...DEFAULT_FILTER_CRITERIA });
   };
 
@@ -283,6 +296,95 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     newMax: number
   ) => {
     onChange({ ...criteria, [setMinKey]: newMin, [setMaxKey]: newMax });
+  };
+
+  // Check if a specific market is currently solo'd
+  const isSolo = (market: 'dc' | 'homewin' | 'awaywin' | 'over' | 'under' | 'btts') => {
+    const { enableDoubleChance, enableHomeWin, enableAwayWin, enableOver, enableUnder, enableBtts } = criteria;
+    if (market === 'dc') return enableDoubleChance && !enableHomeWin && !enableAwayWin && !enableOver && !enableUnder && !enableBtts;
+    if (market === 'homewin') return enableHomeWin && !enableDoubleChance && !enableAwayWin && !enableOver && !enableUnder && !enableBtts;
+    if (market === 'awaywin') return enableAwayWin && !enableDoubleChance && !enableHomeWin && !enableOver && !enableUnder && !enableBtts;
+    if (market === 'over') return enableOver && !enableDoubleChance && !enableHomeWin && !enableAwayWin && !enableUnder && !enableBtts;
+    if (market === 'under') return enableUnder && !enableDoubleChance && !enableHomeWin && !enableAwayWin && !enableOver && !enableBtts;
+    if (market === 'btts') return enableBtts && !enableDoubleChance && !enableHomeWin && !enableAwayWin && !enableOver && !enableUnder;
+    return false;
+  };
+
+  // Solo button handler: snaps selecting area to only that filter
+  const handleSolo = (market: 'dc' | 'homewin' | 'awaywin' | 'over' | 'under' | 'btts') => {
+    if (isSolo(market)) {
+      // Toggle off solo: restore all market filters
+      onChange({
+        ...criteria,
+        enableDoubleChance: true,
+        enableHomeWin: true,
+        enableAwayWin: false,
+        enableOver: true,
+        enableUnder: true,
+        enableBtts: true,
+      });
+    } else {
+      // Solo this market
+      onChange({
+        ...criteria,
+        enableDoubleChance: market === 'dc',
+        enableHomeWin: market === 'homewin',
+        enableAwayWin: market === 'awaywin',
+        enableOver: market === 'over',
+        enableUnder: market === 'under',
+        enableBtts: market === 'btts',
+      });
+    }
+    if (onSoloFilter) {
+      onSoloFilter(market);
+    }
+  };
+
+  // Reset single filter box to bare min and max
+  const handleResetBox = (box: 'dc' | 'homewin' | 'awaywin' | 'over' | 'under' | 'btts') => {
+    if (box === 'dc') {
+      onChange({
+        ...criteria,
+        dcMin: 1.00,
+        dcMax: 2.00,
+        enableDoubleChance: true,
+        enableDc1X: true,
+        enableDc12: true,
+        enableDcX2: true,
+      });
+    } else if (box === 'homewin') {
+      onChange({ ...criteria, homeWinMin: 1.00, homeWinMax: 3.00, enableHomeWin: true });
+    } else if (box === 'awaywin') {
+      onChange({ ...criteria, awayWinMin: 1.00, awayWinMax: 3.00, enableAwayWin: true });
+    } else if (box === 'over') {
+      onChange({ ...criteria, overGoalLine: '0.5', overMin: 1.01, overMax: 5.00, enableOver: true });
+    } else if (box === 'under') {
+      onChange({ ...criteria, underGoalLine: '4.5', underMin: 1.01, underMax: 5.00, enableUnder: true });
+    } else if (box === 'btts') {
+      onChange({ ...criteria, bttsMin: 1.01, bttsMax: 5.00, enableBtts: true });
+    }
+  };
+
+  const handlePickInputChange = (val: string) => {
+    setPickInputStr(val);
+    const parsed = parseInt(val, 10);
+    if (!isNaN(parsed) && parsed >= 1 && parsed <= 100) {
+      updateCriteria('pickCount', parsed);
+    }
+  };
+
+  const handlePickInputBlur = () => {
+    const parsed = parseInt(pickInputStr, 10);
+    if (isNaN(parsed) || parsed < 1) {
+      setPickInputStr('1');
+      updateCriteria('pickCount', 1);
+    } else if (parsed > 100) {
+      setPickInputStr('100');
+      updateCriteria('pickCount', 100);
+    } else {
+      setPickInputStr(String(parsed));
+      updateCriteria('pickCount', parsed);
+    }
   };
 
   return (
@@ -323,7 +425,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               </div>
               <div>
                 <span className="text-xs font-bold text-white block">All Bookmakers</span>
-                <span className="text-[10px] text-slate-400">SportyBet</span>
+                <span className="text-[10px] text-slate-400">SportyBet Live Odds</span>
               </div>
             </div>
             <div className="text-right">
@@ -416,21 +518,21 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </span>
           </button>
 
-          {/* Reset Button */}
+          {/* Reset All Filters Button */}
           <button
-            onClick={handleReset}
-            title="Reset Filters"
+            onClick={handleResetAll}
+            title="Reset All Filters to Default"
             className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs flex items-center gap-1 transition-colors border border-slate-700"
           >
             <RotateCcw className="w-4 h-4" />
-            <span className="hidden sm:inline">Reset</span>
+            <span className="hidden sm:inline">Reset All</span>
           </button>
         </div>
       </div>
 
-      {/* SECTION 3: Market Selector Chips & Odds Bounds */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 py-5 border-b border-slate-800/80">
-        {/* Double Chance Controls */}
+      {/* SECTION 3: Market Selector Chips & Odds Bounds with Toggle, Solo, and Box Reset */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 py-5 border-b border-slate-800/80">
+        {/* Box 1: Double Chance Controls */}
         <div
           className={`p-3.5 rounded-xl border transition-all ${
             criteria.enableDoubleChance
@@ -448,10 +550,105 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               />
               <span className="text-xs font-bold text-emerald-300">Double Chance (1X, 12, X2)</span>
             </label>
-            <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-500/20">
-              {criteria.dcMin.toFixed(2)} - {criteria.dcMax.toFixed(2)}
-            </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleSolo('dc')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono transition-colors border ${
+                  isSolo('dc')
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-extrabold shadow-sm'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+                title="Solo: Snap selecting area to only Double Chance"
+              >
+                Solo
+              </button>
+              <button
+                type="button"
+                onClick={() => handleResetBox('dc')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                title="Reset Double Chance to bare min & max (1.00 - 2.00)"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+              <span className="text-[11px] font-mono font-medium px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-500/20">
+                {criteria.dcMin.toFixed(2)} - {criteria.dcMax.toFixed(2)}
+              </span>
+            </div>
           </div>
+          {/* Double Chance Outcome Toggles: 1X2, 1X, 12, X2 */}
+          <div className="flex items-center gap-1.5 my-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                const allOn =
+                  criteria.enableDc1X !== false &&
+                  criteria.enableDc12 !== false &&
+                  criteria.enableDcX2 !== false;
+                onChange({
+                  ...criteria,
+                  enableDc1X: !allOn,
+                  enableDc12: !allOn,
+                  enableDcX2: !allOn,
+                });
+              }}
+              disabled={!criteria.enableDoubleChance}
+              className={`px-2 py-1 rounded-lg text-xs font-bold font-mono transition-all border ${
+                criteria.enableDc1X !== false &&
+                criteria.enableDc12 !== false &&
+                criteria.enableDcX2 !== false
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-extrabold shadow-sm'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+              } disabled:opacity-40`}
+              title="Toggle all Double Chance picks (1X2)"
+            >
+              1X2
+            </button>
+
+            <button
+              type="button"
+              onClick={() => updateCriteria('enableDc1X', criteria.enableDc1X === false)}
+              disabled={!criteria.enableDoubleChance}
+              className={`flex-1 py-1 rounded-lg text-xs font-bold font-mono text-center transition-all border ${
+                criteria.enableDc1X !== false
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+              } disabled:opacity-40`}
+              title="Toggle 1X (Home or Draw)"
+            >
+              1X
+            </button>
+
+            <button
+              type="button"
+              onClick={() => updateCriteria('enableDc12', criteria.enableDc12 === false)}
+              disabled={!criteria.enableDoubleChance}
+              className={`flex-1 py-1 rounded-lg text-xs font-bold font-mono text-center transition-all border ${
+                criteria.enableDc12 !== false
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+              } disabled:opacity-40`}
+              title="Toggle 12 (Home or Away)"
+            >
+              12
+            </button>
+
+            <button
+              type="button"
+              onClick={() => updateCriteria('enableDcX2', criteria.enableDcX2 === false)}
+              disabled={!criteria.enableDoubleChance}
+              className={`flex-1 py-1 rounded-lg text-xs font-bold font-mono text-center transition-all border ${
+                criteria.enableDcX2 !== false
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+              } disabled:opacity-40`}
+              title="Toggle X2 (Draw or Away)"
+            >
+              X2
+            </button>
+          </div>
+
           {criteria.enableDoubleChance && (
             <DualRangeSlider
               min={1.0}
@@ -467,11 +664,11 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             />
           )}
           <p className="text-[11px] text-slate-400 mt-1">
-            Drag handles to set odds range. Widening includes more games.
+            Toggle on/off, Solo to isolate, or Reset to bare min &amp; max (1.00 - 2.00).
           </p>
         </div>
 
-        {/* Home Win (1) Controls */}
+        {/* Box 2: Home Win (1) Controls */}
         <div
           className={`p-3.5 rounded-xl border transition-all ${
             criteria.enableHomeWin
@@ -489,9 +686,32 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               />
               <span className="text-xs font-bold text-blue-300">Home Win (1)</span>
             </label>
-            <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded bg-blue-950/60 text-blue-400 border border-blue-800/50">
-              {criteria.homeWinMin.toFixed(2)} - {criteria.homeWinMax.toFixed(2)}
-            </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleSolo('homewin')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono transition-colors border ${
+                  isSolo('homewin')
+                    ? 'bg-blue-500 text-slate-950 border-blue-400 font-extrabold shadow-sm'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+                title="Solo: Snap selecting area to only Home Win"
+              >
+                Solo
+              </button>
+              <button
+                type="button"
+                onClick={() => handleResetBox('homewin')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                title="Reset Home Win to bare min & max (1.00 - 3.00)"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+              <span className="text-[11px] font-mono font-medium px-1.5 py-0.5 rounded bg-blue-950/60 text-blue-400 border border-blue-800/50">
+                {criteria.homeWinMin.toFixed(2)} - {criteria.homeWinMax.toFixed(2)}
+              </span>
+            </div>
           </div>
           {criteria.enableHomeWin && (
             <DualRangeSlider
@@ -508,11 +728,11 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             />
           )}
           <p className="text-[11px] text-slate-400 mt-1">
-            Drag handles to set odds range. Widening includes more games.
+            Toggle on/off, Solo to isolate, or Reset to bare min &amp; max (1.00 - 3.00).
           </p>
         </div>
 
-        {/* Away Win (2) Controls */}
+        {/* Box 3: Away Win (2) Controls */}
         <div
           className={`p-3.5 rounded-xl border transition-all ${
             criteria.enableAwayWin
@@ -530,9 +750,32 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               />
               <span className="text-xs font-bold text-indigo-300">Away Win (2)</span>
             </label>
-            <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded bg-indigo-950/60 text-indigo-400 border border-indigo-800/50">
-              {criteria.awayWinMin.toFixed(2)} - {criteria.awayWinMax.toFixed(2)}
-            </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleSolo('awaywin')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono transition-colors border ${
+                  isSolo('awaywin')
+                    ? 'bg-indigo-500 text-slate-950 border-indigo-400 font-extrabold shadow-sm'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+                title="Solo: Snap selecting area to only Away Win"
+              >
+                Solo
+              </button>
+              <button
+                type="button"
+                onClick={() => handleResetBox('awaywin')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                title="Reset Away Win to bare min & max (1.00 - 3.00)"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+              <span className="text-[11px] font-mono font-medium px-1.5 py-0.5 rounded bg-indigo-950/60 text-indigo-400 border border-indigo-800/50">
+                {criteria.awayWinMin.toFixed(2)} - {criteria.awayWinMax.toFixed(2)}
+              </span>
+            </div>
           </div>
           {criteria.enableAwayWin && (
             <DualRangeSlider
@@ -549,17 +792,17 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             />
           )}
           <p className="text-[11px] text-slate-400 mt-1">
-            Drag handles to set odds range. Widening includes more games.
+            Toggle on/off, Solo to isolate, or Reset to bare min &amp; max (1.00 - 3.00).
           </p>
         </div>
 
-        {/* Over Goal Line Selector */}
+        {/* Box 4: Over Goal Line Selector */}
         <div
           className={`p-3.5 rounded-xl border transition-all flex flex-col ${
             criteria.enableOver
               ? 'bg-[#0f172a] border-amber-500/40 shadow-sm'
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
-          }}`}
+          }`}
         >
           <div className="flex items-center justify-between mb-2">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -571,9 +814,32 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               />
               <span className="text-xs font-bold text-amber-300">Over Goals</span>
             </label>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-950/60 text-amber-400 border border-amber-800/50">
-              High Probability
-            </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleSolo('over')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono transition-colors border ${
+                  isSolo('over')
+                    ? 'bg-amber-400 text-slate-950 border-amber-300 font-extrabold shadow-sm'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+                title="Solo: Snap selecting area to only Over Goals"
+              >
+                Solo
+              </button>
+              <button
+                type="button"
+                onClick={() => handleResetBox('over')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                title="Reset Over Goals to bare min & max (0.5 line, 1.01 - 5.00)"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-400 border border-amber-800/50">
+                Over {criteria.overGoalLine}
+              </span>
+            </div>
           </div>
           <div className="flex gap-1">
             <button
@@ -600,17 +866,17 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </button>
           </div>
           <p className="text-[11px] text-slate-400 mt-2">
-            Filters matches with high likelihood of at least {criteria.overGoalLine === '0.5' ? '1' : '2'} goals.
+            Toggle on/off, Solo to isolate, or Reset to bare min &amp; max.
           </p>
         </div>
 
-        {/* Under Goal Line Selector */}
+        {/* Box 5: Under Goal Line Selector */}
         <div
           className={`p-3.5 rounded-xl border transition-all flex flex-col ${
             criteria.enableUnder
               ? 'bg-[#0f172a] border-purple-500/40 shadow-sm'
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
-          }}`}
+          }`}
         >
           <div className="flex items-center justify-between mb-2">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -622,9 +888,32 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               />
               <span className="text-xs font-bold text-purple-300">Under Goals</span>
             </label>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-purple-950/60 text-purple-400 border border-purple-800/50">
-              Max {criteria.underGoalLine === '3.5' ? '3' : '4'} Goals
-            </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleSolo('under')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono transition-colors border ${
+                  isSolo('under')
+                    ? 'bg-purple-500 text-slate-950 border-purple-400 font-extrabold shadow-sm'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+                title="Solo: Snap selecting area to only Under Goals"
+              >
+                Solo
+              </button>
+              <button
+                type="button"
+                onClick={() => handleResetBox('under')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                title="Reset Under Goals to bare min & max (4.5 line, 1.01 - 5.00)"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-950/60 text-purple-400 border border-purple-800/50">
+                Under {criteria.underGoalLine}
+              </span>
+            </div>
           </div>
           <div className="flex gap-1">
             <button
@@ -651,11 +940,11 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </button>
           </div>
           <p className="text-[11px] text-slate-400 mt-2">
-            Safe over/under ceiling for disciplined accumulators.
+            Safe ceiling for accumulators. Solo to snap selecting area.
           </p>
         </div>
 
-        {/* Both Teams To Score (GG) */}
+        {/* Box 6: Both Teams To Score (GG) */}
         <div
           className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
             criteria.enableBtts
@@ -663,7 +952,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
           }`}
         >
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-2">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -673,17 +962,40 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               />
               <span className="text-xs font-bold text-cyan-300">Both Teams Score (GG)</span>
             </label>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-cyan-950/60 text-cyan-400 border border-cyan-800/50">
-              GG / NG
-            </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleSolo('btts')}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono transition-colors border ${
+                  isSolo('btts')
+                    ? 'bg-cyan-400 text-slate-950 border-cyan-300 font-extrabold shadow-sm'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+                title="Solo: Snap selecting area to only BTTS"
+              >
+                Solo
+              </button>
+              <button
+                type="button"
+                onClick={() => handleResetBox('btts')}
+                className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                title="Reset BTTS to bare min & max (1.01 - 5.00)"
+              >
+                <RotateCcw className="w-3 h-3" />
+              </button>
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-cyan-950/60 text-cyan-400 border border-cyan-800/50">
+                GG / NG
+              </span>
+            </div>
           </div>
           <p className="text-[11px] text-slate-400 mt-2">
-            Prefer GG (both teams score) when available on SportyBet market 29.
+            Both teams score on SportyBet market 29. Toggle on/off or Solo.
           </p>
         </div>
       </div>
 
-      {/* SECTION 4: Timeframe, League & N-Picks Selector */}
+      {/* SECTION 4: Timeframe, League & Typable Pick Controls */}
       <div className="pt-4 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
         {/* Timeframe Pills */}
         <div className="space-y-1.5 w-full lg:w-auto">
@@ -729,86 +1041,117 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </select>
         </div>
 
-        {/* Pick Count Selector */}
+        {/* Typable Pick Size & Action Controls */}
         <div className="space-y-1.5 w-full lg:w-auto">
           <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
-            Betslip Size (N):
+            Picks Size (Typable):
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Presets and Typable Input */}
             <div className="flex items-center bg-[#0b111e] border border-slate-700/80 rounded-xl p-1 gap-1">
               {PICK_COUNT_PRESETS.map((preset) => (
                 <button
                   key={preset}
                   onClick={() => updateCriteria('pickCount', preset)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all ${
+                  className={`px-2 py-1 rounded-lg text-xs font-mono font-semibold transition-all ${
                     criteria.pickCount === preset
-                      ? 'bg-emerald-500 text-slate-950'
+                      ? 'bg-emerald-500 text-slate-950 font-bold'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
                   }`}
                 >
                   {preset}
                 </button>
               ))}
+              {/* Typable input */}
               <input
-                type="number"
-                min="1"
-                max="100"
-                value={criteria.pickCount}
-                onChange={(e) => updateCriteria('pickCount', Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-12 bg-slate-800/80 border border-slate-700 text-center py-1 text-xs text-emerald-400 font-mono font-bold rounded-lg focus:outline-none"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={pickInputStr}
+                onChange={(e) => handlePickInputChange(e.target.value)}
+                onBlur={handlePickInputBlur}
+                className="w-14 bg-slate-800 border border-slate-700 text-center py-1 text-xs text-emerald-400 font-mono font-bold rounded-lg focus:outline-none focus:border-emerald-400"
+                title="Type any number of picks (1 - 100)"
               />
             </div>
 
-            <span
-              className="px-3.5 py-2 bg-slate-900 text-emerald-400 font-bold text-xs rounded-xl flex items-center gap-1.5 border border-slate-700"
-            >
-              <span className="text-sm">N</span>
+            {/* Renamed label: Pick instead of algo pick n */}
+            <span className="px-3 py-1.5 bg-slate-900 text-emerald-400 font-bold text-xs rounded-xl flex items-center gap-1.5 border border-slate-700 font-mono">
               Pick {criteria.pickCount}
             </span>
 
+            {/* Next Button: Adds candidate picks from staging area to slip */}
             <button
-              onClick={() => onPickPicks(criteria.pickCount)}
-              title="Add Next: add candidate Pick N games to your betslip"
-              className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1 transition-colors"
+              onClick={() => onNextAdd(criteria.pickCount)}
+              title="Next: Add candidate picks from staging area into the betslip"
+              className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1 shadow-sm transition-all active:scale-95"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Add Next</span>
+              <span>Next</span>
             </button>
 
-            <button
-              onClick={() => onShufflePicks(criteria.pickCount)}
-              title="Shuffle candidate Pick N from remaining available games (does not alter betslip)"
-              className="px-2.5 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 border border-slate-700 text-slate-900 text-xs font-semibold flex items-center gap-1 transition-colors"
-            >
-              <Shuffle className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Shuffle</span>
-            </button>
+            {/* Shuffle Button with Dropdown (Staging Area vs In Slip) */}
+            <div className="relative inline-flex items-center">
+              <button
+                onClick={() => onShuffle(shuffleTarget, criteria.pickCount)}
+                title={`Shuffle ${shuffleTarget === 'staging' ? 'Staging Area' : 'In Slip'} selections`}
+                className="px-2.5 py-1.5 rounded-l-xl bg-slate-200 hover:bg-white text-slate-950 text-xs font-bold flex items-center gap-1 transition-colors"
+              >
+                <Shuffle className="w-3.5 h-3.5" />
+                <span>Shuffle ({shuffleTarget === 'staging' ? 'Staging' : 'In Slip'})</span>
+              </button>
+              <button
+                onClick={() => setIsShuffleMenuOpen(!isShuffleMenuOpen)}
+                title="Select shuffle target: Staging Area or In Slip"
+                className="px-1.5 py-1.5 rounded-r-xl bg-slate-300 hover:bg-white text-slate-950 border-l border-slate-400 text-xs transition-colors"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
 
+              {/* Dropdown Menu */}
+              {isShuffleMenuOpen && (
+                <div className="absolute top-full mt-1 left-0 z-30 bg-[#0d1422] border border-slate-700 rounded-xl shadow-2xl py-1 w-44">
+                  <button
+                    onClick={() => {
+                      setShuffleTarget('staging');
+                      setIsShuffleMenuOpen(false);
+                      onShuffle('staging', criteria.pickCount);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-800 transition-colors ${
+                      shuffleTarget === 'staging' ? 'text-amber-400 font-bold bg-slate-850' : 'text-slate-300'
+                    }`}
+                  >
+                    <span>Staging Area</span>
+                    {shuffleTarget === 'staging' && <Check className="w-3 h-3 text-amber-400" />}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShuffleTarget('slip');
+                      setIsShuffleMenuOpen(false);
+                      onShuffle('slip', criteria.pickCount);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-800 transition-colors ${
+                      shuffleTarget === 'slip' ? 'text-emerald-400 font-bold bg-slate-850' : 'text-slate-300'
+                    }`}
+                  >
+                    <span>In Slip</span>
+                    {shuffleTarget === 'slip' && <Check className="w-3 h-3 text-emerald-400" />}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Remove Button: Removes least preferred ("can do without") games */}
             <button
               onClick={() => onRemoveGames(criteria.pickCount)}
-              title="Remove N games from the end of the slip"
+              title="Remove: Discards the least preferred (highest risk) games you can do without"
               className="px-2.5 py-1.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-xs font-semibold flex items-center gap-1 transition-colors"
             >
               <Minus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Remove</span>
             </button>
 
-            {onUndo && (
-              <button
-                onClick={onUndo}
-                disabled={!canUndo}
-                title="Undo last slip change"
-                className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-colors ${
-                  canUndo
-                    ? 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/40 text-amber-300'
-                    : 'bg-slate-800/50 border-slate-700/50 text-slate-500 cursor-not-allowed'
-                }`}
-              >
-                <Undo2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Undo</span>
-              </button>
-            )}
-
+            {/* Empty Slip Button */}
             <button
               onClick={onClearSlip}
               title="Empty the entire betslip"

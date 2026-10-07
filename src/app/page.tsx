@@ -9,6 +9,7 @@ import {
   pickSmartSelections,
   mergePicksIntoSlip,
   calculateAccumulatorOdds,
+  removeLeastPreferredPicks,
 } from '@/lib/filterEngine';
 import { FilterBar } from '@/components/FilterBar';
 import { GameCard } from '@/components/GameCard';
@@ -18,8 +19,9 @@ import { AccountPanel } from '@/components/AccountPanel';
 import { AiCoachPanel } from '@/components/AiCoachPanel';
 import { AuthModal } from '@/components/AuthModal';
 import { SavedSlipsModal } from '@/components/SavedSlipsModal';
+import { ResultsModal } from '@/components/ResultsModal';
 import { AiAgentDrawer } from '@/components/AiAgentDrawer';
-import { getCurrentUser, signOutUser, listSavedSlips, saveBetslip } from '@/lib/storage';
+import { getCurrentUser, signOutUser, listSavedSlips } from '@/lib/storage';
 import {
   Dices,
   RefreshCw,
@@ -35,6 +37,8 @@ import {
   LogOut,
   Bookmark,
   Bot,
+  Trophy,
+  Plus,
 } from 'lucide-react';
 
 function useDebouncedValue<T>(value: T, delay: number): T {
@@ -52,14 +56,11 @@ export default function HomePage() {
   const [games, setGames] = useState<StandardGame[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [oddsSource, setOddsSource] = useState<'api'>('api');
   const [lastUpdated, setLastUpdated] = useState<string>('');
 
   const [criteria, setCriteria] = useState<FilterCriteria>(DEFAULT_FILTER_CRITERIA);
   const debouncedCriteria = useDebouncedValue(criteria, 100);
   const [selectedPicks, setSelectedPicks] = useState<SelectedPick[]>([]);
-  /** Undo stack: previous slip states (most recent at end) */
-  const [picksHistory, setPicksHistory] = useState<SelectedPick[][]>([]);
   const [stake, setStake] = useState<number>(50);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'algo' | 'picked'>('all');
@@ -67,9 +68,10 @@ export default function HomePage() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isSavedSlipsModalOpen, setIsSavedSlipsModalOpen] = useState(false);
+  const [isResultsModalOpen, setIsResultsModalOpen] = useState(false);
   const [isAiAgentOpen, setIsAiAgentOpen] = useState(false);
   const [savedSlipsCount, setSavedSlipsCount] = useState<number>(0);
-  const [lastBookingCode, setLastBookingCode] = useState<string | undefined>();
+  const [lastBookingCode] = useState<string | undefined>();
 
   // Initialize user session and saved slips count
   useEffect(() => {
@@ -80,28 +82,8 @@ export default function HomePage() {
     }
   }, []);
 
-  /** Push current slip onto undo history, then apply next state */
   const commitPicks = (next: SelectedPick[] | ((prev: SelectedPick[]) => SelectedPick[])) => {
-    setSelectedPicks((prev) => {
-      const resolved = typeof next === 'function' ? next(prev) : next;
-      // Avoid stacking identical snapshots
-      const same =
-        prev.length === resolved.length &&
-        prev.every((p, i) => p.gameId === resolved[i]?.gameId && p.pick === resolved[i]?.pick);
-      if (!same) {
-        setPicksHistory((h) => [...h.slice(-29), prev]);
-      }
-      return resolved;
-    });
-  };
-
-  const handleUndo = () => {
-    setPicksHistory((h) => {
-      if (h.length === 0) return h;
-      const prev = h[h.length - 1];
-      setSelectedPicks(prev);
-      return h.slice(0, -1);
-    });
+    setSelectedPicks(next);
   };
 
   // Fetch games from /api/odds
@@ -115,7 +97,6 @@ export default function HomePage() {
         throw new Error(data.error || 'Failed to ingest match odds');
       }
       setGames(data.games || []);
-      setOddsSource(data.source || 'api');
       setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error fetching match odds';
@@ -165,11 +146,9 @@ export default function HomePage() {
   // Keep algo candidate picks in sync with remaining available games and pickCount
   useEffect(() => {
     setAlgoPicks((prev) => {
-      // Exclude any picks that got added to the betslip (either one-by-one or via Add Next)
       const valid = prev.filter((p) => !selectedPicksMap.has(p.gameId));
       const targetCount = Math.max(1, Math.min(100, criteria.pickCount));
       if (valid.length === targetCount) return valid;
-      // If count changed or picks moved to the slip, draw fresh candidate selections from remaining games
       return pickRandomSelections(remainingEvaluations, targetCount);
     });
   }, [remainingEvaluations, criteria.pickCount, selectedPicksMap]);
@@ -191,10 +170,7 @@ export default function HomePage() {
     setCriteria((prev) => ({ ...prev, requireFullMarketData: !prev.requireFullMarketData }));
   };
 
-  /**
-   * Apply current filters, AI-pick `count` new games from remaining, ADD to slip (no duplicates).
-   * Filters stay as-is so you can tweak and add again; use resetFilters to clear criteria only.
-   */
+  /** AI pick `count` new games from remaining, ADD to slip */
   const handleAddAiPicks = (count: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
     const exclude = new Set<string>(selectedPicks.map((p) => p.gameId));
@@ -204,22 +180,25 @@ export default function HomePage() {
   };
 
   /**
-   * Shuffle:
-   * Randomly reshuffles the candidate Pick N selections from remaining available games
-   * (games not already on the betslip).
-   * Does NOT add or remove games from the betslip.
-   * Does NOT reset or clear the betslip.
+   * Shuffle: drops down to either "staging" (Staging Area) or "slip" (In Slip)
    */
-  const handleShufflePicks = (count?: number) => {
+  const handleShuffle = (target: 'staging' | 'slip', count?: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
-    const fresh = pickRandomSelections(remainingEvaluations, n);
-    setAlgoPicks(fresh);
+    if (target === 'staging') {
+      // Shuffles candidate Pick N selections in the staging area from remaining available matches
+      const fresh = pickRandomSelections(remainingEvaluations, n);
+      setAlgoPicks(fresh);
+    } else {
+      // Shuffles games in the active betslip
+      if (selectedPicks.length === 0) return;
+      const fresh = pickRandomSelections(evaluations, selectedPicks.length);
+      commitPicks(fresh);
+    }
   };
 
   /**
-   * Add Next:
-   * Adds the current candidate Pick N games (or up to N from remaining games) to the betslip.
-   * As they enter the betslip, they leave the remaining available games.
+   * Next (Add Next):
+   * Adds candidate Pick N games from staging area (or up to N from remaining games) to betslip.
    */
   const handlePickPicks = (count?: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
@@ -229,16 +208,21 @@ export default function HomePage() {
   };
 
   /**
-   * Remove the last N picks from the slip (latest additions).
+   * Remove games you can "do without with" (least preferred, highest risk legs).
    */
   const handleRemoveGames = (count: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
-    commitPicks((prev) => prev.slice(0, Math.max(0, prev.length - n)));
+    commitPicks((prev) => removeLeastPreferredPicks(prev, n));
   };
 
   /** Reset filter criteria to defaults without clearing the betslip */
   const handleResetFiltersKeepSlip = () => {
     setCriteria({ ...DEFAULT_FILTER_CRITERIA });
+  };
+
+  /** Solo button on any filter box snaps selecting area to only that filter */
+  const handleSoloFilter = (_market: string) => {
+    setActiveTab('algo');
   };
 
   // Toggle selection on/off for a given pick
@@ -261,7 +245,7 @@ export default function HomePage() {
     });
   };
 
-  // Remove pick
+  // Remove individual pick
   const handleRemovePick = (gameId: string) => {
     commitPicks((prev) => prev.filter((p) => p.gameId !== gameId));
   };
@@ -271,7 +255,9 @@ export default function HomePage() {
     commitPicks([]);
   };
 
-  const totalOdds = calculateAccumulatorOdds(selectedPicks);
+  // Separate Accumulator Odds for Staging Area and In-Slip
+  const totalOdds = useMemo(() => calculateAccumulatorOdds(selectedPicks), [selectedPicks]);
+  const stagingOdds = useMemo(() => calculateAccumulatorOdds(algoPicks), [algoPicks]);
 
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 pb-36">
@@ -316,6 +302,16 @@ export default function HomePage() {
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-400' : ''}`} />
               <span className="hidden sm:inline">Refresh</span>
+            </button>
+
+            {/* Yesterday's Results & Saved Betslip Tracking Button */}
+            <button
+              onClick={() => setIsResultsModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
+              title="View yesterday's match results and saved betslip results from free credible sources"
+            >
+              <Trophy className="w-3.5 h-3.5 text-amber-400" />
+              <span>Results</span>
             </button>
 
             {/* AI Agent Button */}
@@ -386,10 +382,41 @@ export default function HomePage() {
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
-        {/* Quick Highlights Banner */}
+        {/* Quick Highlights Banner with separate accumulators for Staging Area & In Slip */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <div className="bg-[#111927] border border-slate-800/80 rounded-xl p-3 flex items-center gap-3">
+          {/* Card 1: Staging Area Accumulator */}
+          <div className="bg-[#111927] border border-amber-500/30 rounded-xl p-3 flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-400">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[11px] text-slate-400 uppercase tracking-wider block">
+                Staging Area ({algoPicks.length})
+              </span>
+              <span className="text-lg font-black text-amber-400 font-mono">
+                {stagingOdds.toLocaleString()}x
+              </span>
+            </div>
+          </div>
+
+          {/* Card 2: In Betslip Accumulator */}
+          <div className="bg-[#111927] border border-emerald-500/30 rounded-xl p-3 flex items-center gap-3">
             <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+              <CheckCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[11px] text-slate-400 uppercase tracking-wider block">
+                In Betslip ({selectedPicks.length})
+              </span>
+              <span className="text-lg font-black text-emerald-400 font-mono">
+                {totalOdds.toLocaleString()}x
+              </span>
+            </div>
+          </div>
+
+          {/* Card 3: Eligible Pool */}
+          <div className="bg-[#111927] border border-slate-800/80 rounded-xl p-3 flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-blue-500/10 text-blue-400">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
@@ -398,26 +425,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="bg-[#111927] border border-slate-800/80 rounded-xl p-3 flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-blue-500/10 text-blue-400">
-              <CheckCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-[11px] text-slate-400 uppercase tracking-wider block">In Slip Matches</span>
-              <span className="text-lg font-black text-white font-mono">{selectedPicks.length} Matches</span>
-            </div>
-          </div>
-
-          <div className="bg-[#111927] border border-slate-800/80 rounded-xl p-3 flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-400">
-              <Flame className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Accumulator Odds</span>
-              <span className="text-lg font-black text-emerald-400 font-mono">{totalOdds.toLocaleString()}x</span>
-            </div>
-          </div>
-
+          {/* Card 4: Active Company */}
           <div className="bg-[#111927] border border-slate-800/80 rounded-xl p-3 flex items-center gap-3">
             <div className="p-2.5 rounded-lg bg-purple-500/10 text-purple-400">
               <Building2 className="w-5 h-5" />
@@ -433,22 +441,21 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Filter Configuration Bar with Company Selector */}
+        {/* Filter Configuration Bar with Company Selector, Solo, Reset, & Typable Pick */}
         <FilterBar
           criteria={criteria}
           onChange={setCriteria}
           availableLeagues={availableLeagues}
           totalEligibleMatches={remainingEvaluations.length}
           companyCounts={companyCounts}
-          onPickPicks={handlePickPicks}
-          onShufflePicks={handleShufflePicks}
+          onNextAdd={handlePickPicks}
+          onShuffle={handleShuffle}
           onRemoveGames={handleRemoveGames}
           onClearSlip={handleClearSlip}
-          onUndo={handleUndo}
-          canUndo={picksHistory.length > 0}
+          onSoloFilter={handleSoloFilter}
         />
 
-        {/* Fixtures Section Header */}
+        {/* Fixtures Section Header Tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2">
             <button
@@ -463,6 +470,7 @@ export default function HomePage() {
               <span>All Qualifying Fixtures ({evaluations.length})</span>
             </button>
 
+            {/* Renamed tab from "Algo Pick N" to "Pick" with its own Staging Odds */}
             <button
               onClick={() => setActiveTab('algo')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
@@ -472,7 +480,7 @@ export default function HomePage() {
               }`}
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Algo Pick N ({algoPicks.length})</span>
+              <span>Pick ({algoPicks.length}) · {stagingOdds}x</span>
             </button>
 
             <button
@@ -484,7 +492,7 @@ export default function HomePage() {
               }`}
             >
               <CheckCheck className="w-3.5 h-3.5" />
-              <span>In Betslip ({selectedPicks.length})</span>
+              <span>In Betslip ({selectedPicks.length}) · {totalOdds}x</span>
             </button>
           </div>
 
@@ -508,6 +516,44 @@ export default function HomePage() {
             </button>
           </div>
         </div>
+
+        {/* Staging Area Info Banner when Pick tab is active */}
+        {activeTab === 'algo' && (
+          <div className="mb-4 p-3.5 bg-gradient-to-r from-amber-950/30 via-slate-900 to-slate-900 border border-amber-500/30 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  Selecting Area (Staging)
+                  <span className="font-mono text-amber-400 font-black px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">
+                    Staging Accumulator: {stagingOdds}x
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  {algoPicks.length} staged candidate games selected by filters. Click Next to add them to your betslip.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handlePickPicks(criteria.pickCount)}
+                className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl flex items-center gap-1 transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Next (Add to Slip)</span>
+              </button>
+              <button
+                onClick={() => handleShuffle('staging', criteria.pickCount)}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl flex items-center gap-1 border border-slate-700 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Shuffle Staging</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Loading State */}
         {loading && (
@@ -601,6 +647,7 @@ export default function HomePage() {
               })}
           </div>
         )}
+
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-4 pb-28">
           <AccountPanel
             selections={selectedPicks}
@@ -624,14 +671,14 @@ export default function HomePage() {
         onRemovePick={handleRemovePick}
         onClearSlip={handleClearSlip}
         onAddAiPicks={handleAddAiPicks}
-        onPickPicks={handlePickPicks}
-        onShufflePicks={handleShufflePicks}
+        onNextAdd={handlePickPicks}
+        onShuffle={handleShuffle}
         onRemoveGames={handleRemoveGames}
         onResetFiltersKeepSlip={handleResetFiltersKeepSlip}
-        onUndo={handleUndo}
-        canUndo={picksHistory.length > 0}
         defaultAddCount={criteria.pickCount}
         eligibleCount={evaluations.length}
+        stagingOdds={stagingOdds}
+        stagingCount={algoPicks.length}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         stake={stake}
         onStakeChange={setStake}
@@ -692,6 +739,15 @@ export default function HomePage() {
         />
       )}
 
+      {/* Results Modal (Yesterday's Results + Saved Betslip Results from free credible sources) */}
+      <ResultsModal
+        isOpen={isResultsModalOpen}
+        onClose={() => setIsResultsModalOpen(false)}
+        savedSlips={user ? listSavedSlips(user.username) : []}
+        username={user ? user.username : null}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+      />
+
       {/* AI Betting Agent Drawer (Discuss, Build, Save Slips) */}
       <AiAgentDrawer
         isOpen={isAiAgentOpen}
@@ -714,4 +770,3 @@ export default function HomePage() {
     </div>
   );
 }
-

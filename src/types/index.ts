@@ -66,6 +66,9 @@ export interface FilterCriteria {
   dcMin: number;
   dcMax: number;
   enableDoubleChance: boolean;
+  enableDc1X?: boolean;
+  enableDc12?: boolean;
+  enableDcX2?: boolean;
   enableHomeWin: boolean;
   homeWinMin: number;
   homeWinMax: number;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { SelectedPick, BookieId } from '@/types';
 import { calculateAccumulatorOdds } from '@/lib/filterEngine';
 import { BOOKIE_CONFIGS, getCompanyBonusPercentage } from '@/lib/constants';
@@ -13,23 +13,14 @@ import {
   X,
   Coins,
   Gift,
-  Building2,
-  Calculator,
-  TrendingUp,
-  Percent,
-  ShieldCheck,
-  SlidersHorizontal,
-  ArrowUpRight,
-  CheckCircle2,
-  Info,
-  Sparkles,
   Plus,
   Minus,
   RotateCcw,
-  Undo2,
   Shuffle,
   Bookmark,
   BookmarkPlus,
+  Sparkles,
+  Check,
 } from 'lucide-react';
 
 interface BetslipDrawerProps {
@@ -39,14 +30,14 @@ interface BetslipDrawerProps {
   onRemovePick: (gameId: string) => void;
   onClearSlip: () => void;
   onAddAiPicks: (count: number) => void;
-  onPickPicks: (count: number) => void;
-  onShufflePicks: (count: number) => void;
+  onNextAdd: (count: number) => void;
+  onShuffle: (target: 'staging' | 'slip', count: number) => void;
   onRemoveGames: (count: number) => void;
   onResetFiltersKeepSlip: () => void;
-  onUndo: () => void;
-  canUndo: boolean;
   defaultAddCount: number;
   eligibleCount: number;
+  stagingOdds?: number;
+  stagingCount?: number;
   onOpenExportModal: () => void;
   stake: number;
   onStakeChange: (stake: number) => void;
@@ -62,14 +53,14 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
   onRemovePick,
   onClearSlip,
   onAddAiPicks,
-  onPickPicks,
-  onShufflePicks,
+  onNextAdd,
+  onShuffle,
   onRemoveGames,
   onResetFiltersKeepSlip,
-  onUndo,
-  canUndo,
   defaultAddCount,
   eligibleCount,
+  stagingOdds,
+  stagingCount = 0,
   onOpenExportModal,
   stake,
   onStakeChange,
@@ -78,8 +69,37 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
   savedSlipsCount = 0,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'picks' | 'simulator'>('picks');
-  const [addCount, setAddCount] = useState(defaultAddCount);
+  const [addCountStr, setAddCountStr] = useState<string>(String(defaultAddCount || 10));
+  const [addCount, setAddCount] = useState<number>(defaultAddCount || 10);
+  const [shuffleTarget, setShuffleTarget] = useState<'staging' | 'slip'>('staging');
+  const [isShuffleMenuOpen, setIsShuffleMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setAddCount(defaultAddCount);
+    setAddCountStr(String(defaultAddCount));
+  }, [defaultAddCount]);
+
+  const handleAddCountChange = (val: string) => {
+    setAddCountStr(val);
+    const parsed = parseInt(val, 10);
+    if (!isNaN(parsed) && parsed >= 1 && parsed <= 100) {
+      setAddCount(parsed);
+    }
+  };
+
+  const handleAddCountBlur = () => {
+    const parsed = parseInt(addCountStr, 10);
+    if (isNaN(parsed) || parsed < 1) {
+      setAddCountStr('1');
+      setAddCount(1);
+    } else if (parsed > 100) {
+      setAddCountStr('100');
+      setAddCount(100);
+    } else {
+      setAddCountStr(String(parsed));
+      setAddCount(parsed);
+    }
+  };
 
   // Active target company for the slip
   const targetBookie: BookieId = selectedCompany === 'ALL' ? 'sportybet:ke' : selectedCompany;
@@ -93,58 +113,10 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
   const bonusAmount = Math.round(baseReturn * (bonusPct / 100));
   const grossPayout = baseReturn + bonusAmount;
 
-  // Kenya Betting Tax: 20% Withholding Tax on Net Winnings (Gross Payout minus Stake)
+  // Kenya Betting Tax: 20% Withholding Tax on Net Winnings
   const netWinningsBeforeTax = Math.max(0, grossPayout - stake);
   const withholdingTax = Math.round(netWinningsBeforeTax * 0.2);
   const netTakeHome = grossPayout - withholdingTax;
-  const netProfit = netTakeHome - stake;
-  const roiMultiplier = stake > 0 ? (grossPayout / stake).toFixed(1) : '0';
-
-  // Statistics on selections
-  const { avgOdd, minOdd, maxOdd } = useMemo(() => {
-    if (selections.length === 0) return { avgOdd: 0, minOdd: 0, maxOdd: 0 };
-    const odds = selections.map((s) => s.odd);
-    const sum = odds.reduce((a, b) => a + b, 0);
-    return {
-      avgOdd: +(sum / odds.length).toFixed(2),
-      minOdd: Math.min(...odds),
-      maxOdd: Math.max(...odds),
-    };
-  }, [selections]);
-
-  // Cut-1 / Partial Cashout Outcome Simulation (if 1 leg fails)
-  const cut1Outcome = useMemo(() => {
-    if (selections.length < 2) return null;
-    // Assume the highest odd match is lost, rest win
-    const sorted = [...selections].sort((a, b) => b.odd - a.odd);
-    const remainingPicks = sorted.slice(1);
-    const remainingOdds = calculateAccumulatorOdds(remainingPicks);
-    const cut1Base = Math.round(stake * remainingOdds);
-    const cut1BonusPct = getCompanyBonusPercentage(targetBookie, remainingPicks.length);
-    const cut1Gross = Math.round(cut1Base * (1 + cut1BonusPct / 100));
-    return {
-      odds: remainingOdds,
-      gross: cut1Gross,
-      lostMatch: sorted[0],
-    };
-  }, [selections, stake, targetBookie]);
-
-  // Quick Stake Matrix Comparison (KES 10, 20, 50, 100, 200, 500, 1000)
-  const stakeMatrix = useMemo(() => {
-    const stakes = [10, 20, 50, 100, 200, 500, 1000];
-    return stakes.map((s) => {
-      const bReturn = Math.round(s * totalOdds);
-      const bBonus = Math.round(bReturn * (bonusPct / 100));
-      const gPayout = bReturn + bBonus;
-      const wTax = Math.round(Math.max(0, gPayout - s) * 0.2);
-      const takeHome = gPayout - wTax;
-      return {
-        stake: s,
-        gross: gPayout,
-        netTakeHome: takeHome,
-      };
-    });
-   }, [totalOdds, bonusPct]);
 
   const quickStakes = [15, 30, 50, 100, 200, 500, 1000];
 
@@ -185,13 +157,13 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                   </div>
                   <div className="text-xs text-slate-400 flex flex-wrap items-center gap-2 font-mono">
                     <span>
-                      Betslip Total Odds: <strong className="text-emerald-400 font-bold">{totalOdds.toLocaleString()}x</strong>
+                      In-Slip Odds: <strong className="text-emerald-400 font-bold">{totalOdds.toLocaleString()}x</strong>
                     </span>
-                    {selections.length > 0 && (
+                    {stagingOdds !== undefined && (
                       <>
                         <span className="text-slate-600">•</span>
                         <span>
-                          Avg Pick Odd: <strong className="text-slate-300">@{(totalOdds ** (1 / selections.length)).toFixed(2)}</strong>
+                          Staging Odds: <strong className="text-amber-400 font-bold">{stagingOdds.toLocaleString()}x</strong> ({stagingCount} games)
                         </span>
                       </>
                     )}
@@ -232,20 +204,9 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                 )}
 
                 <button
-                  onClick={() => {
-                    setIsOpen(true);
-                    setActiveTab('simulator');
-                  }}
-                  className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors border border-emerald-500/30"
-                  title="Open Outcome Stake Simulator"
-                >
-                  <Calculator className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Stake Simulator</span>
-                </button>
-
-                <button
                   onClick={onOpenExportModal}
-                  className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+                  disabled={selections.length === 0}
+                  className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>Generate Code</span>
@@ -264,134 +225,144 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
             {/* Expandable Content Area */}
             {isOpen && (
               <div className="max-h-[68vh] sm:max-h-[500px] flex flex-col bg-[#0b111e]">
-                {/* Secondary Navigation Bar: Tabs & Bookie Switcher */}
+                {/* Bookie Switcher Bar */}
                 <div className="p-3 bg-slate-900/90 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
-                  {/* Tab buttons */}
-                  <div className="flex items-center gap-1.5 bg-[#0b111e] p-1 rounded-xl border border-slate-800">
-                    <button
-                      onClick={() => setActiveTab('picks')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                        activeTab === 'picks'
-                          ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      <Ticket className="w-3.5 h-3.5" />
-                      <span>In Slip ({selections.length})</span>
-                    </button>
-
-                    {onOpenSavedSlips && (
-                      <button
-                        onClick={onOpenSavedSlips}
-                        className="px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 text-slate-400 hover:text-amber-400"
-                      >
-                        <Bookmark className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Saved Slips ({savedSlipsCount})</span>
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => setActiveTab('simulator')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                        activeTab === 'simulator'
-                          ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 shadow-md font-black'
-                          : 'text-amber-400 hover:text-amber-300'
-                      }`}
-                    >
-                      <Calculator className="w-3.5 h-3.5" />
-                      <span>Outcome Stake Simulator</span>
-                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                    </button>
+                  <div className="flex items-center gap-2">
+                    <Ticket className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="font-bold text-white">In Slip Selections ({selections.length} Matches)</span>
+                    <span className="text-slate-400">• Accumulator: <strong className="text-emerald-400 font-mono">{totalOdds.toLocaleString()}x</strong></span>
                   </div>
 
-                   {/* Target Bookie selector */}
-                   <div className="flex items-center gap-2">
-                     <span className="text-[11px] text-slate-400 hidden sm:inline">Bookie:</span>
-                     <button
-                       onClick={() => onCompanyChange('sportybet:ke')}
-                       className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                         targetBookie === 'sportybet:ke'
-                           ? 'bg-red-500/20 text-red-400 border-red-500/50'
-                           : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-                       }`}
-                     >
-                       SportyBet
-                     </button>
-                   </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-400 hidden sm:inline">Bookmaker:</span>
+                    <button
+                      onClick={() => onCompanyChange('sportybet:ke')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                        targetBookie === 'sportybet:ke'
+                          ? 'bg-red-500/20 text-red-400 border-red-500/50'
+                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      SportyBet Kenya
+                    </button>
+                  </div>
                 </div>
 
-                {/* Add-to-slip controls: Pick N from remaining only (no shuffle) */}
+                {/* Add-to-slip controls with Next, Shuffle dropdown, Remove least preferred, etc. */}
                 <div className="px-3 py-2.5 border-b border-slate-800/80 bg-[#0d1420] space-y-2">
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-slate-400 font-medium">Add to slip</span>
+                    <span className="text-slate-400 font-medium">Selecting Area Controls</span>
                     <label className="flex items-center gap-1 text-slate-300">
-                      <span className="text-[10px] uppercase tracking-wide text-slate-500">N</span>
+                      <span className="text-[10px] uppercase tracking-wide text-slate-500">Pick Size</span>
                       <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={addCount}
-                        onChange={(e) =>
-                          setAddCount(Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1)))
-                        }
-                        className="w-14 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={addCountStr}
+                        onChange={(e) => handleAddCountChange(e.target.value)}
+                        onBlur={handleAddCountBlur}
+                        className="w-14 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white font-mono text-xs focus:outline-none focus:border-emerald-500 text-center"
+                        title="Type pick size (1-100)"
                       />
                     </label>
-                    <span className="text-[10px] text-slate-500">
-                      {eligibleCount} eligible under filters · {selections.length} in slip
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {eligibleCount} eligible · {stagingCount} in staging area
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {/* Next: Adds candidate picks from staging area to slip */}
                     <button
                       type="button"
-                      onClick={() => onPickPicks(addCount)}
+                      onClick={() => onNextAdd(addCount)}
                       disabled={eligibleCount === 0}
-                      title="Add Next: add up to N candidate games from remaining available matches to the slip"
-                      className="px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
+                      title="Next: add games from staging area into the slip"
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40 transition-all active:scale-95"
                     >
                       <Plus className="w-3 h-3" />
-                      Add Next {addCount}
+                      Next {addCount}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => onShufflePicks(addCount)}
-                      disabled={eligibleCount === 0}
-                      title="Shuffle candidate Pick N from remaining available matches (does not touch your slip)"
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 border border-slate-700 text-slate-900 text-[11px] font-semibold flex items-center gap-1 disabled:opacity-40"
-                    >
-                      <Shuffle className="w-3 h-3" />
-                      Shuffle
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onUndo}
-                      disabled={!canUndo}
-                      title="Undo last slip change"
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold flex items-center gap-1 disabled:opacity-40"
-                    >
-                      <Undo2 className="w-3 h-3" />
-                      Undo
-                    </button>
+
+                    {/* Shuffle with dropdown (Staging Area vs In Slip) */}
+                    <div className="relative inline-flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => onShuffle(shuffleTarget, addCount)}
+                        disabled={eligibleCount === 0}
+                        title={`Shuffle ${shuffleTarget === 'staging' ? 'Staging Area' : 'In Slip'} selections`}
+                        className="px-2.5 py-1.5 rounded-l-lg bg-slate-200 hover:bg-white text-slate-950 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40 transition-colors"
+                      >
+                        <Shuffle className="w-3 h-3" />
+                        Shuffle ({shuffleTarget === 'staging' ? 'Staging' : 'In Slip'})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsShuffleMenuOpen(!isShuffleMenuOpen)}
+                        className="px-1.5 py-1.5 rounded-r-lg bg-slate-300 hover:bg-white text-slate-950 border-l border-slate-400 text-[11px] transition-colors"
+                        title="Choose Shuffle Target"
+                      >
+                        <ChevronDown className="w-3 h-3" />
+                      </button>
+
+                      {isShuffleMenuOpen && (
+                        <div className="absolute top-full mt-1 left-0 z-30 bg-[#0d1422] border border-slate-700 rounded-xl shadow-2xl py-1 w-44">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShuffleTarget('staging');
+                              setIsShuffleMenuOpen(false);
+                              onShuffle('staging', addCount);
+                            }}
+                            className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-slate-800 transition-colors ${
+                              shuffleTarget === 'staging' ? 'text-amber-400 font-bold' : 'text-slate-300'
+                            }`}
+                          >
+                            <span>Staging Area</span>
+                            {shuffleTarget === 'staging' && <Check className="w-3 h-3 text-amber-400" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShuffleTarget('slip');
+                              setIsShuffleMenuOpen(false);
+                              onShuffle('slip', addCount);
+                            }}
+                            className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-slate-800 transition-colors ${
+                              shuffleTarget === 'slip' ? 'text-emerald-400 font-bold' : 'text-slate-300'
+                            }`}
+                          >
+                            <span>In Slip</span>
+                            {shuffleTarget === 'slip' && <Check className="w-3 h-3 text-emerald-400" />}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* AI Add */}
                     <button
                       type="button"
                       onClick={() => onAddAiPicks(addCount)}
                       disabled={eligibleCount === 0}
-                      title="Score games under current filters and add N to the slip (keeps existing legs)"
+                      title="Score matches under current criteria and add top banker legs to slip"
                       className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
                     >
                       <Sparkles className="w-3 h-3" />
                       AI add {addCount}
                     </button>
+
+                    {/* Remove Least Preferred */}
                     <button
                       type="button"
                       onClick={() => onRemoveGames(addCount)}
                       disabled={selections.length === 0}
-                      title="Remove N games from the end of the slip"
+                      title="Remove least preferred (highest risk) games you can do without"
                       className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
                     >
                       <Minus className="w-3 h-3" />
                       Remove {addCount}
                     </button>
+
+                    {/* Reset Filters */}
                     <button
                       type="button"
                       onClick={onResetFiltersKeepSlip}
@@ -401,6 +372,8 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                       <RotateCcw className="w-3 h-3" />
                       Reset filters
                     </button>
+
+                    {/* Empty Slip */}
                     <button
                       type="button"
                       onClick={onClearSlip}
@@ -413,16 +386,15 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                     </button>
                   </div>
                   <p className="text-[10px] text-slate-500 leading-snug">
-                    Pick N adds up to N random games from remaining eligible matches (never
-                    duplicates). Undo restores the previous slip. AI add scores and picks the best.
+                    Next adds candidate picks from the staging area. Remove discards the least preferred games you can do without.
                   </p>
                 </div>
 
-                {/* TAB 1: IN SLIP MATCHES LIST */}
-                {activeTab === 'picks' && (
-                  <div className="overflow-y-auto p-4 space-y-2 flex-1">
-                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80 text-xs text-slate-400">
-                      <span>Matches in Slip ({selections.length}):</span>
+                {/* IN SLIP MATCHES LIST */}
+                <div className="overflow-y-auto p-4 space-y-2 flex-1">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80 text-xs text-slate-400">
+                    <span>Matches in Slip ({selections.length}):</span>
+                    {selections.length > 0 && (
                       <button
                         onClick={onClearSlip}
                         className="text-red-400 hover:text-red-300 flex items-center gap-1 text-[11px] font-medium"
@@ -430,9 +402,15 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                         <Trash2 className="w-3 h-3" />
                         Clear All
                       </button>
-                    </div>
+                    )}
+                  </div>
 
-                    {selections.map((sel, idx) => (
+                  {selections.length === 0 ? (
+                    <div className="py-8 text-center text-slate-500 text-xs">
+                      No matches in slip yet. Click Next or select picks from the fixture cards.
+                    </div>
+                  ) : (
+                    selections.map((sel, idx) => (
                       <div
                         key={sel.gameId}
                         className="flex items-center justify-between p-2.5 bg-slate-900/80 hover:bg-slate-900 border border-slate-800 rounded-xl text-xs gap-3"
@@ -468,221 +446,9 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                           </button>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* TAB 2: INTERACTIVE OUTCOME STAKE SIMULATOR */}
-                {activeTab === 'simulator' && (
-                  <div className="overflow-y-auto p-4 space-y-4 flex-1">
-                    {/* Top Slider & Stake Inputs */}
-                    <div className="p-4 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <SlidersHorizontal className="w-4 h-4 text-amber-400" />
-                          <span className="text-xs font-bold text-white uppercase tracking-wider">
-                            Interactive Stake Simulator
-                          </span>
-                        </div>
-                        <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full">
-                          KES {stake.toLocaleString()}
-                        </span>
-                      </div>
-
-                      {/* Slider */}
-                      <div className="space-y-1">
-                        <input
-                          type="range"
-                          min={bookieConfig.minStake}
-                          max="2000"
-                          step="10"
-                          value={Math.min(stake, 2000)}
-                          onChange={(e) => onStakeChange(parseInt(e.target.value) || bookieConfig.minStake)}
-                          className="w-full accent-amber-400 cursor-pointer h-2 bg-slate-800 rounded-lg"
-                        />
-                        <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                          <span>Min: KES {bookieConfig.minStake}</span>
-                          <span>KES 500</span>
-                          <span>KES 1,000</span>
-                          <span>KES 2,000+</span>
-                        </div>
-                      </div>
-
-                      {/* Quick Stake Buttons */}
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {quickStakes.map((amt) => (
-                          <button
-                            key={amt}
-                            onClick={() => onStakeChange(amt)}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all ${
-                              stake === amt
-                                ? 'bg-amber-400 text-slate-950 font-bold shadow-md shadow-amber-400/20'
-                                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700'
-                            }`}
-                          >
-                            KES {amt}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Simulation Outcome Cards Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {/* Outcome Scenario 1: FULL WIN */}
-                      <div className="p-3.5 bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-500/40 rounded-xl space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                            Scenario A: All {selections.length} Legs Win
-                          </span>
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">
-                            100% Hit Rate
-                          </span>
-                        </div>
-
-                        <div className="space-y-1.5 text-xs">
-                          <div className="flex justify-between text-slate-400">
-                            <span>Base Return:</span>
-                            <span className="font-mono text-slate-200">KES {baseReturn.toLocaleString()}</span>
-                          </div>
-
-                          {bonusPct > 0 && (
-                            <div className="flex justify-between text-amber-400">
-                              <span>{bookieConfig.shortName} Bonus (+{bonusPct}%):</span>
-                              <span className="font-mono font-bold">+KES {bonusAmount.toLocaleString()}</span>
-                            </div>
-                          )}
-
-                          <div className="flex justify-between text-slate-400">
-                            <span>Gross Winnings:</span>
-                            <span className="font-mono text-white font-bold">KES {grossPayout.toLocaleString()}</span>
-                          </div>
-
-                          <div className="flex justify-between text-slate-400">
-                            <span className="flex items-center gap-1" title="20% Withholding Tax on Net Winnings">
-                              Kenya 20% Tax (WHT):
-                              <Info className="w-3 h-3 text-slate-400" />
-                            </span>
-                            <span className="font-mono text-red-400">-KES {withholdingTax.toLocaleString()}</span>
-                          </div>
-
-                          <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
-                            <span className="text-xs font-bold text-white">Net Take-Home:</span>
-                            <span className="text-lg font-black text-emerald-400 font-mono">
-                              KES {netTakeHome.toLocaleString()}
-                            </span>
-                          </div>
-
-                          <div className="flex justify-between text-[11px] text-slate-400 pt-0.5">
-                            <span>Net Profit:</span>
-                            <span className="font-mono text-emerald-300 font-bold">
-                              +KES {netProfit.toLocaleString()} ({roiMultiplier}x ROI)
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Outcome Scenario 2: CUT-1 (1 Match Fails / Cashout) */}
-                      <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                            <TrendingUp className="w-4 h-4 text-amber-400" />
-                            Scenario B: 1-Match Cut / Cashout
-                          </span>
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
-                            Cut-1 Simulation
-                          </span>
-                        </div>
-
-                        {cut1Outcome ? (
-                          <div className="space-y-1.5 text-xs">
-                            <div className="flex justify-between text-slate-400">
-                              <span>Simulated Missed Leg:</span>
-                              <span className="font-mono text-slate-300 truncate max-w-[130px]">
-                                {cut1Outcome.lostMatch.homeTeam} (@{cut1Outcome.lostMatch.odd})
-                              </span>
-                            </div>
-                            <div className="flex justify-between text-slate-400">
-                              <span>Remaining Odds ({selections.length - 1} legs):</span>
-                              <span className="font-mono text-emerald-400 font-bold">
-                                {cut1Outcome.odds.toLocaleString()}x
-                              </span>
-                            </div>
-                            <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
-                              <span className="text-xs font-bold text-white">Cut-1 Est. Value:</span>
-                              <span className="text-base font-extrabold text-amber-400 font-mono">
-                                KES {cut1Outcome.gross.toLocaleString()}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-slate-400 italic">
-                              *Estimated payout under bookmaker Cut-1 insurance or early cashout salvage.
-                            </p>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-slate-400 py-3 text-center">
-                            Add at least 2 matches to simulate Cut-1 outcomes.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Statistical Metrics Strip */}
-                    <div className="grid grid-cols-3 gap-2 p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-center text-xs">
-                      <div>
-                        <span className="text-[10px] text-slate-400 uppercase block">Average Leg Odd</span>
-                        <span className="font-mono font-bold text-white text-sm">@{avgOdd.toFixed(2)}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 uppercase block">Safest Leg</span>
-                        <span className="font-mono font-bold text-emerald-400 text-sm">@{minOdd.toFixed(2)}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 uppercase block">Highest Leg</span>
-                        <span className="font-mono font-bold text-blue-400 text-sm">@{maxOdd.toFixed(2)}</span>
-                      </div>
-                    </div>
-
-                    {/* Stake Matrix Comparison Table */}
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-                        Quick Stake Sensitivity Table:
-                      </span>
-                      <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-900/40 text-xs font-mono">
-                        <div className="grid grid-cols-3 p-2 bg-slate-900 text-slate-400 font-semibold border-b border-slate-800 text-[11px]">
-                          <span>Stake (KES)</span>
-                          <span className="text-center">Gross Return</span>
-                          <span className="text-right">Net Take-Home</span>
-                        </div>
-                        <div className="divide-y divide-slate-800/60 max-h-36 overflow-y-auto">
-                          {stakeMatrix.map((item) => (
-                            <div
-                              key={item.stake}
-                              onClick={() => onStakeChange(item.stake)}
-                              className={`grid grid-cols-3 p-2 cursor-pointer transition-colors ${
-                                stake === item.stake
-                                  ? 'bg-amber-400/10 font-bold text-amber-300'
-                                  : 'hover:bg-slate-800/60 text-slate-300'
-                              }`}
-                            >
-                              <span className="flex items-center gap-1">
-                                KES {item.stake}
-                                {stake === item.stake && (
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                )}
-                              </span>
-                              <span className="text-center text-white">
-                                KES {item.gross.toLocaleString()}
-                              </span>
-                              <span className="text-right text-emerald-400 font-bold">
-                                KES {item.netTakeHome.toLocaleString()}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                    ))
+                  )}
+                </div>
 
                 {/* Footer Controls & Potential Return */}
                 <div className="p-4 bg-[#0d1422] border-t border-slate-800 space-y-3">
@@ -742,7 +508,8 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
 
                       <button
                         onClick={onOpenExportModal}
-                        className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all"
+                        disabled={selections.length === 0}
+                        className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-500/30 active:scale-95 transition-all"
                       >
                         <Send className="w-4 h-4" />
                         <span>Export Betslip</span>
@@ -758,4 +525,3 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
     </>
   );
 };
-

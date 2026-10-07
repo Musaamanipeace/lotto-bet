@@ -324,9 +324,18 @@ export function evaluateAndFilterGames(
       });
     };
 
-    // Double Chance (1X, X2, 12)
+    // Double Chance (1X, 12, X2)
     if (criteria.enableDoubleChance && activeMarkets.doubleChance) {
+      const allow1X = criteria.enableDc1X !== false;
+      const allow12 = criteria.enableDc12 !== false;
+      const allowX2 = criteria.enableDcX2 !== false;
+
       for (const dc of activeMarkets.doubleChance) {
+        const p = (dc.pick || '').toUpperCase().trim();
+        if (p === '1X' && !allow1X) continue;
+        if (p === '12' && !allow12) continue;
+        if (p === 'X2' && !allowX2) continue;
+
         if (dc.odd >= criteria.dcMin && dc.odd <= criteria.dcMax) {
           const ids = findSportyBetIds(sportyIds, 'Double Chance', dc.pick);
           pushPick(
@@ -603,5 +612,57 @@ export function calculateAccumulatorOdds(picks: SelectedPick[]): number {
   if (picks.length === 0) return 1.0;
   const raw = picks.reduce((acc, curr) => acc * curr.odd, 1.0);
   return Math.round(raw * 100) / 100;
+}
+
+/**
+ * Rates a pick's accumulator quality / safety.
+ * Higher score = safer, higher-preference banker leg.
+ * Lower score = riskier, more volatile leg that a bettor can "do without".
+ */
+export function scorePickPreference(pick: SelectedPick): number {
+  const ideal = 1.15;
+  const oddDistance = Math.abs(pick.odd - ideal);
+  const oddScore = 1 / (1 + oddDistance * 6);
+  const bookableBonus = pick.marketId && pick.outcomeId ? 0.3 : 0;
+  const marketScores: Record<string, number> = {
+    'Double Chance': 0.45,
+    'Over 0.5': 0.4,
+    'Under 3.5': 0.35,
+    'Home Win': 0.25,
+    'Under 4.5': 0.25,
+    'Over 1.5': 0.2,
+    'BTTS': 0.15,
+    'Away Win': 0.1,
+  };
+  const marketScore = marketScores[pick.marketName] || 0.15;
+  return oddScore + bookableBonus + marketScore;
+}
+
+/**
+ * Remove N "least preferred" (highest risk / lowest quality) picks.
+ * Discards the games the bettor can "do without", retaining the safest bankers.
+ */
+export function removeLeastPreferredPicks(
+  picks: SelectedPick[],
+  countToRemove: number
+): SelectedPick[] {
+  if (countToRemove <= 0) return picks;
+  if (picks.length <= countToRemove) return [];
+
+  // Score each pick keeping track of original index
+  const scored = picks.map((p, originalIdx) => ({
+    pick: p,
+    score: scorePickPreference(p),
+    originalIdx,
+  }));
+
+  // Sort ascending by score so the weakest / least preferred are first
+  scored.sort((a, b) => a.score - b.score);
+
+  // Take the indices of the countToRemove least preferred picks
+  const toRemoveIndices = new Set(scored.slice(0, countToRemove).map((item) => item.originalIdx));
+
+  // Return the remaining picks in their original order
+  return picks.filter((_, idx) => !toRemoveIndices.has(idx));
 }
 
