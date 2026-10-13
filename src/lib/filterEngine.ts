@@ -405,27 +405,36 @@ export function evaluateAndFilterGames(
       }
     }
 
-    // Over goals — goal line + odds range
+    // Over goals — multi-selection (0.5 and 1.5 simultaneously) + odds range
     if (criteria.enableOver && activeMarkets.overUnder) {
-      const overPick = activeMarkets.overUnder.find((m) => m.pick === `Over ${criteria.overGoalLine}`);
+      const activeOverLines: ('0.5' | '1.5')[] =
+        Array.isArray(criteria.overGoalLines) && criteria.overGoalLines.length > 0
+          ? criteria.overGoalLines
+          : criteria.overGoalLine
+            ? [criteria.overGoalLine]
+            : ['0.5', '1.5'];
       const oMin = criteria.overMin ?? 1.01;
       const oMax = criteria.overMax ?? 10;
-      if (overPick && overPick.odd >= oMin && overPick.odd <= oMax) {
-        const ids = findSportyBetIds(sportyIds, `Over ${criteria.overGoalLine}`, overPick.pick);
-        pushPick(
-          {
-            gameId: game.id,
-            eventId: game.eventId,
-            homeTeam: game.homeTeam,
-            awayTeam: game.awayTeam,
-            league: game.league,
-            kickoffTime: game.kickoffTime,
-            marketName: `Over ${criteria.overGoalLine}`,
-            pick: `Over ${criteria.overGoalLine}`,
-            odd: overPick.odd,
-          },
-          ids
-        );
+
+      for (const line of activeOverLines) {
+        const overPick = activeMarkets.overUnder.find((m) => m.pick === `Over ${line}`);
+        if (overPick && overPick.odd >= oMin && overPick.odd <= oMax) {
+          const ids = findSportyBetIds(sportyIds, `Over ${line}`, overPick.pick);
+          pushPick(
+            {
+              gameId: game.id,
+              eventId: game.eventId,
+              homeTeam: game.homeTeam,
+              awayTeam: game.awayTeam,
+              league: game.league,
+              kickoffTime: game.kickoffTime,
+              marketName: `Over ${line}`,
+              pick: `Over ${line}`,
+              odd: overPick.odd,
+            },
+            ids
+          );
+        }
       }
     }
 

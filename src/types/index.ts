@@ -94,6 +94,8 @@ export interface FilterCriteria {
   awayWinMax: number;
   enableOver: boolean;
   overGoalLine: '0.5' | '1.5';
+  /** Multi-selection: 0.5 and 1.5 can both be active */
+  overGoalLines?: ('0.5' | '1.5')[];
   /** Odds range for Over markets */
   overMin: number;
   overMax: number;

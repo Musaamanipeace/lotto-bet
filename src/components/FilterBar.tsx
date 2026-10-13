@@ -6,7 +6,6 @@ import {
   TIMEFRAME_OPTIONS,
   PICK_COUNT_PRESETS,
   DEFAULT_FILTER_CRITERIA,
-  EMPTY_FILTER_CRITERIA,
   BOOKIE_CONFIGS,
 } from '@/lib/constants';
 import {
@@ -90,14 +89,20 @@ const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
   );
 
   const toPercent = useCallback(
-    (value: number) => ((value - min) / (max - min)) * 100,
-    [min, max]
+    (value: number) => {
+      if (max <= min) return 0;
+      const clamped = clamp(value, min, max);
+      return ((clamped - min) / (max - min)) * 100;
+    },
+    [min, max, clamp]
   );
 
   const updateVisuals = useCallback(
     (nextMin: number, nextMax: number) => {
-      const minPercent = toPercent(nextMin);
-      const maxPercent = toPercent(nextMax);
+      const safeMin = clamp(nextMin, min, max);
+      const safeMax = clamp(nextMax, min, max);
+      const minPercent = toPercent(safeMin);
+      const maxPercent = toPercent(safeMax);
 
       if (minHandleRef.current) {
         minHandleRef.current.style.left = `${minPercent}%`;
@@ -107,16 +112,16 @@ const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
       }
       if (rangeRef.current) {
         rangeRef.current.style.left = `${minPercent}%`;
-        rangeRef.current.style.width = `${maxPercent - minPercent}%`;
+        rangeRef.current.style.width = `${Math.max(0, maxPercent - minPercent)}%`;
       }
       if (minLabelRef.current) {
-        minLabelRef.current.textContent = nextMin.toFixed(2);
+        minLabelRef.current.textContent = safeMin.toFixed(2);
       }
       if (maxLabelRef.current) {
-        maxLabelRef.current.textContent = nextMax.toFixed(2);
+        maxLabelRef.current.textContent = safeMax.toFixed(2);
       }
     },
-    [toPercent]
+    [toPercent, clamp, min, max]
   );
 
   const positionToValue = useCallback(
@@ -200,13 +205,15 @@ const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
     (handle: 'min' | 'max') => (event: React.PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
       event.stopPropagation();
-      minValueRef.current = minVal;
-      maxValueRef.current = maxVal;
+      const safeMin = clamp(minVal, min, max);
+      const safeMax = clamp(maxVal, min, max);
+      minValueRef.current = safeMin;
+      maxValueRef.current = safeMax;
       draggingRef.current = handle;
       pendingClientXRef.current = null;
       event.currentTarget.setPointerCapture?.(event.pointerId);
     },
-    [minVal, maxVal]
+    [minVal, maxVal, min, max, clamp]
   );
 
   useEffect(() => {
@@ -215,10 +222,12 @@ const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
 
   useEffect(() => {
     if (draggingRef.current !== null) return;
-    minValueRef.current = minVal;
-    maxValueRef.current = maxVal;
-    updateVisuals(minVal, maxVal);
-  }, [minVal, maxVal, updateVisuals]);
+    const safeMin = clamp(minVal, min, max);
+    const safeMax = clamp(maxVal, min, max);
+    minValueRef.current = safeMin;
+    maxValueRef.current = safeMax;
+    updateVisuals(safeMin, safeMax);
+  }, [minVal, maxVal, min, max, clamp, updateVisuals]);
 
   useEffect(() => {
     document.addEventListener('pointermove', handlePointerMove, { passive: false });
@@ -232,39 +241,46 @@ const DualRangeSlider: React.FC<DualRangeSliderProps> = ({
     };
   }, [handlePointerMove, handlePointerUp]);
 
+  const safeMin = clamp(minVal, min, max);
+  const safeMax = clamp(maxVal, min, max);
+  const minPercent = toPercent(safeMin);
+  const maxPercent = toPercent(safeMax);
+
   return (
-    <div className="space-y-2">
-      <div ref={trackRef} className="relative h-6 flex items-center touch-none select-none">
+    <div className="space-y-2 w-full max-w-full overflow-hidden">
+      <div ref={trackRef} className="relative h-6 flex items-center touch-none select-none w-full">
         <div className="absolute left-0 right-0 h-2 bg-slate-800 rounded-lg" />
         <div
           ref={rangeRef}
           className="absolute h-2 bg-emerald-500/30 rounded-lg"
           style={{
-            left: `${toPercent(minVal)}%`,
-            width: `${toPercent(maxVal) - toPercent(minVal)}%`,
+            left: `${minPercent}%`,
+            width: `${Math.max(0, maxPercent - minPercent)}%`,
           }}
         />
         <button
           ref={minHandleRef}
           type="button"
           onPointerDown={startDragging('min')}
-          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 bg-slate-900 border-2 border-emerald-500 rounded-full shadow-lg cursor-grab active:cursor-grabbing hover:scale-110 transition-transform z-10"
+          style={{ left: `${minPercent}%` }}
+          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 bg-slate-900 border-2 border-emerald-500 rounded-full shadow-lg cursor-grab active:cursor-grabbing hover:scale-110 transition-transform z-10 touch-none"
         />
         <button
           ref={maxHandleRef}
           type="button"
           onPointerDown={startDragging('max')}
-          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 bg-slate-900 border-2 border-emerald-500 rounded-full shadow-lg cursor-grab active:cursor-grabbing hover:scale-110 transition-transform z-10"
+          style={{ left: `${maxPercent}%` }}
+          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 bg-slate-900 border-2 border-emerald-500 rounded-full shadow-lg cursor-grab active:cursor-grabbing hover:scale-110 transition-transform z-10 touch-none"
         />
       </div>
 
       <div className="flex justify-between items-center text-xs font-mono text-slate-400">
         <span ref={minLabelRef} className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200">
-          {minVal.toFixed(2)}
+          {safeMin.toFixed(2)}
         </span>
         <span className="text-[10px] text-slate-500">odds bound</span>
         <span ref={maxLabelRef} className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200">
-          {maxVal.toFixed(2)}
+          {safeMax.toFixed(2)}
         </span>
       </div>
     </div>
@@ -299,9 +315,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     onChange({ ...criteria, [key]: value });
   };
 
-  /** Section 2.3: Reset All Filters Button Repair - resets all to clean off/empty state */
+  /** Reset all filters to default: all cards ticked, all buttons selected, sliders at ends */
   const handleResetAll = () => {
-    onChange({ ...EMPTY_FILTER_CRITERIA });
+    onChange({ ...DEFAULT_FILTER_CRITERIA });
   };
 
   const handleRangeChange = (
@@ -336,17 +352,55 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   // Reset single filter box
   const handleResetBox = (box: 'dc' | 'homewin' | 'awaywin' | 'over' | 'under' | 'btts') => {
     if (box === 'dc') {
-      onChange({ ...criteria, dcMin: 1.0, dcMax: 2.0 });
+      onChange({
+        ...criteria,
+        dcMin: 1.0,
+        dcMax: 2.0,
+        enableDoubleChance: true,
+        enableDc1X: true,
+        enableDc12: true,
+        enableDcX2: true,
+      });
     } else if (box === 'homewin') {
-      onChange({ ...criteria, homeWinMin: 1.0, homeWinMax: 3.0 });
+      onChange({
+        ...criteria,
+        homeWinMin: 1.0,
+        homeWinMax: 3.0,
+        enableHomeWin: true,
+      });
     } else if (box === 'awaywin') {
-      onChange({ ...criteria, awayWinMin: 1.0, awayWinMax: 3.0 });
+      onChange({
+        ...criteria,
+        awayWinMin: 1.0,
+        awayWinMax: 3.0,
+        enableAwayWin: true,
+      });
     } else if (box === 'over') {
-      onChange({ ...criteria, overMin: 1.01, overMax: 3.0, overGoalLine: '0.5' });
+      onChange({
+        ...criteria,
+        overMin: 1.01,
+        overMax: 3.0,
+        overGoalLines: ['0.5', '1.5'],
+        overGoalLine: '0.5',
+        enableOver: true,
+      });
     } else if (box === 'under') {
-      onChange({ ...criteria, underMin: 1.01, underMax: 3.0, underGoalLines: ['3.5', '4.5'] });
+      onChange({
+        ...criteria,
+        underMin: 1.01,
+        underMax: 3.0,
+        underGoalLines: ['3.5', '4.5'],
+        underGoalLine: '3.5',
+        enableUnder: true,
+      });
     } else if (box === 'btts') {
-      onChange({ ...criteria, bttsMin: 1.01, bttsMax: 3.0, bttsSelections: ['GG', 'NGG'] });
+      onChange({
+        ...criteria,
+        bttsMin: 1.01,
+        bttsMax: 3.0,
+        bttsSelections: ['GG', 'NGG'],
+        enableBtts: true,
+      });
     }
   };
 
@@ -363,10 +417,28 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     return activeKeys.length === 1 && map[market] === true;
   };
 
+  /** Over Goals multi-selection logic */
+  const activeOverLines = criteria.overGoalLines || (criteria.overGoalLine ? [criteria.overGoalLine] : ['0.5', '1.5']);
+  const toggleOverGoalLine = (line: '0.5' | '1.5') => {
+    const current = new Set(criteria.overGoalLines || (criteria.overGoalLine ? [criteria.overGoalLine] : ['0.5', '1.5']));
+    if (current.has(line)) {
+      current.delete(line);
+    } else {
+      current.add(line);
+    }
+    const next = Array.from(current) as ('0.5' | '1.5')[];
+    onChange({
+      ...criteria,
+      overGoalLines: next,
+      overGoalLine: next[0] || '0.5',
+      enableOver: next.length > 0 ? true : criteria.enableOver,
+    });
+  };
+
   /** Section 2.1: Under Goals multi-selection logic */
-  const activeUnderLines = criteria.underGoalLines || ['3.5'];
+  const activeUnderLines = criteria.underGoalLines || ['3.5', '4.5'];
   const toggleUnderGoalLine = (line: '3.5' | '4.5') => {
-    const current = new Set(criteria.underGoalLines || []);
+    const current = new Set(criteria.underGoalLines || ['3.5', '4.5']);
     if (current.has(line)) {
       current.delete(line);
     } else {
@@ -382,9 +454,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   };
 
   /** Section 2.2: BTTS (GG & NGG) multi-selection logic */
-  const activeBttsSelections = criteria.bttsSelections || ['GG'];
+  const activeBttsSelections = criteria.bttsSelections || ['GG', 'NGG'];
   const toggleBttsSelection = (pick: 'GG' | 'NGG') => {
-    const current = new Set(criteria.bttsSelections || []);
+    const current = new Set(criteria.bttsSelections || ['GG', 'NGG']);
     if (current.has(pick)) {
       current.delete(pick);
     } else {
@@ -551,24 +623,24 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <span className="hidden sm:inline">Bookable only</span>
           </button>
 
-          {/* Section 2.3: Reset All Filters Button Repair */}
+          {/* Reset All Filters Button */}
           <button
             type="button"
             onClick={handleResetAll}
-            title="Reset All Filters to Default Empty/Off State"
-            className="px-3 py-2 bg-slate-800 hover:bg-red-500/20 hover:border-red-500/40 hover:text-red-300 text-slate-300 rounded-xl text-xs flex items-center gap-1.5 transition-colors border border-slate-700 font-semibold"
+            title="Reset All Filters to Default (all cards enabled, all buttons selected, sliders at ends)"
+            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs flex items-center gap-1.5 transition-colors border border-slate-700 font-semibold"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
             <span>Reset All</span>
           </button>
         </div>
       </div>
 
       {/* SECTION 3: Market Selector Chips & Odds Bounds */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 py-2 border-b border-slate-800/80">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 py-2 border-b border-slate-800/80 w-full">
         {/* Box 1: Double Chance Controls */}
         <div
-          className={`p-3.5 rounded-xl border transition-all flex flex-col ${
+          className={`p-3.5 rounded-xl border transition-all flex flex-col min-w-0 w-full overflow-hidden ${
             criteria.enableDoubleChance
               ? 'bg-[#0f172a] border-emerald-500/40 shadow-sm'
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
@@ -649,7 +721,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
         {/* Box 2: Home Win (1) Controls */}
         <div
-          className={`p-3.5 rounded-xl border transition-all flex flex-col ${
+          className={`p-3.5 rounded-xl border transition-all flex flex-col min-w-0 w-full overflow-hidden ${
             criteria.enableHomeWin
               ? 'bg-[#0f172a] border-blue-500/40 shadow-sm'
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
@@ -706,7 +778,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
         {/* Box 3: Away Win (2) Controls */}
         <div
-          className={`p-3.5 rounded-xl border transition-all flex flex-col ${
+          className={`p-3.5 rounded-xl border transition-all flex flex-col min-w-0 w-full overflow-hidden ${
             criteria.enableAwayWin
               ? 'bg-[#0f172a] border-indigo-500/40 shadow-sm'
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
@@ -763,7 +835,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
         {/* Box 4: Over Goal Line Selector */}
         <div
-          className={`p-3.5 rounded-xl border transition-all flex flex-col ${
+          className={`p-3.5 rounded-xl border transition-all flex flex-col min-w-0 w-full overflow-hidden ${
             criteria.enableOver
               ? 'bg-[#0f172a] border-amber-500/40 shadow-sm'
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
@@ -777,7 +849,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 onChange={(e) => updateCriteria('enableOver', e.target.checked)}
                 className="w-4 h-4 rounded text-amber-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
               />
-              <span className="text-xs font-bold text-amber-300">Over Goals</span>
+              <span className="text-xs font-bold text-amber-300">Over Goals (Multi-Select)</span>
             </label>
 
             <div className="flex items-center gap-1.5">
@@ -804,22 +876,27 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </div>
           </div>
 
+          {/* Multi-selection toggle buttons for 0.5 and 1.5 simultaneously */}
           <div className="flex gap-1.5 mb-2">
-            {(['0.5', '1.5'] as const).map((line) => (
-              <button
-                key={line}
-                type="button"
-                onClick={() => updateCriteria('overGoalLine', line)}
-                disabled={!criteria.enableOver}
-                className={`flex-1 text-center py-1 rounded-lg text-xs font-medium transition-all ${
-                  criteria.overGoalLine === line
-                    ? 'bg-amber-500 text-slate-950 font-bold'
-                    : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
-                } disabled:opacity-40`}
-              >
-                Over {line}
-              </button>
-            ))}
+            {(['0.5', '1.5'] as const).map((line) => {
+              const isActive = activeOverLines.includes(line);
+              return (
+                <button
+                  key={line}
+                  type="button"
+                  onClick={() => toggleOverGoalLine(line)}
+                  disabled={!criteria.enableOver}
+                  className={`flex-1 text-center py-1 rounded-lg text-xs font-bold transition-all border flex items-center justify-center gap-1.5 ${
+                    isActive
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
+                      : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700'
+                  } disabled:opacity-40`}
+                >
+                  <span>Over {line}</span>
+                  {isActive && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
+                </button>
+              );
+            })}
           </div>
 
           {criteria.enableOver && (
@@ -838,7 +915,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
         {/* Section 2.1: Box 5 - Under Goal Line Selector with Simultaneous Multi-Selection */}
         <div
-          className={`p-3.5 rounded-xl border transition-all flex flex-col ${
+          className={`p-3.5 rounded-xl border transition-all flex flex-col min-w-0 w-full overflow-hidden ${
             criteria.enableUnder
               ? 'bg-[#0f172a] border-purple-500/40 shadow-sm'
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
@@ -921,7 +998,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
         {/* Section 2.2: Box 6 - Both Teams To Score (BTTS) with Explicit GG & NGG Multi-Selection */}
         <div
-          className={`p-3.5 rounded-xl border transition-all flex flex-col ${
+          className={`p-3.5 rounded-xl border transition-all flex flex-col min-w-0 w-full overflow-hidden ${
             criteria.enableBtts
               ? 'bg-[#0f172a] border-cyan-500/40 shadow-sm'
               : 'bg-slate-900/40 border-slate-800/70 opacity-60'
