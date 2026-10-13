@@ -240,6 +240,11 @@ export function evaluateAndFilterGames(
       }
     }
 
+    // 1b. Cashout Filter: filter matches that explicitly support Cashout
+    if (criteria.cashoutOnly && !game.cashoutAvailable) {
+      continue;
+    }
+
     // 2. Filter out non-prematch statuses
     if (game.status === 'IN_PLAY' || game.status === 'CANCELLED' || game.status === 'POSTPONED') {
       continue;
@@ -424,36 +429,60 @@ export function evaluateAndFilterGames(
       }
     }
 
-    // Under goals — goal line + odds range
+    // Under goals — multi-selection (3.5 and 4.5 simultaneously) + odds range
     if (criteria.enableUnder && activeMarkets.overUnder) {
-      const underPick = activeMarkets.overUnder.find((m) => m.pick === `Under ${criteria.underGoalLine}`);
+      const activeLines: ('3.5' | '4.5')[] =
+        Array.isArray(criteria.underGoalLines) && criteria.underGoalLines.length > 0
+          ? criteria.underGoalLines
+          : criteria.underGoalLine
+            ? [criteria.underGoalLine]
+            : ['3.5'];
       const uMin = criteria.underMin ?? 1.05;
       const uMax = criteria.underMax ?? 10;
-      if (underPick && underPick.odd >= uMin && underPick.odd <= uMax) {
-        const ids = findSportyBetIds(sportyIds, `Under ${criteria.underGoalLine}`, underPick.pick);
-        pushPick(
-          {
-            gameId: game.id,
-            eventId: game.eventId,
-            homeTeam: game.homeTeam,
-            awayTeam: game.awayTeam,
-            league: game.league,
-            kickoffTime: game.kickoffTime,
-            marketName: `Under ${criteria.underGoalLine}`,
-            pick: `Under ${criteria.underGoalLine}`,
-            odd: underPick.odd,
-          },
-          ids
-        );
+
+      for (const line of activeLines) {
+        const underPick = activeMarkets.overUnder.find((m) => m.pick === `Under ${line}`);
+        if (underPick && underPick.odd >= uMin && underPick.odd <= uMax) {
+          const ids = findSportyBetIds(sportyIds, `Under ${line}`, underPick.pick);
+          pushPick(
+            {
+              gameId: game.id,
+              eventId: game.eventId,
+              homeTeam: game.homeTeam,
+              awayTeam: game.awayTeam,
+              league: game.league,
+              kickoffTime: game.kickoffTime,
+              marketName: `Under ${line}`,
+              pick: `Under ${line}`,
+              odd: underPick.odd,
+            },
+            ids
+          );
+        }
       }
     }
 
-    // Both teams to score (GG / NG) — odds range
+    // Both teams to score (BTTS) — multi-selection (GG and NGG simultaneously) + odds range
     if (criteria.enableBtts && activeMarkets.btts) {
       const bMin = criteria.bttsMin ?? 1.01;
       const bMax = criteria.bttsMax ?? 10;
+      const activeSelections: string[] =
+        Array.isArray(criteria.bttsSelections) && criteria.bttsSelections.length > 0
+          ? criteria.bttsSelections
+          : ['GG', 'NGG'];
+
       for (const bt of activeMarkets.btts) {
         if (bt.odd < bMin || bt.odd > bMax) continue;
+        const normPick = bt.pick.toUpperCase();
+        const isGg = normPick === 'GG' || normPick === 'YES';
+        const isNg = normPick === 'NG' || normPick === 'NGG' || normPick === 'NO';
+
+        const matchesFilter =
+          (isGg && activeSelections.includes('GG')) ||
+          (isNg && (activeSelections.includes('NGG') || activeSelections.includes('NG')));
+
+        if (!matchesFilter) continue;
+
         const ids = findSportyBetIds(sportyIds, 'BTTS', bt.pick);
         pushPick(
           {
@@ -511,7 +540,11 @@ export function fisherYatesShuffle<T>(array: T[]): T[] {
 }
 
 /**
- * Selects up to N random games from eligible candidates, picking 1 qualifying market per match.
+ * Balanced Favoritism Random Selection Scheme for Guests and balanced slips:
+ * - Strictly favors high-probability outcomes for the majority of the betslip (~70-75% of legs)
+ * - Automatically blends in higher-odds value selections (~25-30% of legs) based on active user filters
+ *   (e.g., Under 3.5/4.5 Goals, GG/NGG, value 1X2).
+ * - Avoids duplicate matches in the generated slip.
  */
 export function pickRandomSelections(
   evaluations: GameEvaluation[],
@@ -519,35 +552,180 @@ export function pickRandomSelections(
 ): SelectedPick[] {
   if (evaluations.length === 0 || count <= 0) return [];
 
-  const shuffled = fisherYatesShuffle(evaluations);
-  const selectedGames = shuffled.slice(0, Math.min(count, shuffled.length));
+  const needed = Math.min(count, evaluations.length);
+  if (needed === 1) {
+    const sorted = [...evaluations].sort((a, b) => {
+      const oddA = a.bestPick?.odd ?? 99;
+      const oddB = b.bestPick?.odd ?? 99;
+      return oddA - oddB;
+    });
+    const top = sorted.slice(0, Math.min(3, sorted.length));
+    const chosen = fisherYatesShuffle(top)[0]?.bestPick;
+    return chosen ? [chosen] : [];
+  }
 
-  return selectedGames
-    .map((evalItem) => evalItem.bestPick)
-    .filter((pick): pick is SelectedPick => pick !== null);
+  const highProbTarget = Math.max(1, Math.ceil(needed * 0.70));
+  const usedGameIds = new Set<string>();
+  const selectedPicks: SelectedPick[] = [];
+
+  // Categorize candidate picks across available evaluations
+  const highProbPool: { evalItem: GameEvaluation; pick: SelectedPick }[] = [];
+  const valuePool: { evalItem: GameEvaluation; pick: SelectedPick }[] = [];
+
+  for (const ev of evaluations) {
+    for (const p of ev.eligiblePicks) {
+      const isValueMarket =
+        p.marketName.includes('Under') ||
+        p.marketName.includes('BTTS') ||
+        p.marketName.includes('GG') ||
+        p.odd >= 1.48;
+
+      if (isValueMarket && p.odd >= 1.42 && p.odd <= 2.45) {
+        valuePool.push({ evalItem: ev, pick: p });
+      }
+
+      if (
+        p.odd <= 1.45 ||
+        p.marketName === 'Double Chance' ||
+        p.marketName === 'Over 0.5' ||
+        p.marketName === 'Under 4.5'
+      ) {
+        highProbPool.push({ evalItem: ev, pick: p });
+      }
+    }
+  }
+
+  // 1. Pick majority high-probability banker outcomes
+  const shuffledHigh = fisherYatesShuffle(highProbPool);
+  // Sort with stochastic jitter towards safer odds
+  shuffledHigh.sort((a, b) => a.pick.odd - b.pick.odd + (Math.random() - 0.5) * 0.2);
+
+  for (const item of shuffledHigh) {
+    if (selectedPicks.length >= highProbTarget) break;
+    if (!usedGameIds.has(item.evalItem.game.id)) {
+      usedGameIds.add(item.evalItem.game.id);
+      selectedPicks.push(item.pick);
+    }
+  }
+
+  // 2. Blend in higher-odds value selections based on active filters (Under 3.5/4.5, GG/NGG)
+  const shuffledValue = fisherYatesShuffle(valuePool);
+  for (const item of shuffledValue) {
+    if (selectedPicks.length >= needed) break;
+    if (!usedGameIds.has(item.evalItem.game.id)) {
+      usedGameIds.add(item.evalItem.game.id);
+      selectedPicks.push(item.pick);
+    }
+  }
+
+  // 3. Fallback fill if needed
+  if (selectedPicks.length < needed) {
+    const remainingEvals = fisherYatesShuffle(
+      evaluations.filter((ev) => !usedGameIds.has(ev.game.id))
+    );
+    for (const ev of remainingEvals) {
+      if (selectedPicks.length >= needed) break;
+      const pick = ev.bestPick || ev.eligiblePicks[0];
+      if (pick) {
+        usedGameIds.add(ev.game.id);
+        selectedPicks.push(pick);
+      }
+    }
+  }
+
+  return selectedPicks;
 }
 
 /**
- * Score a candidate for "AI" selection: prefer mid-range odds, bookable IDs, league diversity.
+ * Section 3B: AI Pick (Educated Analysis) Logic
+ * Evaluates up to last 5 H2H encounters with relevance filtering (ignoring obsolete historical matches),
+ * applies educated fallback via recent form/momentum and home advantage, and executes a favoritism scheme
+ * detecting abnormally high value odds where bookmaker pricing deviates.
  */
 function scoreEvaluation(ev: GameEvaluation, usedLeagues: Set<string>): number {
   const pick = ev.bestPick;
   if (!pick) return -Infinity;
 
+  const game = ev.game;
   const ideal = 1.15;
-  const oddScore = 1 / (1 + Math.abs(pick.odd - ideal) * 8);
-  const idBonus = pick.marketId && pick.outcomeId ? 0.35 : 0;
-  const marketBonus =
-    pick.marketName === 'Double Chance'
-      ? 0.15
-      : pick.marketName === 'Home Win'
-        ? 0.1
-        : 0.05;
-  const league = (ev.game.league || '').toLowerCase();
-  const diversity = usedLeagues.has(league) ? -0.4 : 0.2;
-  const jitter = Math.random() * 0.08;
+  const oddScore = 1 / (1 + Math.abs(pick.odd - ideal) * 6);
+  const idBonus = pick.marketId && pick.outcomeId ? 0.3 : 0;
 
-  return oddScore + idBonus + marketBonus + diversity + jitter;
+  // Base market safety ranking
+  const marketScores: Record<string, number> = {
+    'Double Chance': 0.30,
+    'Home Win': 0.22,
+    'Over 0.5': 0.22,
+    'Under 3.5': 0.22,
+    'Under 4.5': 0.20,
+    'Over 1.5': 0.18,
+    'BTTS': 0.16,
+    'Away Win': 0.12,
+  };
+  const marketBonus = marketScores[pick.marketName] || 0.15;
+
+  // 1. Head-to-Head (H2H) analysis (up to 5 recent relevant matches)
+  let h2hScore = 0;
+  if (game.h2hRecent5 && game.h2hRecent5.length > 0) {
+    // Relevance filter: ignore obsolete historical matches (relevance flag)
+    const relevantH2H = game.h2hRecent5.filter((m) => m.relevant);
+    if (relevantH2H.length > 0) {
+      const normHome = normalizeTeamName(game.homeTeam);
+      let homeWins = 0;
+      let awayWins = 0;
+      let draws = 0;
+      for (const m of relevantH2H) {
+        const mHome = normalizeTeamName(m.homeTeam);
+        const homeIsCurrentHome = mHome.includes(normHome) || normHome.includes(mHome);
+        if (m.home_score > m.away_score) {
+          if (homeIsCurrentHome) homeWins++; else awayWins++;
+        } else if (m.away_score > m.home_score) {
+          if (homeIsCurrentHome) awayWins++; else homeWins++;
+        } else {
+          draws++;
+        }
+      }
+      const count = relevantH2H.length;
+      if (pick.marketName === 'Home Win' || pick.pick === '1' || pick.pick === '1X') {
+        h2hScore = ((homeWins + (pick.pick === '1X' ? draws * 0.7 : 0)) / count) * 0.45;
+      } else if (pick.marketName === 'Away Win' || pick.pick === '2' || pick.pick === 'X2') {
+        h2hScore = ((awayWins + (pick.pick === 'X2' ? draws * 0.7 : 0)) / count) * 0.45;
+      } else if (pick.marketName.includes('Over') || pick.marketName === 'BTTS') {
+        const totalGoals = relevantH2H.reduce((acc, m) => acc + m.home_score + m.away_score, 0);
+        const avgGoals = totalGoals / count;
+        h2hScore = avgGoals >= 2.0 ? 0.25 : -0.1;
+      }
+    }
+  }
+
+  // 2. Educated Fallback: Form edge, goal momentum & non-mathematical team advantage
+  const homeAdvantage = 0.12; // non-mathematical team advantage (home turf)
+  const formEdge = game.insights?.formEdge ?? 0.5;
+  let formBonus = 0;
+  if (pick.marketName === 'Home Win' || pick.pick === '1X') {
+    formBonus = (formEdge - 0.5 + homeAdvantage) * 0.5;
+  } else if (pick.marketName === 'Away Win' || pick.pick === 'X2') {
+    formBonus = (0.5 - formEdge) * 0.5;
+  }
+
+  // 3. Favoritism Scheme & Value Odds Detection
+  // Check if bookmaker pricing deviates favorably from recent performance trends
+  let valueBonus = 0;
+  const impliedProb = 1 / pick.odd;
+  const estimatedProb = 0.5 + (formEdge - 0.5) * 0.4 + (h2hScore > 0 ? 0.1 : 0);
+  if (estimatedProb > impliedProb + 0.12 && pick.odd >= 1.25) {
+    game.abnormalOddsFlag = true;
+    valueBonus = 0.35; // Value pick boost
+  }
+
+  // Cashout availability preference
+  const cashoutBonus = game.cashoutAvailable ? 0.12 : 0;
+
+  const league = (game.league || '').toLowerCase();
+  const diversity = usedLeagues.has(league) ? -0.35 : 0.18;
+  const jitter = Math.random() * 0.05;
+
+  return oddScore + idBonus + marketBonus + h2hScore + formBonus + valueBonus + cashoutBonus + diversity + jitter;
 }
 
 /**

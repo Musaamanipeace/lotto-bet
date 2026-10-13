@@ -20,8 +20,15 @@ import { AiCoachPanel } from '@/components/AiCoachPanel';
 import { AuthModal } from '@/components/AuthModal';
 import { SavedSlipsModal } from '@/components/SavedSlipsModal';
 import { ResultsModal } from '@/components/ResultsModal';
+import { StatsModal } from '@/components/StatsModal';
 import { AiAgentDrawer } from '@/components/AiAgentDrawer';
+import { SettingsModal } from '@/components/SettingsModal';
+import { OnboardingModal } from '@/components/OnboardingModal';
+import { TopAlertBanner } from '@/components/TopAlertBanner';
+import { KeyGuardModal } from '@/components/KeyGuardModal';
 import { getCurrentUser, signOutUser, listSavedSlips } from '@/lib/storage';
+import { getByokKeys, hasActiveAiKey, BYOK_CHANGED_EVENT } from '@/lib/byokStorage';
+import { ByokKeys } from '@/types';
 import {
   Dices,
   RefreshCw,
@@ -39,6 +46,8 @@ import {
   Bot,
   Trophy,
   Plus,
+  Key,
+  Settings,
 } from 'lucide-react';
 
 function useDebouncedValue<T>(value: T, delay: number): T {
@@ -70,16 +79,44 @@ export default function HomePage() {
   const [isSavedSlipsModalOpen, setIsSavedSlipsModalOpen] = useState(false);
   const [isResultsModalOpen, setIsResultsModalOpen] = useState(false);
   const [isAiAgentOpen, setIsAiAgentOpen] = useState(false);
+  const [statsGame, setStatsGame] = useState<StandardGame | null>(null);
   const [savedSlipsCount, setSavedSlipsCount] = useState<number>(0);
   const [lastBookingCode] = useState<string | undefined>();
 
-  // Initialize user session and saved slips count
+  // BYOK (Bring Your Own Key) & Onboarding state
+  const [byok, setByok] = useState<ByokKeys>(getByokKeys());
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
+  const [keyGuard, setKeyGuard] = useState<{
+    isOpen: boolean;
+    featureName: string;
+    description?: string;
+  }>({ isOpen: false, featureName: '' });
+
+  const hasAiKey = hasActiveAiKey(byok);
+
+  // Initialize user session and saved slips count, plus BYOK onboarding check
   useEffect(() => {
     const u = getCurrentUser();
     setUser(u);
     if (u) {
       setSavedSlipsCount(listSavedSlips(u.username).length);
     }
+
+    const currentKeys = getByokKeys();
+    setByok(currentKeys);
+    if (!hasActiveAiKey(currentKeys) && !currentKeys.hasSkippedOnboarding) {
+      setIsOnboardingModalOpen(true);
+    }
+
+    const handleByokChange = (e: Event) => {
+      const custom = e as CustomEvent<ByokKeys>;
+      if (custom.detail) {
+        setByok(custom.detail);
+      }
+    };
+    window.addEventListener(BYOK_CHANGED_EVENT, handleByokChange);
+    return () => window.removeEventListener(BYOK_CHANGED_EVENT, handleByokChange);
   }, []);
 
   const commitPicks = (next: SelectedPick[] | ((prev: SelectedPick[]) => SelectedPick[])) => {
@@ -172,6 +209,15 @@ export default function HomePage() {
 
   /** AI pick `count` new games from remaining, ADD to slip */
   const handleAddAiPicks = (count: number) => {
+    if (!hasAiKey) {
+      setKeyGuard({
+        isOpen: true,
+        featureName: 'AI Picks',
+        description:
+          'AI Picks use machine-learning educated analysis to evaluate H2H historical records, team form edge, and bookmaker pricing deviations. Please configure your private API key in Settings to unlock AI Picks.',
+      });
+      return;
+    }
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
     const exclude = new Set<string>(selectedPicks.map((p) => p.gameId));
     const fresh = pickSmartSelections(evaluations, n, exclude);
@@ -179,19 +225,44 @@ export default function HomePage() {
     commitPicks((prev) => mergePicksIntoSlip(prev, fresh));
   };
 
+  /** Random pick `count` new games from remaining, ADD to slip */
+  const handleAddRandomPicks = (count: number) => {
+    const n = Math.max(1, Math.min(100, count || criteria.pickCount));
+    const fresh = pickRandomSelections(remainingEvaluations, n);
+    if (fresh.length === 0) return;
+    commitPicks((prev) => mergePicksIntoSlip(prev, fresh));
+  };
+
   /**
    * Shuffle: drops down to either "staging" (Staging Area) or "slip" (In Slip)
+   * Supports both 'ai' (educated analysis) and 'random' modes.
    */
-  const handleShuffle = (target: 'staging' | 'slip', count?: number) => {
+  const handleShuffle = (target: 'staging' | 'slip', count?: number, mode?: 'ai' | 'random') => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
+    const effectiveMode = mode || criteria.pickingStrategy || 'ai';
+
+    if (effectiveMode === 'ai' && !hasAiKey) {
+      setKeyGuard({
+        isOpen: true,
+        featureName: 'AI Shuffle',
+        description:
+          'AI Shuffle analyzes squad momentum and H2H. Configure your API key in Settings or use Random Shuffle.',
+      });
+      return;
+    }
+
     if (target === 'staging') {
-      // Shuffles candidate Pick N selections in the staging area from remaining available matches
-      const fresh = pickRandomSelections(remainingEvaluations, n);
+      const fresh =
+        effectiveMode === 'ai'
+          ? pickSmartSelections(remainingEvaluations, n)
+          : pickRandomSelections(remainingEvaluations, n);
       setAlgoPicks(fresh);
     } else {
-      // Shuffles games in the active betslip
       if (selectedPicks.length === 0) return;
-      const fresh = pickRandomSelections(evaluations, selectedPicks.length);
+      const fresh =
+        effectiveMode === 'ai'
+          ? pickSmartSelections(evaluations, selectedPicks.length)
+          : pickRandomSelections(evaluations, selectedPicks.length);
       commitPicks(fresh);
     }
   };
@@ -261,6 +332,12 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 pb-36">
+      {/* Top Persistent Alert Banner for Keyless / Guest Mode */}
+      <TopAlertBanner
+        isMissingKeys={!hasAiKey}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+      />
+
       {/* Top Navbar */}
       <header className="sticky top-0 z-30 bg-[#0d1422]/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -302,6 +379,25 @@ export default function HomePage() {
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-400' : ''}`} />
               <span className="hidden sm:inline">Refresh</span>
+            </button>
+
+            {/* BYOK Settings Panel Button */}
+            <button
+              onClick={() => setIsSettingsModalOpen(true)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all ${
+                hasAiKey
+                  ? 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+                  : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300'
+              }`}
+              title="Manage Bring Your Own Key (BYOK) API keys"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Settings</span>
+              {!hasAiKey && (
+                <span className="text-[9px] bg-amber-500/30 text-amber-300 px-1 py-0.2 rounded font-mono font-bold">
+                  BYOK
+                </span>
+              )}
             </button>
 
             {/* Yesterday's Results & Saved Betslip Tracking Button */}
@@ -450,9 +546,19 @@ export default function HomePage() {
           companyCounts={companyCounts}
           onNextAdd={handlePickPicks}
           onShuffle={handleShuffle}
+          onAddAiPicks={handleAddAiPicks}
+          onAddRandomPicks={handleAddRandomPicks}
           onRemoveGames={handleRemoveGames}
-          onClearSlip={handleClearSlip}
           onSoloFilter={handleSoloFilter}
+          hasAiKey={hasAiKey}
+          onRequireKey={(feature) =>
+            setKeyGuard({
+              isOpen: true,
+              featureName: feature,
+              description:
+                'This feature requires an active AI provider API key. Configure your private key in BYOK Settings to unlock all capabilities.',
+            })
+          }
         />
 
         {/* Fixtures Section Header Tabs */}
@@ -642,6 +748,7 @@ export default function HomePage() {
                     isAlgoCandidate={isAlgoCandidate}
                     onTogglePick={handleTogglePick}
                     onSelectSpecificPick={handleSelectSpecificPick}
+                    onOpenStats={setStatsGame}
                   />
                 );
               })}
@@ -671,6 +778,7 @@ export default function HomePage() {
         onRemovePick={handleRemovePick}
         onClearSlip={handleClearSlip}
         onAddAiPicks={handleAddAiPicks}
+        onAddRandomPicks={handleAddRandomPicks}
         onNextAdd={handlePickPicks}
         onShuffle={handleShuffle}
         onRemoveGames={handleRemoveGames}
@@ -682,6 +790,15 @@ export default function HomePage() {
         onOpenExportModal={() => setIsExportModalOpen(true)}
         stake={stake}
         onStakeChange={setStake}
+        hasAiKey={hasAiKey}
+        onRequireKey={(feature) =>
+          setKeyGuard({
+            isOpen: true,
+            featureName: feature,
+            description:
+              'This feature requires an active AI provider API key. Configure your private key in BYOK Settings to unlock all capabilities.',
+          })
+        }
         onOpenSavedSlips={() => {
           if (!user) {
             setIsAuthModalOpen(true);
@@ -706,6 +823,8 @@ export default function HomePage() {
         selections={selectedPicks}
         stake={stake}
         initialBookie={criteria.selectedCompany === 'ALL' ? 'sportybet:ke' : criteria.selectedCompany}
+        hasKeys={hasAiKey}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
       {/* Auth Modal (Username & Password only) */}
@@ -766,6 +885,40 @@ export default function HomePage() {
         onRefreshSavedSlips={() => {
           if (user) setSavedSlipsCount(listSavedSlips(user.username).length);
         }}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+      />
+
+      {/* Match Stats Modal (H2H, Form, Scoring, Goals, Cashout status) */}
+      <StatsModal
+        isOpen={Boolean(statsGame)}
+        onClose={() => setStatsGame(null)}
+        game={statsGame}
+        onSelectPick={handleSelectSpecificPick}
+        selectedPick={statsGame ? selectedPicksMap.get(statsGame.id) || null : null}
+        hasKeys={hasAiKey}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+      />
+
+      {/* BYOK Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+      />
+
+      {/* BYOK Onboarding Modal */}
+      <OnboardingModal
+        isOpen={isOnboardingModalOpen}
+        onClose={() => setIsOnboardingModalOpen(false)}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+      />
+
+      {/* Key Guard Alert Modal for Blocked Guest Features */}
+      <KeyGuardModal
+        isOpen={keyGuard.isOpen}
+        onClose={() => setKeyGuard((prev) => ({ ...prev, isOpen: false }))}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+        featureName={keyGuard.featureName}
+        description={keyGuard.description}
       />
     </div>
   );

@@ -21,15 +21,11 @@ export const AiCoachPanel: React.FC<AiCoachPanelProps> = ({ selections, games, u
 
   const run = async () => {
     const u = user || getCurrentUser();
-    if (!u?.llmApiKey) {
-      setError('Sign in and save your own LLM API key under Account first.');
-      return;
-    }
     setLoading(true);
     setError(null);
     setAnalysis(null);
     try {
-      const saved: SavedBetslip[] = listSavedSlips(u.username);
+      const saved: SavedBetslip[] = u ? listSavedSlips(u.username) : [];
       const sample = games.slice(0, 40).map((g) => ({
         id: g.id,
         eventId: g.eventId,
@@ -44,10 +40,10 @@ export const AiCoachPanel: React.FC<AiCoachPanelProps> = ({ selections, games, u
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt,
-          apiKey: u.llmApiKey,
-          provider: u.llmProvider || 'openai',
-          model: u.llmModel,
-          baseUrl: u.llmBaseUrl,
+          apiKey: u?.llmApiKey,
+          provider: u?.llmProvider || 'gemini',
+          model: u?.llmModel,
+          baseUrl: u?.llmBaseUrl,
           context: {
             currentSelections: selections,
             savedSlips: saved.map((s) => ({
@@ -86,11 +82,10 @@ export const AiCoachPanel: React.FC<AiCoachPanelProps> = ({ selections, games, u
     <div className="bg-[#111927] border border-slate-800 rounded-2xl p-4 space-y-3">
       <div className="flex items-center gap-2 text-sm font-bold text-white">
         <Sparkles className="w-4 h-4 text-emerald-400" />
-        AI coach (your API key)
+        AI Strategy Coach
       </div>
       <p className="text-[11px] text-slate-400">
-        Optional. Sends your prompt plus current slip, saved ticket results, and a fixture sample to
-        your LLM. Keys never leave this flow except to the provider you configure.
+        Analyzes your prompt, current slip, saved ticket results, and live fixture sample to review risk and suggest optimizations.
       </p>
       <textarea
         value={prompt}

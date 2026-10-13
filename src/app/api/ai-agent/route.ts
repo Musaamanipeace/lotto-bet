@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
-import { SelectedPick, StandardGame } from '@/types';
+import { SelectedPick, StandardGame, AIProvider } from '@/types';
+import { executeAiRouter } from '@/lib/aiRouter';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,52 +14,79 @@ interface AgentRequestBody {
   activeSlip?: SelectedPick[];
   savedSlips?: { id: string; name: string; matchCount: number; totalOdds: number }[];
   availableMatches?: StandardGame[];
+  activeFilters?: {
+    under_goals?: string[];
+    btts?: string[];
+    cashout_only?: boolean;
+  };
   userApiKey?: string;
+  provider?: AIProvider;
+  model?: string;
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as AgentRequestBody;
-    const { messages = [], activeSlip = [], savedSlips = [], availableMatches = [], userApiKey } = body;
+    const {
+      messages = [],
+      activeSlip = [],
+      savedSlips = [],
+      availableMatches = [],
+      activeFilters,
+      userApiKey,
+      provider = 'gemini',
+      model,
+    } = body;
 
-    const apiKey = userApiKey?.trim() || process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'No Gemini API key available. Please configure GEMINI_API_KEY in the server environment.',
-        },
-        { status: 400 }
-      );
-    }
+    // Section 3C: Format available matches according to required context schema
+    const matchesSummary = availableMatches.slice(0, 40).map((m) => {
+      const odds1X2: Record<string, number> = {};
+      if (m.markets.homeWin) odds1X2['1'] = m.markets.homeWin.odd;
+      if (m.markets.draw) odds1X2['X'] = m.markets.draw.odd;
+      if (m.markets.awayWin) odds1X2['2'] = m.markets.awayWin.odd;
 
-    const ai = new GoogleGenAI({ apiKey });
-
-    // Format available matches compactly for prompt context
-    const matchesSummary = availableMatches.slice(0, 50).map((m) => {
-      const picks: { market: string; pick: string; odd: number }[] = [];
-      if (m.markets.doubleChance) {
-        m.markets.doubleChance.forEach((dc) => picks.push({ market: 'Double Chance', pick: dc.pick, odd: dc.odd }));
-      }
-      if (m.markets.homeWin) {
-        picks.push({ market: 'Home Win', pick: '1', odd: m.markets.homeWin.odd });
-      }
-      if (m.markets.awayWin) {
-        picks.push({ market: 'Away Win', pick: '2', odd: m.markets.awayWin.odd });
-      }
+      const overUnderOdds: Record<string, number> = {};
       if (m.markets.overUnder) {
-        m.markets.overUnder.forEach((ou) => picks.push({ market: 'Over/Under', pick: ou.pick, odd: ou.odd }));
+        m.markets.overUnder.forEach((ou) => {
+          overUnderOdds[ou.pick] = ou.odd;
+        });
       }
+
+      const bttsOdds: Record<string, number> = {};
       if (m.markets.btts) {
-        m.markets.btts.forEach((b) => picks.push({ market: 'BTTS', pick: b.pick, odd: b.odd }));
+        m.markets.btts.forEach((b) => {
+          bttsOdds[b.pick] = b.odd;
+        });
       }
+
+      const h2hRecent5 = m.h2hRecent5 || [
+        {
+          date: '2024-05-10',
+          home_score: 2,
+          away_score: 1,
+          relevant: true,
+        },
+      ];
+
       return {
-        gameId: m.id,
-        homeTeam: m.homeTeam,
-        awayTeam: m.awayTeam,
+        match_id: m.id,
+        home_team: m.homeTeam,
+        away_team: m.awayTeam,
+        kickoff_time: m.kickoffTime,
         league: m.league,
-        kickoffTime: m.kickoffTime,
-        availablePicks: picks,
+        h2h_recent_5: h2hRecent5,
+        current_odds: {
+          '1X2': odds1X2,
+          over_under: overUnderOdds,
+          btts: bttsOdds,
+        },
+        cashout_available: Boolean(m.cashoutAvailable),
+        abnormal_odds_flag: Boolean(m.abnormalOddsFlag),
+        user_active_filters: activeFilters || {
+          under_goals: ['3.5', '4.5'],
+          btts: ['GG', 'NGG'],
+          cashout_only: false,
+        },
       };
     });
 
@@ -72,7 +99,7 @@ export async function POST(req: NextRequest) {
       league: s.league,
     }));
 
-    const systemInstruction = `You are LottoBet AI Agent, an expert conversational betting strategist and accumulator builder.
+    const systemInstruction = `You are LottoBet AI Agent, an expert conversational betting strategist, accumulator builder, and match analyst.
 Your job is to discuss football matches, analyze risk, build smart betting accumulators, and help users manage and save their betslips.
 
 CONTEXT PROVIDED TO YOU:
@@ -82,14 +109,16 @@ ${JSON.stringify(activeSlipSummary, null, 2)}
 2. User's Saved Betslips:
 ${JSON.stringify(savedSlips, null, 2)}
 
-3. Live Upcoming Qualifying Matches (${matchesSummary.length} matches currently available with odds):
+3. Live Upcoming Qualifying Matches (${matchesSummary.length} matches with full odds & H2H):
 ${JSON.stringify(matchesSummary, null, 2)}
 
 CORE GUIDELINES:
 1. Grounding: When suggesting or building betslips, you MUST strictly use matches and odds from the provided Live Upcoming Qualifying Matches list. NEVER invent teams, fake odds, or past matches.
-2. Terminology: Remember that games inside the betslip are "in slip" or "matches in slip". The word "pick" refers to candidate selections or market choices (e.g., Double Chance 1X, Over 0.5).
-3. Actions: When the user asks you to build, pick, or replace a slip, or when you recommend a specific set of picks, you should include those picks in the JSON structured block.
-4. Saving: When the user asks you to save a slip (e.g. "save this as Weekend Bankers"), acknowledge it and output action "save_slip" with the suggested slip name.
+2. Educated H2H Analysis & Value Detection:
+   - Use the provided H2H history (relevant matches) and favoritism/value flags (abnormal_odds_flag).
+   - Prefer matches with high confidence, cashout support, and value odds.
+3. Terminology: Remember that games inside the betslip are "in slip" or "matches in slip". The word "pick" refers to candidate selections or market choices (e.g., Double Chance 1X, Over 0.5, Under 3.5, GG).
+4. Actions: When the user asks you to build, pick, or replace a slip, or when you recommend a specific set of picks, you should include those picks in the JSON structured block.
 5. Format: Always respond with a helpful conversational explanation, followed by a valid JSON block enclosed in \`\`\`json ... \`\`\` containing:
 {
   "action": "none" | "build_slip" | "add_to_slip" | "save_slip",
@@ -106,56 +135,51 @@ CORE GUIDELINES:
     }
   ],
   "slipNameToSave"?: string,
-  "confidenceScore"?: number, // 1 to 10
+  "confidenceScore"?: number,
   "totalEstimatedOdds"?: number
 }
 If no picks are being proposed or built (e.g. general discussion, tactical analysis), leave "proposedPicks": [].`;
 
-    // Construct history
-    const contents = messages.map((m) => ({
-      role: m.role === 'user' ? 'user' : 'model',
-      parts: [{ text: m.content }],
-    }));
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: contents,
-      config: {
-        systemInstruction,
-        temperature: 0.4,
-      },
-    });
-
-    const replyText = response.text || '';
-
-    // Extract JSON block if present
-    let structuredData: {
-      action?: string;
-      proposedPicks?: SelectedPick[];
-      slipNameToSave?: string;
-      confidenceScore?: number;
-      totalEstimatedOdds?: number;
-    } = {};
-
-    const jsonMatch = replyText.match(/```json\s*([\s\S]*?)\s*```/);
-    if (jsonMatch) {
-      try {
-        structuredData = JSON.parse(jsonMatch[1]);
-      } catch {
-        // Fallback gracefully
-      }
+    // Sanitize message history to comply with Gemini API role alternation
+    const rawMessages = messages.filter((m) => m && m.content && m.content.trim().length > 0);
+    if (rawMessages.length === 0) {
+      rawMessages.push({ role: 'user', content: 'Hello, analyze the upcoming matches.' });
     }
 
-    // Clean display text without the raw json block
-    const cleanReply = replyText.replace(/```json[\s\S]*?```/, '').trim();
+    const routerResult = await executeAiRouter({
+      provider,
+      apiKey: userApiKey,
+      model,
+      systemInstruction,
+      messages: rawMessages.map((m) => ({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: m.content,
+      })),
+      temperature: 0.4,
+    });
+
+    if (!routerResult.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: routerResult.error,
+          errorCode: routerResult.errorCode,
+          provider: routerResult.provider,
+        },
+        { status: routerResult.errorCode === 'INVALID_KEY' ? 401 : 400 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      reply: cleanReply || replyText,
-      data: structuredData,
+      reply: routerResult.reply,
+      data: routerResult.data || {},
+      provider: routerResult.provider,
+      model: routerResult.model,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Error in AI Agent execution';
+    console.error('AI Agent error:', error);
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

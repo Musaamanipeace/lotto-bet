@@ -22,18 +22,62 @@ export const DEFAULT_FILTER_CRITERIA: FilterCriteria = {
   overMin: 1.01,
   overMax: 3.00,
   enableUnder: true,
+  underGoalLines: ['3.5'],
   underGoalLine: '3.5',
   underMin: 1.05,
   underMax: 3.00,
   enableBtts: true,
-  /** Odds range for BTTS (GG/NG) */
+  bttsSelections: ['GG'],
   bttsMin: 1.20,
   bttsMax: 3.00,
+  cashoutOnly: false,
   timeframeHours: 24,
   pickCount: 30,
   searchQuery: '',
   selectedLeague: 'ALL',
   requireFullMarketData: false,
+  pickingStrategy: 'ai',
+};
+
+/**
+ * Empty / cleared criteria when user clicks "Reset All"
+ * Turns every active filter toggle off, resets odds sliders to full limits,
+ * clears search and league, and resets cashout filter.
+ */
+export const EMPTY_FILTER_CRITERIA: FilterCriteria = {
+  selectedCompany: 'ALL',
+  dcMin: 1.00,
+  dcMax: 10.00,
+  enableDoubleChance: false,
+  enableDc1X: false,
+  enableDc12: false,
+  enableDcX2: false,
+  enableHomeWin: false,
+  homeWinMin: 1.00,
+  homeWinMax: 10.00,
+  enableAwayWin: false,
+  awayWinMin: 1.00,
+  awayWinMax: 10.00,
+  enableOver: false,
+  overGoalLine: '0.5',
+  overMin: 1.01,
+  overMax: 10.00,
+  enableUnder: false,
+  underGoalLines: [],
+  underGoalLine: '3.5',
+  underMin: 1.01,
+  underMax: 10.00,
+  enableBtts: false,
+  bttsSelections: [],
+  bttsMin: 1.01,
+  bttsMax: 10.00,
+  cashoutOnly: false,
+  timeframeHours: null,
+  pickCount: 30,
+  searchQuery: '',
+  selectedLeague: 'ALL',
+  requireFullMarketData: false,
+  pickingStrategy: 'ai',
 };
 
 export interface BookieMeta {
@@ -68,6 +112,66 @@ export const BOOKIE_CONFIGS: Record<BookieId, BookieMeta> = {
     minStake: 15,
     bonusLabel: 'Multi Bonus',
   },
+  'betpawa:ke': {
+    id: 'betpawa:ke',
+    name: 'betPawa Kenya',
+    shortName: 'betPawa',
+    tagline: 'Win Bonus up to 1000% • 1 KSh Min Stake',
+    codePrefix: 'BP',
+    accentColor: '#10b981',
+    badgeBg: 'bg-emerald-500/15',
+    badgeBorder: 'border-emerald-500/40',
+    badgeText: 'text-emerald-400',
+    homeUrl: 'https://www.betpawa.co.ke/',
+    bookingUrl: 'https://www.betpawa.co.ke/',
+    minStake: 1,
+    bonusLabel: '1000% Win Bonus',
+  },
+  '1xbet:ke': {
+    id: '1xbet:ke',
+    name: '1xBet Kenya',
+    shortName: '1xBet',
+    tagline: 'High Odds • Extensive Feed',
+    codePrefix: '1X',
+    accentColor: '#3b82f6',
+    badgeBg: 'bg-blue-500/15',
+    badgeBorder: 'border-blue-500/40',
+    badgeText: 'text-blue-400',
+    homeUrl: 'https://1xbet.co.ke/',
+    bookingUrl: 'https://1xbet.co.ke/en/line/football',
+    minStake: 22,
+    bonusLabel: 'Acca Boost',
+  },
+  'mozzart:ke': {
+    id: 'mozzart:ke',
+    name: 'Mozzart Bet Kenya',
+    shortName: 'Mozzart',
+    tagline: 'Super Multi Bonus • Big Payouts',
+    codePrefix: 'MZ',
+    accentColor: '#f59e0b',
+    badgeBg: 'bg-amber-500/15',
+    badgeBorder: 'border-amber-500/40',
+    badgeText: 'text-amber-400',
+    homeUrl: 'https://www.mozzartbet.co.ke/',
+    bookingUrl: 'https://www.mozzartbet.co.ke/en/sports-betting',
+    minStake: 20,
+    bonusLabel: 'Super Multi Bonus',
+  },
+  'sportpesa:ke': {
+    id: 'sportpesa:ke',
+    name: 'SportPesa Kenya',
+    shortName: 'SportPesa',
+    tagline: 'Premier Kenyan Sportsbook',
+    codePrefix: 'SP',
+    accentColor: '#0284c7',
+    badgeBg: 'bg-sky-500/15',
+    badgeBorder: 'border-sky-500/40',
+    badgeText: 'text-sky-400',
+    homeUrl: 'https://www.sportpesa.co.ke/',
+    bookingUrl: 'https://www.sportpesa.co.ke/',
+    minStake: 49,
+    bonusLabel: 'Mega Acca Bonus',
+  },
 };
 
 export const TIMEFRAME_OPTIONS = [
@@ -88,7 +192,41 @@ export const PICK_COUNT_PRESETS = [5, 10, 15, 20, 30, 50];
  */
 export function getCompanyBonusPercentage(bookie: BookieId, legCount: number): number {
   if (legCount < 3) return 0;
-  // SportyBet
+  if (bookie === 'betpawa:ke') {
+    if (legCount >= 45) return 1000;
+    if (legCount >= 30) return 300;
+    if (legCount >= 20) return 120;
+    if (legCount >= 15) return 60;
+    if (legCount >= 10) return 35;
+    if (legCount >= 5) return 10;
+    return 3;
+  }
+  if (bookie === 'mozzart:ke') {
+    if (legCount < 4) return 0;
+    if (legCount >= 40) return 1000;
+    if (legCount >= 25) return 200;
+    if (legCount >= 15) return 60;
+    if (legCount >= 10) return 30;
+    if (legCount >= 5) return 10;
+    return 5;
+  }
+  if (bookie === '1xbet:ke') {
+    if (legCount < 4) return 0;
+    if (legCount >= 20) return 100;
+    if (legCount >= 15) return 50;
+    if (legCount >= 10) return 25;
+    if (legCount >= 5) return 10;
+    return 5;
+  }
+  if (bookie === 'sportpesa:ke') {
+    if (legCount >= 35) return 500;
+    if (legCount >= 25) return 150;
+    if (legCount >= 15) return 50;
+    if (legCount >= 10) return 25;
+    if (legCount >= 5) return 10;
+    return 3;
+  }
+  // SportyBet default
   if (legCount >= 40) return 1000;
   if (legCount >= 30) return 250;
   if (legCount >= 20) return 100;

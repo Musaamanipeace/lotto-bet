@@ -39,7 +39,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
   const [slips, setSlips] = useState<SavedBetslip[]>([]);
   const [slipName, setSlipName] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [provider, setProvider] = useState<'openai' | 'gemini' | 'compatible'>('openai');
+  const [provider, setProvider] = useState<'openai' | 'gemini' | 'openrouter' | 'mistral' | 'compatible'>('openai');
   const [model, setModel] = useState('gpt-4o-mini');
   const [baseUrl, setBaseUrl] = useState('');
   const [editingSlipId, setEditingSlipId] = useState<string | null>(null);
@@ -207,8 +207,10 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
           onChange={(e) => setProvider(e.target.value as typeof provider)}
           className="w-full bg-[#0b111e] border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white"
         >
-          <option value="openai">OpenAI</option>
           <option value="gemini">Google Gemini</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="mistral">Mistral AI</option>
+          <option value="openai">OpenAI</option>
           <option value="compatible">OpenAI-compatible (custom base URL)</option>
         </select>
         <input
@@ -219,7 +221,7 @@ export const AccountPanel: React.FC<AccountPanelProps> = ({
           className="w-full bg-[#0b111e] border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white"
         />
         <input
-          placeholder="Model (e.g. gpt-4o-mini or gemini-2.0-flash)"
+          placeholder="Model (e.g. gpt-4o-mini or gemini-3.8-flash)"
           value={model}
           onChange={(e) => setModel(e.target.value)}
           className="w-full bg-[#0b111e] border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white"

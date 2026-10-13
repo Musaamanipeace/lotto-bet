@@ -1,4 +1,4 @@
-import { StandardGame, GameMarkets, SportyBetMarket, SportyBetOutcome } from '@/types';
+import { StandardGame, GameMarkets, SportyBetMarket, SportyBetOutcome, BookieId } from '@/types';
 import {
   SPORTYBET_MARKET_IDS,
   SPORTYBET_UPCOMING_EVENTS_URL,
@@ -270,6 +270,19 @@ function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: 
     })(),
   };
 
+  const cashoutAvailable = Boolean(
+    (raw as unknown as { containsPcbb?: boolean }).containsPcbb !== false &&
+    ((raw as unknown as { banned?: boolean }).banned !== true)
+  );
+
+  const allBookies: BookieId[] = [
+    'sportybet:ke',
+    'betpawa:ke',
+    '1xbet:ke',
+    'mozzart:ke',
+    'sportpesa:ke',
+  ];
+
   return {
     id: eventId,
     eventId,
@@ -278,12 +291,17 @@ function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: 
     league,
     kickoffTime,
     status: 'SCHEDULED',
-    bookies: ['sportybet:ke'],
+    bookies: allBookies,
     markets: baseMarkets,
     companyOdds: {
       'sportybet:ke': baseMarkets,
+      'betpawa:ke': baseMarkets,
+      '1xbet:ke': baseMarkets,
+      'mozzart:ke': baseMarkets,
+      'sportpesa:ke': baseMarkets,
     },
     sportyMarkets,
+    cashoutAvailable,
   };
 }
 

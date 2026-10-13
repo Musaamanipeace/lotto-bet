@@ -21,6 +21,8 @@ import {
   BookmarkPlus,
   Sparkles,
   Check,
+  Dices,
+  Lock,
 } from 'lucide-react';
 
 interface BetslipDrawerProps {
@@ -30,6 +32,7 @@ interface BetslipDrawerProps {
   onRemovePick: (gameId: string) => void;
   onClearSlip: () => void;
   onAddAiPicks: (count: number) => void;
+  onAddRandomPicks?: (count: number) => void;
   onNextAdd: (count: number) => void;
   onShuffle: (target: 'staging' | 'slip', count: number) => void;
   onRemoveGames: (count: number) => void;
@@ -44,6 +47,8 @@ interface BetslipDrawerProps {
   onOpenSavedSlips?: () => void;
   onSaveCurrentSlip?: () => void;
   savedSlipsCount?: number;
+  hasAiKey?: boolean;
+  onRequireKey?: (feature: string) => void;
 }
 
 export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
@@ -53,6 +58,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
   onRemovePick,
   onClearSlip,
   onAddAiPicks,
+  onAddRandomPicks,
   onNextAdd,
   onShuffle,
   onRemoveGames,
@@ -67,6 +73,8 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
   onOpenSavedSlips,
   onSaveCurrentSlip,
   savedSlipsCount = 0,
+  hasAiKey = true,
+  onRequireKey,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [addCountStr, setAddCountStr] = useState<string>(String(defaultAddCount || 10));
@@ -233,54 +241,112 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                     <span className="text-slate-400">• Accumulator: <strong className="text-emerald-400 font-mono">{totalOdds.toLocaleString()}x</strong></span>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[11px] text-slate-400 hidden sm:inline">Bookmaker:</span>
-                    <button
-                      onClick={() => onCompanyChange('sportybet:ke')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
-                        targetBookie === 'sportybet:ke'
-                          ? 'bg-red-500/20 text-red-400 border-red-500/50'
-                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-                      }`}
-                    >
-                      SportyBet Kenya
-                    </button>
+                    {(['sportybet:ke', 'betpawa:ke', '1xbet:ke', 'mozzart:ke', 'sportpesa:ke'] as BookieId[]).map((bId) => {
+                      const cfg = BOOKIE_CONFIGS[bId];
+                      const isTarget = targetBookie === bId;
+                      return (
+                        <button
+                          key={bId}
+                          type="button"
+                          onClick={() => onCompanyChange(bId)}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                            isTarget
+                              ? `${cfg.badgeBg} ${cfg.badgeText} ${cfg.badgeBorder} ring-1 ring-current font-bold`
+                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                          }`}
+                        >
+                          {cfg.shortName}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Add-to-slip controls with Next, Shuffle dropdown, Remove least preferred, etc. */}
+                {/* Add-to-slip controls with Add, Shuffle dropdown, Remove least preferred, etc. */}
                 <div className="px-3 py-2.5 border-b border-slate-800/80 bg-[#0d1420] space-y-2">
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-slate-400 font-medium">Selecting Area Controls</span>
-                    <label className="flex items-center gap-1 text-slate-300">
-                      <span className="text-[10px] uppercase tracking-wide text-slate-500">Pick Size</span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={addCountStr}
-                        onChange={(e) => handleAddCountChange(e.target.value)}
-                        onBlur={handleAddCountBlur}
-                        className="w-14 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white font-mono text-xs focus:outline-none focus:border-emerald-500 text-center"
-                        title="Type pick size (1-100)"
-                      />
-                    </label>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 font-medium">Selecting Area Controls</span>
+                      <label className="flex items-center gap-1 text-slate-300">
+                        <span className="text-[10px] uppercase tracking-wide text-slate-500">Pick Size</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={addCountStr}
+                          onChange={(e) => handleAddCountChange(e.target.value)}
+                          onBlur={handleAddCountBlur}
+                          className="w-14 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white font-mono text-xs focus:outline-none focus:border-emerald-500 text-center"
+                          title="Type pick size (1-100)"
+                        />
+                      </label>
+                    </div>
+
                     <span className="text-[10px] text-slate-500 font-mono">
                       {eligibleCount} eligible · {stagingCount} in staging area
                     </span>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {/* Next: Adds candidate picks from staging area to slip */}
+                    {/* Section 2.5: Relabeled "Add" (was "Next") */}
                     <button
                       type="button"
                       onClick={() => onNextAdd(addCount)}
                       disabled={eligibleCount === 0}
-                      title="Next: add games from staging area into the slip"
+                      title="Add candidate games from staging area into the slip"
                       className="px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40 transition-all active:scale-95"
                     >
                       <Plus className="w-3 h-3" />
-                      Next {addCount}
+                      Add {addCount}
+                    </button>
+
+                    {/* Section 3A: AI Add */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!hasAiKey) {
+                          onRequireKey?.('AI Picks');
+                          return;
+                        }
+                        onAddAiPicks(addCount);
+                      }}
+                      disabled={eligibleCount === 0}
+                      title={
+                        hasAiKey
+                          ? 'AI educated analysis: score matches, analyze H2H/value, and add bankers'
+                          : 'AI Pick requires an API Key. Click to configure in Settings.'
+                      }
+                      className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1 disabled:opacity-40 transition-colors ${
+                        hasAiKey
+                          ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300'
+                          : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {hasAiKey ? (
+                        <Sparkles className="w-3 h-3" />
+                      ) : (
+                        <Lock className="w-3 h-3 text-amber-400" />
+                      )}
+                      <span>AI Pick {addCount}</span>
+                      {!hasAiKey && (
+                        <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1 py-0.2 rounded font-mono font-bold">
+                          KEY
+                        </span>
+                      )}
+                    </button>
+
+                    {/* Section 3A: Random Pick */}
+                    <button
+                      type="button"
+                      onClick={() => onAddRandomPicks ? onAddRandomPicks(addCount) : onNextAdd(addCount)}
+                      disabled={eligibleCount === 0}
+                      title="Random Pick: Unbiased distribution from qualified matches"
+                      className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
+                    >
+                      <Dices className="w-3 h-3" />
+                      Random Pick {addCount}
                     </button>
 
                     {/* Shuffle with dropdown (Staging Area vs In Slip) */}
@@ -292,7 +358,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                         title={`Shuffle ${shuffleTarget === 'staging' ? 'Staging Area' : 'In Slip'} selections`}
                         className="px-2.5 py-1.5 rounded-l-lg bg-slate-200 hover:bg-white text-slate-950 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40 transition-colors"
                       >
-                        <Shuffle className="w-3 h-3" />
+                        <Shuffle className="w-3 h-3 text-amber-500" />
                         Shuffle ({shuffleTarget === 'staging' ? 'Staging' : 'In Slip'})
                       </button>
                       <button
@@ -338,18 +404,6 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                       )}
                     </div>
 
-                    {/* AI Add */}
-                    <button
-                      type="button"
-                      onClick={() => onAddAiPicks(addCount)}
-                      disabled={eligibleCount === 0}
-                      title="Score matches under current criteria and add top banker legs to slip"
-                      className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      AI add {addCount}
-                    </button>
-
                     {/* Remove Least Preferred */}
                     <button
                       type="button"
@@ -362,31 +416,20 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                       Remove {addCount}
                     </button>
 
-                    {/* Reset Filters */}
-                    <button
-                      type="button"
-                      onClick={onResetFiltersKeepSlip}
-                      title="Reset filters to defaults without clearing the betslip"
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-[11px] font-semibold flex items-center gap-1"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      Reset filters
-                    </button>
-
-                    {/* Empty Slip */}
+                    {/* Section 2.5: Empty Slip Button directly inside Betslip Card */}
                     <button
                       type="button"
                       onClick={onClearSlip}
                       disabled={selections.length === 0}
                       title="Empty the entire betslip (clears all selections)"
-                      className="px-2.5 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/40 text-red-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
+                      className="px-2.5 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 text-red-300 text-[11px] font-bold flex items-center gap-1 disabled:opacity-40"
                     >
-                      <Trash2 className="w-3 h-3" />
+                      <Trash2 className="w-3 h-3 text-red-400" />
                       Empty Slip
                     </button>
                   </div>
                   <p className="text-[10px] text-slate-500 leading-snug">
-                    Next adds candidate picks from the staging area. Remove discards the least preferred games you can do without.
+                    Add incorporates candidate picks from staging. Remove discards the least preferred games you can do without.
                   </p>
                 </div>
 
@@ -397,17 +440,17 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
                     {selections.length > 0 && (
                       <button
                         onClick={onClearSlip}
-                        className="text-red-400 hover:text-red-300 flex items-center gap-1 text-[11px] font-medium"
+                        className="px-2 py-0.5 rounded bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 flex items-center gap-1 text-[11px] font-bold transition-colors"
                       >
-                        <Trash2 className="w-3 h-3" />
-                        Clear All
+                        <Trash2 className="w-3 h-3 text-red-400" />
+                        Empty Slip
                       </button>
                     )}
                   </div>
 
                   {selections.length === 0 ? (
                     <div className="py-8 text-center text-slate-500 text-xs">
-                      No matches in slip yet. Click Next or select picks from the fixture cards.
+                      No matches in slip yet. Click Add or select picks from the fixture cards.
                     </div>
                   ) : (
                     selections.map((sel, idx) => (

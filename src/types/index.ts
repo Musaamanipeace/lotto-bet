@@ -1,4 +1,18 @@
-export type BookieId = 'sportybet:ke';
+export type BookieId =
+  | 'sportybet:ke'
+  | 'betpawa:ke'
+  | '1xbet:ke'
+  | 'mozzart:ke'
+  | 'sportpesa:ke';
+
+export interface H2HMatch {
+  date: string;
+  homeTeam: string;
+  awayTeam: string;
+  home_score: number;
+  away_score: number;
+  relevant: boolean;
+}
 
 export interface MarketPick {
   pick: string;
@@ -12,8 +26,8 @@ export interface GameMarkets {
   draw?: { pick: 'X'; odd: number };
   awayWin?: { pick: '2'; odd: number };
   overUnder?: { pick: 'Over 0.5' | 'Under 3.5' | 'Over 1.5' | 'Under 4.5' | string; odd: number }[];
-  /** Both teams to score (GG / NG) */
-  btts?: { pick: 'GG' | 'NG'; odd: number }[];
+  /** Both teams to score (GG / NG / NGG) */
+  btts?: { pick: 'GG' | 'NG' | 'NGG' | string; odd: number }[];
 }
 
 export interface SportyBetOutcome {
@@ -42,6 +56,9 @@ export interface StandardGame {
   markets: GameMarkets;
   companyOdds?: Partial<Record<BookieId, GameMarkets>>;
   sportyMarkets?: SportyBetMarket[];
+  cashoutAvailable?: boolean;
+  h2hRecent5?: H2HMatch[];
+  abnormalOddsFlag?: boolean;
   insights?: MatchInsights;
 }
 
@@ -81,20 +98,28 @@ export interface FilterCriteria {
   overMin: number;
   overMax: number;
   enableUnder: boolean;
-  underGoalLine: '3.5' | '4.5';
+  /** Multi-selection: 3.5 and 4.5 can both be active */
+  underGoalLines: ('3.5' | '4.5')[];
+  underGoalLine?: '3.5' | '4.5';
   /** Odds range for Under markets */
   underMin: number;
   underMax: number;
   enableBtts: boolean;
+  /** Multi-selection: GG (Yes) and NGG (No) can both be active */
+  bttsSelections: ('GG' | 'NGG')[];
   /** Odds range for BTTS (GG/NG) */
   bttsMin: number;
   bttsMax: number;
+  /** Filter to only games with Cashout available */
+  cashoutOnly: boolean;
   timeframeHours: number | null;
   pickCount: number;
   searchQuery: string;
   selectedLeague: string;
-  /** When true, only games with complete SportyBet market IDs (bookable) are used */
+  /** When true, only games with complete market IDs are used */
   requireFullMarketData: boolean;
+  /** Active picking strategy: AI Educated Pick vs Random Pick */
+  pickingStrategy?: 'ai' | 'random';
 }
 
 export type SlipResultStatus = 'open' | 'won' | 'lost' | 'void' | 'unknown';
@@ -114,6 +139,21 @@ export interface SavedBetslip {
   earliestKickoff?: string;
 }
 
+export type AIProvider = 'gemini' | 'openrouter' | 'mistral';
+
+export interface ByokKeys {
+  aiProvider: AIProvider;
+  geminiKey: string;
+  openrouterKey: string;
+  mistralKey: string;
+  geminiModel?: string;
+  openrouterModel?: string;
+  mistralModel?: string;
+  theSportsDbKey: string;
+  apiFootballKey: string;
+  hasSkippedOnboarding: boolean;
+}
+
 export interface UserProfile {
   username: string;
   /** SHA-256 hex of password+salt — client-side only, not a bank */
@@ -121,8 +161,8 @@ export interface UserProfile {
   createdAt: string;
   /** Optional LLM API key stored only in this browser */
   llmApiKey?: string;
-  /** openai | gemini | compatible */
-  llmProvider?: 'openai' | 'gemini' | 'compatible';
+  /** openai | gemini | openrouter | mistral | compatible */
+  llmProvider?: 'openai' | 'gemini' | 'openrouter' | 'mistral' | 'compatible';
   llmBaseUrl?: string;
   llmModel?: string;
 }

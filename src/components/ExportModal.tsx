@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Download,
   Gift,
+  Key,
 } from 'lucide-react';
 
 interface ExportModalProps {
@@ -24,6 +25,8 @@ interface ExportModalProps {
   selections: SelectedPick[];
   stake: number;
   initialBookie?: BookieId;
+  hasKeys?: boolean;
+  onOpenSettings?: () => void;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -32,6 +35,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   selections,
   stake,
   initialBookie = 'sportybet:ke',
+  hasKeys = true,
+  onOpenSettings,
 }) => {
   const [selectedBookie, setSelectedBookie] = useState<BookieId>(initialBookie);
   const [loading, setLoading] = useState(false);
@@ -53,6 +58,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const estPayout = basePayout + bonusAmount;
 
   const generateCode = useCallback(async (bookie: BookieId) => {
+    if (!hasKeys && bookie !== 'sportybet:ke') {
+      setLoading(false);
+      setError('Multi-Bookie cross-platform conversion is locked in Guest Mode. Please configure your API key in BYOK Settings to unlock intelligent cross-platform code conversion.');
+      return;
+    }
     setLoading(true);
     setError(null);
     setResult(null);
@@ -106,7 +116,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       clearTimeout(timer);
       setLoading(false);
     }
-  }, [selections]);
+  }, [selections, hasKeys]);
 
   useEffect(() => {
     if (isOpen && selections.length > 0) {
@@ -201,12 +211,26 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <div>
                 <p className="font-semibold">Conversion Notice</p>
                 <p className="text-slate-400 mt-0.5">{error}</p>
-                <button
-                  onClick={() => generateCode(selectedBookie)}
-                  className="mt-2 text-xs font-bold text-red-300 underline"
-                >
-                  Retry generation
-                </button>
+                {onOpenSettings && error.includes('Settings') ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenSettings();
+                    }}
+                    className="mt-2.5 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs inline-flex items-center gap-1.5 shadow"
+                  >
+                    <Key className="w-3.5 h-3.5" />
+                    <span>Open Settings & Configure Key</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => generateCode(selectedBookie)}
+                    className="mt-2 text-xs font-bold text-red-300 underline"
+                  >
+                    Retry generation
+                  </button>
+                )}
               </div>
             </div>
           )}

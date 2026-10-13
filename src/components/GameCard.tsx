@@ -3,7 +3,17 @@
 import React from 'react';
 import { StandardGame, SelectedPick, BookieId } from '@/types';
 import { BOOKIE_CONFIGS } from '@/lib/constants';
-import { Clock, Plus, Check, ShieldCheck, Trophy, Sparkles } from 'lucide-react';
+import {
+  Clock,
+  Plus,
+  Check,
+  ShieldCheck,
+  Trophy,
+  Sparkles,
+  Activity,
+  Coins,
+  Zap,
+} from 'lucide-react';
 
 interface GameCardProps {
   game: StandardGame;
@@ -13,6 +23,7 @@ interface GameCardProps {
   isAlgoCandidate?: boolean;
   onTogglePick: (pick: SelectedPick) => void;
   onSelectSpecificPick: (pick: SelectedPick) => void;
+  onOpenStats?: (game: StandardGame) => void;
 }
 
 export const GameCard: React.FC<GameCardProps> = ({
@@ -23,6 +34,7 @@ export const GameCard: React.FC<GameCardProps> = ({
   isAlgoCandidate = false,
   onTogglePick,
   onSelectSpecificPick,
+  onOpenStats,
 }) => {
   const isSelected = currentSelection !== null;
 
@@ -40,9 +52,13 @@ export const GameCard: React.FC<GameCardProps> = ({
       case 'Home Win':
         return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
       case 'Over 0.5':
+      case 'Over 1.5':
         return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
       case 'Under 3.5':
+      case 'Under 4.5':
         return 'bg-purple-500/10 text-purple-400 border-purple-500/30';
+      case 'BTTS':
+        return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30';
       default:
         return 'bg-slate-800 text-slate-300 border-slate-700';
     }
@@ -63,8 +79,26 @@ export const GameCard: React.FC<GameCardProps> = ({
           <span className="truncate">{game.league}</span>
         </div>
 
-        {/* Status & Bookie Availability Badges */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Status, Cashout, & Bookie Availability Badges */}
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+          {game.cashoutAvailable && (
+            <span
+              className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 flex items-center gap-0.5"
+              title="Cashout Available on this fixture"
+            >
+              <Coins className="w-2.5 h-2.5 text-emerald-400" /> Cashout
+            </span>
+          )}
+
+          {game.abnormalOddsFlag && (
+            <span
+              className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px] font-bold border border-amber-500/30 flex items-center gap-0.5"
+              title="Abnormally high odds / Value pricing detected"
+            >
+              <Zap className="w-2.5 h-2.5 text-amber-400" /> Value
+            </span>
+          )}
+
           {isSelected ? (
             <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/40 flex items-center gap-1">
               <Check className="w-3 h-3 stroke-[2.5]" /> In Slip
@@ -75,8 +109,9 @@ export const GameCard: React.FC<GameCardProps> = ({
             </span>
           ) : null}
 
-          {game.bookies?.map((bId) => {
+          {game.bookies?.slice(0, 3).map((bId) => {
             const cfg = BOOKIE_CONFIGS[bId];
+            if (!cfg) return null;
             const isTarget = selectedCompany === bId;
             return (
               <span
@@ -84,7 +119,7 @@ export const GameCard: React.FC<GameCardProps> = ({
                 className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold border transition-colors ${
                   isTarget
                     ? `${cfg.badgeBg} ${cfg.badgeText} ${cfg.badgeBorder} ring-1 ring-current`
-                    : 'bg-red-950/40 text-red-400/80 border-red-800/40'
+                    : 'bg-slate-800/80 text-slate-300 border-slate-700'
                 }`}
                 title={`Available on ${cfg.name}`}
               >
@@ -118,24 +153,39 @@ export const GameCard: React.FC<GameCardProps> = ({
             </div>
           </div>
 
-          {/* Quick Selection Toggle Button */}
-          <button
-            onClick={() => {
-              if (currentSelection) {
-                onTogglePick(currentSelection);
-              } else if (eligiblePicks.length > 0) {
-                onTogglePick(eligiblePicks[0]);
-              }
-            }}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${
-              isSelected
-                ? 'bg-emerald-500 text-slate-950 font-bold shadow-md shadow-emerald-500/30'
-                : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700'
-            }`}
-            title={isSelected ? 'Remove from betslip' : 'Add qualifying pick to betslip'}
-          >
-            {isSelected ? <Check className="w-5 h-5 stroke-[2.5]" /> : <Plus className="w-5 h-5" />}
-          </button>
+          {/* Action Buttons: Stats Button & Quick Selection Toggle */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Section 2.6: Stats Button */}
+            <button
+              type="button"
+              onClick={() => onOpenStats?.(game)}
+              className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold flex items-center gap-1 transition-colors"
+              title="View H2H, Form, and Match Statistics"
+            >
+              <Activity className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Stats</span>
+            </button>
+
+            {/* Quick Selection Toggle Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (currentSelection) {
+                  onTogglePick(currentSelection);
+                } else if (eligiblePicks.length > 0) {
+                  onTogglePick(eligiblePicks[0]);
+                }
+              }}
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${
+                isSelected
+                  ? 'bg-emerald-500 text-slate-950 font-bold shadow-md shadow-emerald-500/30'
+                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700'
+              }`}
+              title={isSelected ? 'Remove from betslip' : 'Add qualifying pick to betslip'}
+            >
+              {isSelected ? <Check className="w-5 h-5 stroke-[2.5]" /> : <Plus className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
 
         {/* Kickoff exact time info */}
@@ -187,4 +237,3 @@ export const GameCard: React.FC<GameCardProps> = ({
     </div>
   );
 };
-
