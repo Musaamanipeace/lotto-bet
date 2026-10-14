@@ -549,9 +549,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 }`}
               >
                 <div className="text-xs font-bold truncate">{cfg.shortName}</div>
-                <div className="text-[10px] opacity-80 mt-0.5 truncate">
-                  Min {cfg.minStake} KSh
-                </div>
               </button>
             );
           })}
@@ -1108,23 +1105,45 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </div>
         </div>
 
-        {/* League Selector Dropdown */}
+        {/* League Selector Checklist */}
         <div className="space-y-1.5 w-full lg:w-auto">
-          <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
-            Filter League:
-          </span>
-          <select
-            value={criteria.selectedLeague}
-            onChange={(e) => updateCriteria('selectedLeague', e.target.value)}
-            className="w-full lg:w-56 bg-[#0b111e] border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-          >
-            <option value="ALL">All Leagues</option>
-            {availableLeagues.map((lg) => (
-              <option key={lg} value={lg}>
-                {lg}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
+              Filter League:
+            </span>
+            <button
+              type="button"
+              onClick={() => updateCriteria('selectedLeagues', availableLeagues)}
+              className="text-[10px] text-emerald-400 hover:text-emerald-300 font-medium"
+              title="Select All Leagues"
+            >
+              All
+            </button>
+          </div>
+          <div className="max-h-40 overflow-y-auto bg-[#0b111e] border border-slate-700 rounded-xl p-1.5 space-y-1">
+            {availableLeagues.map((lg) => {
+              const isSelected = criteria.selectedLeagues.length === 0 || criteria.selectedLeagues.includes(lg);
+              return (
+                <label
+                  key={lg}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-slate-800/50 transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={(e) => {
+                      const next = e.target.checked
+                        ? Array.from(new Set([...criteria.selectedLeagues, lg]))
+                        : criteria.selectedLeagues.filter((l) => l !== lg);
+                      updateCriteria('selectedLeagues', next);
+                    }}
+                    className="w-4 h-4 rounded text-emerald-500 bg-slate-800 border-slate-700 focus:ring-0 focus:ring-offset-0"
+                  />
+                  <span className="text-xs text-slate-200 truncate">{lg}</span>
+                </label>
+              );
+            })}
+          </div>
         </div>
 
         {/* Section 3A & 2.5: Pick Size, Add, Shuffle & Dual Picking Controls */}

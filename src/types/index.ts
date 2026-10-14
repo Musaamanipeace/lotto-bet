@@ -117,7 +117,8 @@ export interface FilterCriteria {
   timeframeHours: number | null;
   pickCount: number;
   searchQuery: string;
-  selectedLeague: string;
+  /** Multiple leagues can be selected. Empty array means all leagues. */
+  selectedLeagues: string[];
   /** When true, only games with complete market IDs are used */
   requireFullMarketData: boolean;
   /** Active picking strategy: AI Educated Pick vs Random Pick */

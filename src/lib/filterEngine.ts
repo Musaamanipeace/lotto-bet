@@ -269,8 +269,8 @@ export function evaluateAndFilterGames(
     const normLeague = normalizeTeamName(game.league);
 
     // 5. League Filter
-    if (criteria.selectedLeague && criteria.selectedLeague !== 'ALL') {
-      if (normalizeTeamName(criteria.selectedLeague) !== normLeague) {
+    if (criteria.selectedLeagues && criteria.selectedLeagues.length > 0) {
+      if (!criteria.selectedLeagues.some((lg) => normalizeTeamName(lg) === normLeague)) {
         continue;
       }
     }

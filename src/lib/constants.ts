@@ -35,7 +35,7 @@ export const DEFAULT_FILTER_CRITERIA: FilterCriteria = {
   timeframeHours: 24,
   pickCount: 30,
   searchQuery: '',
-  selectedLeague: 'ALL',
+  selectedLeagues: [],
   requireFullMarketData: false,
   pickingStrategy: 'ai',
 };
@@ -75,7 +75,7 @@ export const EMPTY_FILTER_CRITERIA: FilterCriteria = {
   timeframeHours: null,
   pickCount: 30,
   searchQuery: '',
-  selectedLeague: 'ALL',
+  selectedLeagues: [],
   requireFullMarketData: false,
   pickingStrategy: 'ai',
 };
