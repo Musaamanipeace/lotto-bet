@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server';
 import { BookieId, SelectedPick } from '@/types';
 import { convertSelectionsToBookingCode } from '@/lib/codeConverter';
+import { BOOKIE_CONFIGS } from '@/lib/constants';
 
 export const dynamic = 'force-dynamic';
+
+const SUPPORTED_BOOKIES = Object.keys(BOOKIE_CONFIGS) as BookieId[];
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const destinationBookie: BookieId = body.destination_bookie || body.destinationBookie || 'sportybet:ke';
+    const destinationBookie: BookieId =
+      body.destination_bookie || body.destinationBookie || 'sportybet:ke';
     const selections: SelectedPick[] = body.selections || [];
 
     if (!Array.isArray(selections) || selections.length === 0) {
@@ -20,16 +24,20 @@ export async function POST(req: Request) {
       );
     }
 
-    if (destinationBookie !== 'sportybet:ke') {
+    if (!SUPPORTED_BOOKIES.includes(destinationBookie)) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Invalid destination bookie. Supported option: sportybet:ke.',
+          error: `Unsupported destination bookie "${destinationBookie}". Known options: ${SUPPORTED_BOOKIES.join(', ')}.`,
         },
         { status: 400 }
       );
     }
 
+    // All configured bookies are attempted via convertSelectionsToBookingCode.
+    // Only SportyBet has a working public share endpoint today; the others return
+    // structured technical-obstacle errors (auth / WAF / ID-space mismatch).
+    // No mock success paths and no hardcoded fake codes.
     const response = await convertSelectionsToBookingCode(destinationBookie, selections);
     if (!response.success) {
       return NextResponse.json(response, { status: 422 });

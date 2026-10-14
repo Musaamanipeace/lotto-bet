@@ -184,6 +184,19 @@ export interface BookingCodeResponse {
   selections: SelectedPick[];
   bonusPercentage?: number;
   error?: string;
+  /**
+   * When server-side create is blocked (e.g. betPawa IP binding) but mapping
+   * succeeded, the client can finish creation in the user's browser.
+   */
+  clientCreate?: {
+    url: string;
+    method: 'POST';
+    headers: Record<string, string>;
+    body: unknown;
+    mappedCount: number;
+    totalCount: number;
+    consoleSnippet: string;
+  };
 }
 
 export interface TeamFormStats {

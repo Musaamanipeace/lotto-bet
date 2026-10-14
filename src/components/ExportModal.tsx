@@ -43,6 +43,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [result, setResult] = useState<BookingCodeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [snippetCopied, setSnippetCopied] = useState(false);
 
   // Sync initialBookie when modal opens
   useEffect(() => {
@@ -58,18 +59,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const estPayout = basePayout + bonusAmount;
 
   const generateCode = useCallback(async (bookie: BookieId) => {
-    if (!hasKeys && bookie !== 'sportybet:ke') {
-      setLoading(false);
-      setError('Multi-Bookie cross-platform conversion is locked in Guest Mode. Please configure your API key in BYOK Settings to unlock intelligent cross-platform code conversion.');
-      return;
-    }
+    // Guest-mode lock removed: backend now attempts every configured bookie and
+    // returns structured technical-obstacle errors instead of a hard block.
     setLoading(true);
     setError(null);
     setResult(null);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
     try {
-      // Server-side proxy avoids browser CORS blocks against sportybet.com
+      // Server-side proxy avoids browser CORS blocks against bookmaker domains
       const res = await fetch('/api/generate-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -89,19 +87,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         );
       }
 
+      // Mapping succeeded but server create blocked → hand off to browser step
+      if (data.clientCreate && data.clientCreate.mappedCount > 0) {
+        setResult(data);
+        setError(null);
+        return;
+      }
+
       if (!res.ok || !data.success) {
         throw new Error(
           data.error ||
-            'Failed to generate booking code. SportyBet may be unreachable or markets expired.'
+            `Failed to generate booking code for ${BOOKIE_CONFIGS[bookie]?.name || bookie}. Markets may have closed or the bookmaker endpoint is unavailable.`
         );
       }
       if (!data.bookingCode) {
-        throw new Error('SportyBet did not return a booking code.');
+        throw new Error(
+          `${BOOKIE_CONFIGS[bookie]?.name || bookie} did not return a booking code.`
+        );
       }
       setResult(data);
     } catch (err: unknown) {
       let msg = err instanceof Error ? err.message : 'Unknown error generating booking code';
-      // Browser TypeError when the request never reaches the server or connection drops
       if (
         msg === 'Failed to fetch' ||
         msg.includes('NetworkError') ||
@@ -109,14 +115,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         (err instanceof Error && err.name === 'AbortError')
       ) {
         msg =
-          'Could not reach the booking API (network/timeout). Confirm `npm run dev` is running, then retry. If it keeps failing, SportyBet may be blocking this server IP.';
+          'Could not reach the booking API (network/timeout). Confirm the Next.js server is running, then retry. If it keeps failing, the target bookmaker may be blocking this server IP.';
       }
       setError(msg);
     } finally {
       clearTimeout(timer);
       setLoading(false);
     }
-  }, [selections, hasKeys]);
+  }, [selections]);
 
   useEffect(() => {
     if (isOpen && selections.length > 0) {
@@ -235,8 +241,55 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </div>
           )}
 
+          {/* betPawa browser finish step when server create is blocked */}
+          {result && !loading && result.clientCreate && !result.bookingCode && (
+            <div className="space-y-4">
+              <div className="p-4 bg-emerald-500/10 border border-emerald-500/40 rounded-2xl space-y-3">
+                <p className="text-sm font-bold text-emerald-300">
+                  {result.clientCreate.mappedCount}/{result.clientCreate.totalCount} legs mapped to betPawa
+                </p>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Server cannot create the code (blocked). Your browser can. Do these 3 steps:
+                </p>
+                <ol className="text-xs text-slate-300 space-y-2 list-decimal list-inside">
+                  <li>Click <strong className="text-white">Copy script</strong> below</li>
+                  <li>Click <strong className="text-white">Open betPawa</strong> (new tab)</li>
+                  <li>On betPawa press <strong className="text-white">F12</strong> → <strong className="text-white">Console</strong> → paste → Enter</li>
+                </ol>
+                <p className="text-xs text-emerald-200/90">
+                  An alert will show your real betPawa booking code.
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const ok = await copyTextToClipboard(result.clientCreate!.consoleSnippet);
+                      if (ok) {
+                        setSnippetCopied(true);
+                        setTimeout(() => setSnippetCopied(false), 3000);
+                      }
+                    }}
+                    className="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold inline-flex items-center gap-1.5"
+                  >
+                    {snippetCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {snippetCopied ? 'Script copied' : 'Copy script'}
+                  </button>
+                  <a
+                    href="https://www.betpawa.co.ke/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white text-xs font-bold inline-flex items-center gap-1.5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Open betPawa
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Booking Code Presentation Box */}
-          {result && !loading && (
+          {result && !loading && result.bookingCode && (
             <div className="space-y-4">
               <div
                 className={`p-4 bg-[#090e18] border-2 rounded-2xl text-center space-y-2 relative overflow-hidden ${

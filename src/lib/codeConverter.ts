@@ -275,54 +275,300 @@ async function postSportyBetShare(
   }
 }
 
+/** betPawa marketType IDs observed from live /v4/events/lists/by-queries */
+const BETPAWA_MARKET = {
+  MATCH_WINNER: '3743', // 1X2 | Full Time  → prices named 1 / X / 2
+  BTTS: '3795', // Both Teams To Score | Full Time → Yes / No
+} as const;
+
+const BETPAWA_HEADERS: HeadersInit = {
+  Accept: 'application/json',
+  'Content-Type': 'application/json',
+  'x-pawa-brand': 'betpawa-kenya',
+  'x-pawa-language': 'en',
+  devicetype: 'web',
+  Origin: 'https://www.betpawa.co.ke',
+  Referer: 'https://www.betpawa.co.ke/',
+  'User-Agent':
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+};
+
+interface BetPawaPrice {
+  id: string;
+  name: string;
+  displayName?: string;
+  odds?: number;
+}
+
+interface BetPawaEvent {
+  id: string;
+  name: string;
+  homeTeam: string;
+  awayTeam: string;
+  startTime?: string;
+  prices: { marketTypeId: string; marketName: string; prices: BetPawaPrice[] }[];
+}
+
 /**
- * Generate code for betPawa Kenya
- * Requires: x-pawa-brand: betpawa-kenya, x-pawa-currency: KES
+ * Fetch upcoming football events + 1X2 / BTTS prices from betPawa.
+ * Endpoint confirmed live: GET /api/sportsbook/v4/events/lists/by-queries
  */
-async function generateBetPawaCode(
-  selections: SelectedPick[]
-): Promise<{ ok: true; code: string; url?: string } | { ok: false; error: string; technicalObstacle?: string }> {
-  const url = 'https://www.betpawa.co.ke/api/sportsbook/v1/betslip/create';
-  try {
-    const legs = selections.map((s) => ({
-      eventId: s.eventId || s.gameId,
-      marketId: s.marketId || '1',
-      outcomeId: s.outcomeId || '1',
-      odds: s.odd,
-    }));
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'x-pawa-brand': 'betpawa-kenya',
-        'x-pawa-currency': 'KES',
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+async function fetchBetPawaEvents(take = 40): Promise<BetPawaEvent[]> {
+  const query = {
+    queries: [
+      {
+        query: { eventType: 'UPCOMING', categories: ['2'] },
+        sort: { popularity: 'DESC' },
+        take,
+        view: {
+          marketTypes: [BETPAWA_MARKET.MATCH_WINNER, BETPAWA_MARKET.BTTS],
+        },
       },
-      body: JSON.stringify({ legs }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    ],
+  };
+  const q = encodeURIComponent(JSON.stringify(query));
+  const url = `https://www.betpawa.co.ke/api/sportsbook/v4/events/lists/by-queries?q=${q}`;
 
-    if (res.status === 200 || res.status === 201) {
-      const data = await res.json();
-      const code = data.code || data.bookingCode || data.shareCode;
-      if (code) {
-        return { ok: true, code, url: `https://www.betpawa.co.ke/?shareCode=${code}` };
+  const res = await fetch(url, {
+    headers: BETPAWA_HEADERS,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    throw new Error(`betPawa events list HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as {
+    responses?: { responses?: Record<string, unknown>[] }[];
+  };
+
+  const events: BetPawaEvent[] = [];
+  for (const block of data.responses || []) {
+    for (const raw of block.responses || []) {
+      const participants = (raw.participants as { name?: string; position?: number }[]) || [];
+      const home =
+        participants.find((p) => p.position === 1)?.name ||
+        String(raw.name || '').split(' - ')[0] ||
+        '';
+      const away =
+        participants.find((p) => p.position === 2)?.name ||
+        String(raw.name || '').split(' - ')[1] ||
+        '';
+      const markets = (raw.markets as {
+        marketType?: { id?: string; name?: string; displayName?: string };
+        row?: { prices?: BetPawaPrice[] }[];
+      }[]) || [];
+
+      const prices: BetPawaEvent['prices'] = [];
+      for (const m of markets) {
+        const mtId = String(m.marketType?.id || '');
+        const allPrices: BetPawaPrice[] = [];
+        for (const row of m.row || []) {
+          for (const p of row.prices || []) {
+            if (p?.id) allPrices.push(p);
+          }
+        }
+        if (allPrices.length) {
+          prices.push({
+            marketTypeId: mtId,
+            marketName: m.marketType?.displayName || m.marketType?.name || '',
+            prices: allPrices,
+          });
+        }
       }
+
+      events.push({
+        id: String(raw.id || ''),
+        name: String(raw.name || `${home} - ${away}`),
+        homeTeam: home,
+        awayTeam: away,
+        startTime: raw.startTime as string | undefined,
+        prices,
+      });
+    }
+  }
+  return events;
+}
+
+/** Map a SportyBet-style pick label onto a betPawa price id inside one event. */
+function mapPickToBetPawaPriceId(
+  event: BetPawaEvent,
+  marketName: string,
+  pick: string
+): string | null {
+  const m = (marketName || '').toLowerCase();
+  const p = (pick || '').toLowerCase().trim();
+
+  // 1X2 / Home Win / Away Win / Draw
+  if (
+    m.includes('home win') ||
+    m.includes('match winner') ||
+    m.includes('1x2') ||
+    m === '1' ||
+    p === '1' ||
+    p === 'home' ||
+    p.includes('home')
+  ) {
+    const block = event.prices.find((x) => x.marketTypeId === BETPAWA_MARKET.MATCH_WINNER);
+    const price = block?.prices.find((x) => x.name === '1' || x.displayName === '1');
+    return price?.id || null;
+  }
+  if (p === 'x' || p === 'draw' || m.includes('draw')) {
+    const block = event.prices.find((x) => x.marketTypeId === BETPAWA_MARKET.MATCH_WINNER);
+    const price = block?.prices.find((x) => x.name === 'X' || x.displayName === 'X');
+    return price?.id || null;
+  }
+  if (p === '2' || p === 'away' || p.includes('away') || m.includes('away win')) {
+    const block = event.prices.find((x) => x.marketTypeId === BETPAWA_MARKET.MATCH_WINNER);
+    const price = block?.prices.find((x) => x.name === '2' || x.displayName === '2');
+    return price?.id || null;
+  }
+
+  // BTTS
+  if (m.includes('btts') || m.includes('both teams') || p === 'gg' || p === 'yes') {
+    const block = event.prices.find((x) => x.marketTypeId === BETPAWA_MARKET.BTTS);
+    const price = block?.prices.find(
+      (x) =>
+        (x.name || '').toLowerCase() === 'yes' ||
+        (x.displayName || '').toLowerCase() === 'yes'
+    );
+    return price?.id || null;
+  }
+  if (p === 'ng' || p === 'ngg' || p === 'no') {
+    const block = event.prices.find((x) => x.marketTypeId === BETPAWA_MARKET.BTTS);
+    const price = block?.prices.find(
+      (x) =>
+        (x.name || '').toLowerCase() === 'no' ||
+        (x.displayName || '').toLowerCase() === 'no'
+    );
+    return price?.id || null;
+  }
+
+  return null;
+}
+
+/**
+ * Generate code for betPawa Kenya.
+ * 1) Fetch native events + price IDs from /v4/events/lists/by-queries
+ * 2) Fuzzy-match each selection by team names
+ * 3) POST price IDs to /v3/booking-number
+ *
+ * Create-code currently returns HTTP 400 from datacenter IPs even with a valid
+ * browser token; match + ID resolution still works and is required for any
+ * future client-side create path.
+ */
+type BetPawaGenResult =
+  | { ok: true; code: string; url?: string }
+  | {
+      ok: false;
+      error: string;
+      technicalObstacle?: string;
+      clientBody?: { selections: { type: string; selections: number[] }[] };
+      mappedCount?: number;
+      totalCount?: number;
+    };
+
+async function generateBetPawaCode(selections: SelectedPick[]): Promise<BetPawaGenResult> {
+  const bookingUrl = 'https://www.betpawa.co.ke/api/sportsbook/v3/booking-number';
+
+  try {
+    const events = await fetchBetPawaEvents(Math.max(40, selections.length * 3));
+    if (!events.length) {
+      return {
+        ok: false,
+        error: 'betPawa returned no upcoming football events.',
+        technicalObstacle:
+          'GET /api/sportsbook/v4/events/lists/by-queries returned an empty list.',
+      };
     }
 
+    const mappedIds: number[] = [];
+    const unmatched: string[] = [];
+
+    for (const s of selections) {
+      let best: { event: BetPawaEvent; score: number } | null = null;
+      for (const ev of events) {
+        const homeScore = teamSimilarity(s.homeTeam, ev.homeTeam);
+        const awayScore = teamSimilarity(s.awayTeam, ev.awayTeam);
+        const score = (homeScore + awayScore) / 2;
+        if (!best || score > best.score) best = { event: ev, score };
+      }
+
+      if (!best || best.score < 0.72) {
+        unmatched.push(`${s.homeTeam} vs ${s.awayTeam} (no match ≥0.72)`);
+        continue;
+      }
+
+      const priceId = mapPickToBetPawaPriceId(best.event, s.marketName, s.pick);
+      if (!priceId) {
+        unmatched.push(
+          `${s.homeTeam} vs ${s.awayTeam} [${s.marketName} ${s.pick}] (market not mapped on betPawa)`
+        );
+        continue;
+      }
+      const num = Number(priceId);
+      if (!Number.isFinite(num)) {
+        unmatched.push(`${s.homeTeam} vs ${s.awayTeam} (invalid price id ${priceId})`);
+        continue;
+      }
+      mappedIds.push(num);
+    }
+
+    if (mappedIds.length === 0) {
+      return {
+        ok: false,
+        error: `Could not map any selections onto betPawa events. ${unmatched.slice(0, 3).join('; ')}`,
+        technicalObstacle:
+          'Fuzzy team/market matching found no usable betPawa price IDs for the slip.',
+      };
+    }
+
+    const body = {
+      selections: mappedIds.map((id) => ({ type: 'SINGLE', selections: [id] })),
+    };
+
+    const res = await fetch(bookingUrl, {
+      method: 'POST',
+      headers: BETPAWA_HEADERS,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      cache: 'no-store',
+    });
+
+    const text = await res.text();
+    let data: { code?: string; error?: string; [k: string]: unknown } = {};
+    try {
+      data = JSON.parse(text);
+    } catch {
+      /* non-JSON */
+    }
+
+    if (res.ok && data.code) {
+      return {
+        ok: true,
+        code: String(data.code),
+        url: `https://www.betpawa.co.ke/?shareCode=${data.code}`,
+      };
+    }
+
+    const unmatchedNote =
+      unmatched.length > 0
+        ? ` Unmatched legs: ${unmatched.slice(0, 3).join('; ')}.`
+        : '';
+
+    // Mapping succeeded — client finishes create in the browser (server IP is blocked)
     return {
       ok: false,
-      error: `betPawa API responded with HTTP ${res.status}.`,
-      technicalObstacle: `betPawa Kenya betslip endpoint (${url}) returned HTTP ${res.status}. betPawa requires active client-side session context and CSRF protection headers.`,
+      error: `Server blocked betPawa code create (HTTP ${res.status}). ${mappedIds.length}/${selections.length} legs mapped — finish in your browser.${unmatchedNote}`,
+      technicalObstacle: `POST ${bookingUrl} → HTTP ${res.status} from server IP. Browser create works with the same payload.`,
+      clientBody: body,
+      mappedCount: mappedIds.length,
+      totalCount: selections.length,
     };
   } catch (err) {
     return {
       ok: false,
-      error: `Could not connect to betPawa Kenya: ${err instanceof Error ? err.message : String(err)}`,
-      technicalObstacle: `Direct HTTP POST to betPawa sportsbook API failed (${err instanceof Error ? err.message : String(err)}).`,
+      error: `Could not complete betPawa flow: ${err instanceof Error ? err.message : String(err)}`,
+      technicalObstacle: `betPawa events fetch or booking-number call failed (${err instanceof Error ? err.message : String(err)}).`,
     };
   }
 }
@@ -558,9 +804,35 @@ export async function convertSelectionsToBookingCode(
         bonusPercentage: bonusPct > 0 ? bonusPct : undefined,
       };
     }
-    // Section 4 compliant error reporting
-    const errorDetails = `[Component / Bookmaker: betPawa Kenya]\n[Failed Step: Code Generation]\n[Observed Behavior: ${res.error}]\n[Technical Obstacle: ${res.technicalObstacle || 'Requires browser cookie session context.'}]`;
-    return emptyErrorResponse(bookie, selections, errorDetails);
+
+    const errorDetails = `[Component / Bookmaker: betPawa Kenya]\n[Failed Step: Code Generation]\n[Observed Behavior: ${res.error}]\n[Technical Obstacle: ${res.technicalObstacle || 'Requires browser session for final create.'}]`;
+    const base = emptyErrorResponse(bookie, selections, errorDetails);
+
+    if (res.clientBody && res.mappedCount) {
+      const bodyJson = JSON.stringify(res.clientBody);
+      const snippet = [
+        `fetch('/api/sportsbook/v3/booking-number',{`,
+        `method:'POST',`,
+        `headers:{'content-type':'application/json','x-pawa-brand':'betpawa-kenya','x-pawa-language':'en','devicetype':'web'},`,
+        `body:'${bodyJson.replace(/'/g, "\\'")}'`,
+        `}).then(r=>r.json()).then(d=>{console.log(d);alert(d.code?('betPawa code: '+d.code):JSON.stringify(d));})`,
+      ].join('');
+      base.clientCreate = {
+        url: 'https://www.betpawa.co.ke/api/sportsbook/v3/booking-number',
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-pawa-brand': 'betpawa-kenya',
+          'x-pawa-language': 'en',
+          devicetype: 'web',
+        },
+        body: res.clientBody,
+        mappedCount: res.mappedCount,
+        totalCount: res.totalCount || selections.length,
+        consoleSnippet: snippet,
+      };
+    }
+    return base;
   }
 
   // --- TARGET BOOKMAKER 3: 1xBet Kenya ---
