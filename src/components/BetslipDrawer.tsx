@@ -243,7 +243,7 @@ export const BetslipDrawer: React.FC<BetslipDrawerProps> = ({
 
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[11px] text-slate-400 hidden sm:inline">Bookmaker:</span>
-                    {(['sportybet:ke', 'betpawa:ke', '1xbet:ke', 'mozzart:ke', 'sportpesa:ke'] as BookieId[]).map((bId) => {
+                    {(['sportybet:ke', 'betpawa:ke'] as BookieId[]).map((bId) => {
                       const cfg = BOOKIE_CONFIGS[bId];
                       const isTarget = targetBookie === bId;
                       return (

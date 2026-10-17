@@ -56,6 +56,8 @@ interface AiAgentDrawerProps {
   onAppendToSlip: (selections: SelectedPick[]) => void;
   onRefreshSavedSlips?: () => void;
   onOpenSettings?: () => void;
+  /** True when the server has preloaded env AI keys (guest mode). */
+  serverAiConfigured?: boolean;
 }
 
 const QUICK_PROMPTS = [
@@ -76,6 +78,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
   onAppendToSlip,
   onRefreshSavedSlips,
   onOpenSettings,
+  serverAiConfigured = false,
 }) => {
   const [byok, setByok] = useState<ByokKeys>(getByokKeys());
   const [selectedProvider, setSelectedProvider] = useState<AIProvider>('gemini');
@@ -143,7 +146,7 @@ export const AiAgentDrawer: React.FC<AiAgentDrawerProps> = ({
       ? byok.openrouterKey?.trim()
       : byok.mistralKey?.trim();
 
-  const isKeyConfigured = Boolean(activeKey && activeKey.length > 0);
+  const isKeyConfigured = Boolean(activeKey && activeKey.length > 0) || serverAiConfigured;
 
   const handleProviderChange = (newProvider: AIProvider) => {
     setSelectedProvider(newProvider);

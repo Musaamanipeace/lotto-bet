@@ -1,9 +1,4 @@
-export type BookieId =
-  | 'sportybet:ke'
-  | 'betpawa:ke'
-  | '1xbet:ke'
-  | 'mozzart:ke'
-  | 'sportpesa:ke';
+export type BookieId = 'sportybet:ke' | 'betpawa:ke';
 
 export interface H2HMatch {
   date: string;

@@ -180,16 +180,48 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-[#111928] border border-slate-700/80 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-[#0d1422]">
+          <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-[#0d1422]">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               <Share2 className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-bold text-white">Generate Booking Code</h3>
-              <p className="text-xs text-slate-400">Target Kenya Bookmakers (SportyBet)</p>
+              <p className="text-xs text-slate-400">
+                Target: {BOOKIE_CONFIGS[selectedBookie]?.name || 'SportyBet'}
+              </p>
             </div>
           </div>
+
+          {/* In-Modal Bookmaker Switcher (so the target never silently defaults to SportyBet) */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="hidden sm:inline text-slate-400">Target Bookie:</span>
+            {(['sportybet:ke', 'betpawa:ke'] as BookieId[]).map((bId) => {
+              const cfg = BOOKIE_CONFIGS[bId];
+              const isActive = selectedBookie === bId;
+              return (
+                <button
+                  key={bId}
+                  type="button"
+                  onClick={() => {
+                    setSelectedBookie(bId);
+                    setResult(null);
+                    setError(null);
+                    generateCode(bId);
+                  }}
+                  title={`Generate code for ${cfg.name}`}
+                  className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition-all ${
+                    isActive
+                      ? `${cfg.badgeBg} ${cfg.badgeText} ${cfg.badgeBorder} ring-1 ring-current`
+                      : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {cfg.shortName}
+                </button>
+              );
+            })}
+          </div>
+
           <button
             onClick={onClose}
             className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
@@ -379,13 +411,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
                 <div className="grid grid-cols-2 gap-2">
                   <a
-                    href={BOOKIE_CONFIGS['sportybet:ke'].bookingUrl}
+                    href={BOOKIE_CONFIGS[selectedBookie].homeUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors border border-slate-700"
                   >
                     <span>
-                      Open SportyBet
+                      Open {BOOKIE_CONFIGS[selectedBookie].shortName}
                     </span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>

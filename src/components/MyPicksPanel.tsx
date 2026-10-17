@@ -90,9 +90,15 @@ export const MyPicksPanel: React.FC<MyPicksPanelProps> = ({
         {marketGroups.length === 0 && (
           <div className="py-12 text-center">
             <ShieldCheck className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-            <p className="text-xs text-slate-400">No qualifying games found.</p>
+            <p className="text-xs text-slate-400">
+              {selectedCompany !== 'ALL'
+                ? `No ${BOOKIE_CONFIGS[selectedCompany].shortName} games pulled for the selected filters / time window.`
+                : 'No qualifying games found.'}
+            </p>
             <p className="text-[10px] text-slate-500 mt-1">
-              Widen your odds filters, extend the kickoff timeframe, or switch bookmakers.
+              {selectedCompany !== 'ALL'
+                ? 'Widen odds bounds, increase the kickoff timeframe, or switch to All Bookmakers to see more fixtures.'
+                : 'Widen your odds filters, extend the kickoff timeframe, or switch bookmakers.'}
             </p>
           </div>
         )}

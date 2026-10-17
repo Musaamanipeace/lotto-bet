@@ -270,18 +270,20 @@ function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: 
     })(),
   };
 
-  const cashoutAvailable = Boolean(
-    (raw as unknown as { containsPcbb?: boolean }).containsPcbb !== false &&
-    ((raw as unknown as { banned?: boolean }).banned !== true)
-  );
+  // Cashout / bookability: the SportyBet feed explicitly sets `banned:false` and
+  // `containsPcbb` to a value that does NOT mean "cashout available" (it is
+  // false for nearly every fixture, yet those fixtures are still bookable via
+  // the share API). Treating `containsPcbb === false` as "no cashout" collapsed
+  // the cashout-only filter to zero games. We therefore derive cashout from the
+  // reliable signal: the market payload exists (status 0 / active markets) and
+  // the event is not explicitly banned. This keeps the cashout filter from ever
+  // being empty and matches "soft boost, never hard zero".
+  const rawAny = raw as unknown as { containsPcbb?: boolean; banned?: boolean };
+  const notBanned = rawAny.banned !== true;
+  const cashoutAvailable = notBanned;
 
-  const allBookies: BookieId[] = [
-    'sportybet:ke',
-    'betpawa:ke',
-    '1xbet:ke',
-    'mozzart:ke',
-    'sportpesa:ke',
-  ];
+  // Only SportyBet and betPawa are supported target bookmakers.
+  const allBookies: BookieId[] = ['sportybet:ke', 'betpawa:ke'];
 
   return {
     id: eventId,
@@ -296,9 +298,6 @@ function mapEvent(raw: SportyBetRawEvent, tournamentName: string, categoryName: 
     companyOdds: {
       'sportybet:ke': baseMarkets,
       'betpawa:ke': baseMarkets,
-      '1xbet:ke': baseMarkets,
-      'mozzart:ke': baseMarkets,
-      'sportpesa:ke': baseMarkets,
     },
     sportyMarkets,
     cashoutAvailable,
@@ -336,11 +335,11 @@ async function fetchPage(
   const tournaments = data.data?.tournaments || [];
   const events: SportyBetRawEvent[] = [];
   for (const t of tournaments) {
-    for (const e of t.events || []) {
-      e._tournamentName = t.name || '';
-      e._categoryName = t.categoryName || '';
-      events.push(e);
-    }
+      for (const e of t.events || []) {
+        e._tournamentName = t.name || '';
+        e._categoryName = t.categoryName || '';
+        events.push(e);
+      }
   }
   return events;
 }
@@ -348,6 +347,7 @@ async function fetchPage(
 export async function fetchLiveOdds(): Promise<{
   games: StandardGame[];
   source: 'api';
+  _meta?: { sportybetError?: { code?: number; detail?: string }; betpawaError?: { code?: number; detail?: string } };
 }> {
   // Fetch a few pages in parallel (pageSize 50 × 3 ≈ 150 events) — no N+1 detail calls
   const pageSize = 50;
@@ -369,10 +369,6 @@ export async function fetchLiveOdds(): Promise<{
         allGames.push(mapped);
       }
     }
-  }
-
-  if (allGames.length === 0) {
-    throw new Error('No upcoming events found from SportyBet API');
   }
 
   return { games: allGames, source: 'api' };

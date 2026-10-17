@@ -88,6 +88,9 @@ export default function HomePage() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<AppTab>('my-picks');
   const [algoPicks, setAlgoPicks] = useState<SelectedPick[]>([]);
+  // Staging area is empty by default. It only fills when the user explicitly
+  // generates candidate picks (AI / Random shuffle into staging, or "Add Games").
+  const [stagingInitialized, setStagingInitialized] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isSavedSlipsModalOpen, setIsSavedSlipsModalOpen] = useState(false);
@@ -101,13 +104,18 @@ export default function HomePage() {
   const [byok, setByok] = useState<ByokKeys>(getByokKeys());
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
+  const [serverAiConfigured, setServerAiConfigured] = useState(false);
   const [keyGuard, setKeyGuard] = useState<{
     isOpen: boolean;
     featureName: string;
     description?: string;
   }>({ isOpen: false, featureName: '' });
 
-  const hasAiKey = hasActiveAiKey(byok);
+  // AI capability is satisfied by the user's own key OR the server's preloaded env key.
+  // Guest (unsigned) users must NOT be prompted to configure keys — server env keys
+  // are used automatically. Only a signed-in user who explicitly wants to override
+  // with their own paid key should open Settings.
+  const hasAiKey = hasActiveAiKey(byok) || serverAiConfigured;
 
   useEffect(() => {
     const u = getCurrentUser();
@@ -118,9 +126,7 @@ export default function HomePage() {
 
     const currentKeys = getByokKeys();
     setByok(currentKeys);
-    if (!hasActiveAiKey(currentKeys) && !currentKeys.hasSkippedOnboarding) {
-      setIsOnboardingModalOpen(true);
-    }
+    // Onboarding disabled per requirements - env values used from server
 
     const handleByokChange = (e: Event) => {
       const custom = e as CustomEvent<ByokKeys>;
@@ -146,6 +152,7 @@ export default function HomePage() {
         throw new Error(data.error || 'Failed to ingest match odds');
       }
       setGames(data.games || []);
+      setServerAiConfigured(Boolean(data.aiKeyConfigured));
       setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error fetching match odds';
@@ -188,13 +195,19 @@ export default function HomePage() {
   }, [evaluations, selectedPicksMap]);
 
   useEffect(() => {
+    // Staging area stays empty by default (0 games). Only auto-seed it when the
+    // user has already generated picks at least once (e.g. after applying a
+    // shuffle that was explicitly triggered). Avoids populating candidates on
+    // every filter change or initial mount.
+    if (!stagingInitialized) return;
+
     setAlgoPicks((prev) => {
       const valid = prev.filter((p) => !selectedPicksMap.has(p.gameId));
       const targetCount = Math.max(1, Math.min(100, criteria.pickCount));
       if (valid.length === targetCount) return valid;
       return pickRandomSelections(remainingEvaluations, targetCount);
     });
-  }, [remainingEvaluations, criteria.pickCount, selectedPicksMap]);
+  }, [remainingEvaluations, criteria.pickCount, selectedPicksMap, stagingInitialized]);
 
   const algoPicksGameIdSet = useMemo(() => {
     return new Set(algoPicks.map((p) => p.gameId));
@@ -250,6 +263,7 @@ export default function HomePage() {
     }
 
     if (target === 'staging') {
+      setStagingInitialized(true);
       const fresh =
         effectiveMode === 'ai'
           ? pickSmartSelections(remainingEvaluations, n)
@@ -267,7 +281,10 @@ export default function HomePage() {
 
   const handlePickPicks = (count?: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
-    const toAdd = algoPicks.length > 0 ? algoPicks.slice(0, n) : pickRandomSelections(remainingEvaluations, n);
+    // Staging area is the source of candidate picks. By default it is empty
+    // (0 games) — Add only pulls what has already been staged; it never auto-seeds.
+    if (algoPicks.length === 0) return;
+    const toAdd = algoPicks.slice(0, n);
     if (toAdd.length === 0) return;
     commitPicks((prev) => mergePicksIntoSlip(prev, toAdd));
   };
@@ -319,6 +336,7 @@ export default function HomePage() {
       {/* Top Persistent Alert Banner */}
       <TopAlertBanner
         isMissingKeys={!hasAiKey}
+        serverAiConfigured={serverAiConfigured}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
@@ -457,7 +475,7 @@ export default function HomePage() {
                 Staging Area ({algoPicks.length})
               </span>
               <span className="text-lg font-black text-amber-400 font-mono">
-                {stagingOdds.toLocaleString()}x
+                {algoPicks.length === 0 ? '—' : stagingOdds.toLocaleString() + 'x'}
               </span>
             </div>
           </div>
@@ -818,6 +836,7 @@ export default function HomePage() {
         activeSlip={selectedPicks}
         availableMatches={games}
         user={user}
+        serverAiConfigured={serverAiConfigured}
         onLoadSlip={(sels) => {
           commitPicks(sels);
           setActiveTab('my-picks');

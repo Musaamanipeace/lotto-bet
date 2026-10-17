@@ -492,13 +492,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     }
   };
 
-  const bookieKeys: BookieId[] = [
-    'sportybet:ke',
-    'betpawa:ke',
-    '1xbet:ke',
-    'mozzart:ke',
-    'sportpesa:ke',
-  ];
+  const bookieKeys: BookieId[] = ['sportybet:ke', 'betpawa:ke'];
 
   return (
     <div className="bg-[#111927] border border-slate-800 rounded-2xl p-4 md:p-6 mb-8 shadow-xl space-y-6">

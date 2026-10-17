@@ -127,51 +127,6 @@ export const BOOKIE_CONFIGS: Record<BookieId, BookieMeta> = {
     minStake: 1,
     bonusLabel: '1000% Win Bonus',
   },
-  '1xbet:ke': {
-    id: '1xbet:ke',
-    name: '1xBet Kenya',
-    shortName: '1xBet',
-    tagline: 'High Odds • Extensive Feed',
-    codePrefix: '1X',
-    accentColor: '#3b82f6',
-    badgeBg: 'bg-blue-500/15',
-    badgeBorder: 'border-blue-500/40',
-    badgeText: 'text-blue-400',
-    homeUrl: 'https://1xbet.co.ke/',
-    bookingUrl: 'https://1xbet.co.ke/en/line/football',
-    minStake: 22,
-    bonusLabel: 'Acca Boost',
-  },
-  'mozzart:ke': {
-    id: 'mozzart:ke',
-    name: 'Mozzart Bet Kenya',
-    shortName: 'Mozzart',
-    tagline: 'Super Multi Bonus • Big Payouts',
-    codePrefix: 'MZ',
-    accentColor: '#f59e0b',
-    badgeBg: 'bg-amber-500/15',
-    badgeBorder: 'border-amber-500/40',
-    badgeText: 'text-amber-400',
-    homeUrl: 'https://www.mozzartbet.co.ke/',
-    bookingUrl: 'https://www.mozzartbet.co.ke/en/sports-betting',
-    minStake: 20,
-    bonusLabel: 'Super Multi Bonus',
-  },
-  'sportpesa:ke': {
-    id: 'sportpesa:ke',
-    name: 'SportPesa Kenya',
-    shortName: 'SportPesa',
-    tagline: 'Premier Kenyan Sportsbook',
-    codePrefix: 'SP',
-    accentColor: '#0284c7',
-    badgeBg: 'bg-sky-500/15',
-    badgeBorder: 'border-sky-500/40',
-    badgeText: 'text-sky-400',
-    homeUrl: 'https://www.sportpesa.co.ke/',
-    bookingUrl: 'https://www.sportpesa.co.ke/',
-    minStake: 49,
-    bonusLabel: 'Mega Acca Bonus',
-  },
 };
 
 export const TIMEFRAME_OPTIONS = [
@@ -198,31 +153,6 @@ export function getCompanyBonusPercentage(bookie: BookieId, legCount: number): n
     if (legCount >= 20) return 120;
     if (legCount >= 15) return 60;
     if (legCount >= 10) return 35;
-    if (legCount >= 5) return 10;
-    return 3;
-  }
-  if (bookie === 'mozzart:ke') {
-    if (legCount < 4) return 0;
-    if (legCount >= 40) return 1000;
-    if (legCount >= 25) return 200;
-    if (legCount >= 15) return 60;
-    if (legCount >= 10) return 30;
-    if (legCount >= 5) return 10;
-    return 5;
-  }
-  if (bookie === '1xbet:ke') {
-    if (legCount < 4) return 0;
-    if (legCount >= 20) return 100;
-    if (legCount >= 15) return 50;
-    if (legCount >= 10) return 25;
-    if (legCount >= 5) return 10;
-    return 5;
-  }
-  if (bookie === 'sportpesa:ke') {
-    if (legCount >= 35) return 500;
-    if (legCount >= 25) return 150;
-    if (legCount >= 15) return 50;
-    if (legCount >= 10) return 25;
     if (legCount >= 5) return 10;
     return 3;
   }

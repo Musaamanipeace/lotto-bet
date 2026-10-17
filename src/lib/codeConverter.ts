@@ -329,13 +329,21 @@ async function fetchBetPawaEvents(take = 40): Promise<BetPawaEvent[]> {
   const q = encodeURIComponent(JSON.stringify(query));
   const url = `https://www.betpawa.co.ke/api/sportsbook/v4/events/lists/by-queries?q=${q}`;
 
-  const res = await fetch(url, {
-    headers: BETPAWA_HEADERS,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    cache: 'no-store',
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: BETPAWA_HEADERS,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      cache: 'no-store',
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`betPawa events list failed: ${msg}`);
+  }
   if (!res.ok) {
-    throw new Error(`betPawa events list HTTP ${res.status}`);
+    let body = '';
+    try { body = (await res.text()).slice(0, 200); } catch {}
+    throw new Error(`betPawa events list HTTP ${res.status}${body ? `: ${body}` : ''}`);
   }
   const data = (await res.json()) as {
     responses?: { responses?: Record<string, unknown>[] }[];
@@ -476,8 +484,7 @@ async function generateBetPawaCode(selections: SelectedPick[]): Promise<BetPawaG
       return {
         ok: false,
         error: 'betPawa returned no upcoming football events.',
-        technicalObstacle:
-          'GET /api/sportsbook/v4/events/lists/by-queries returned an empty list.',
+        technicalObstacle: 'GET /api/sportsbook/v4/events/lists/by-queries returned an empty list.',
       };
     }
 
@@ -721,7 +728,8 @@ async function generateSportPesaCode(
 }
 
 /**
- * Main 3-Step Booking Code Generation Pipeline across all target bookmakers
+ * Main Booking Code Generation Pipeline for target bookmakers
+ * (SportyBet Kenya + betPawa Kenya only — other bookmakers are out of scope).
  */
 export async function convertSelectionsToBookingCode(
   bookie: BookieId,
@@ -810,12 +818,9 @@ export async function convertSelectionsToBookingCode(
 
     if (res.clientBody && res.mappedCount) {
       const bodyJson = JSON.stringify(res.clientBody);
-      // Embed body as a real JS value (JSON.parse-safe), not a single-quoted string.
-      // JSON.stringify(body) produces valid JS object literal, so nesting it inside
-      // another JSON.stringify() is safe against quote-breaking in team names.
       const literal = JSON.stringify(bodyJson);
       const snippet = `
-fetch('/api/sportsbook/v3/booking-number', {
+fetch('https://www.betpawa.co.ke/api/sportsbook/v3/booking-number', {
   method: 'POST',
   headers: {
     'content-type': 'application/json',
@@ -823,7 +828,7 @@ fetch('/api/sportsbook/v3/booking-number', {
     'x-pawa-language': 'en',
     'devicetype': 'web'
   },
-  body: JSON.stringify(${literal})
+  body: ${literal}
 }).then(function (r) { return r.json().then(function (d) { return { status: r.status, d: d }; }); })
   .then(function (x) {
     console.log(x);
@@ -846,78 +851,33 @@ fetch('/api/sportsbook/v3/booking-number', {
         totalCount: res.totalCount || selections.length,
         consoleSnippet: snippet,
       };
+    } else {
+      const body = { selections: [] as { type: string; selections: number[] }[] };
+      const bodyJson = JSON.stringify(body);
+      const literal = JSON.stringify(bodyJson);
+      const snippet = `
+fetch('https://www.betpawa.co.ke/api/sportsbook/v3/booking-number', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-pawa-brand': 'betpawa-kenya', 'x-pawa-language': 'en', 'devicetype': 'web' },
+  body: ${literal}
+}).then(r=>r.json().then(d=>({status:r.status,d}))).then(x=>{console.log(x); alert('betPawa status: '+x.status);}).catch(e=>alert('err'));
+`.trim();
+      base.clientCreate = {
+        url: 'https://www.betpawa.co.ke/api/sportsbook/v3/booking-number',
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-pawa-brand': 'betpawa-kenya', 'x-pawa-language': 'en', devicetype: 'web' },
+        body,
+        mappedCount: 0,
+        totalCount: selections.length,
+        consoleSnippet: snippet,
+      };
     }
     return base;
   }
 
-  // --- TARGET BOOKMAKER 3: 1xBet Kenya ---
-  if (bookie === '1xbet:ke') {
-    const res = await generate1xBetCode(selections);
-    if (res.ok) {
-      return {
-        success: true,
-        bookingCode: res.code,
-        destinationBookie: bookie,
-        bookieName: bookieConfig.name,
-        matchCount: selections.length,
-        totalOdds,
-        generatedAt: now.toISOString(),
-        expiresAt: expires.toISOString(),
-        directUrl: res.url || bookieConfig.bookingUrl,
-        deepLink: res.url,
-        selections,
-        bonusPercentage: bonusPct > 0 ? bonusPct : undefined,
-      };
-    }
-    const errorDetails = `[Component / Bookmaker: 1xBet Kenya]\n[Failed Step: Code Generation]\n[Observed Behavior: ${res.error}]\n[Technical Obstacle: ${res.technicalObstacle || 'Cloudflare challenge blocked server request.'}]`;
-    return emptyErrorResponse(bookie, selections, errorDetails);
-  }
+  // --- TARGET BOOKMAKER 2: betPawa Kenya ---
+  // (see above)
 
-  // --- TARGET BOOKMAKER 4: Mozzart Bet Kenya ---
-  if (bookie === 'mozzart:ke') {
-    const res = await generateMozzartCode(selections);
-    if (res.ok) {
-      return {
-        success: true,
-        bookingCode: res.code,
-        destinationBookie: bookie,
-        bookieName: bookieConfig.name,
-        matchCount: selections.length,
-        totalOdds,
-        generatedAt: now.toISOString(),
-        expiresAt: expires.toISOString(),
-        directUrl: res.url || bookieConfig.bookingUrl,
-        deepLink: res.url,
-        selections,
-        bonusPercentage: bonusPct > 0 ? bonusPct : undefined,
-      };
-    }
-    const errorDetails = `[Component / Bookmaker: Mozzart Bet Kenya]\n[Failed Step: Code Generation]\n[Observed Behavior: ${res.error}]\n[Technical Obstacle: ${res.technicalObstacle || 'Endpoint requires authenticated session token.'}]`;
-    return emptyErrorResponse(bookie, selections, errorDetails);
-  }
-
-  // --- TARGET BOOKMAKER 5: SportPesa Kenya ---
-  if (bookie === 'sportpesa:ke') {
-    const res = await generateSportPesaCode(selections);
-    if (res.ok) {
-      return {
-        success: true,
-        bookingCode: res.code,
-        destinationBookie: bookie,
-        bookieName: bookieConfig.name,
-        matchCount: selections.length,
-        totalOdds,
-        generatedAt: now.toISOString(),
-        expiresAt: expires.toISOString(),
-        directUrl: res.url || bookieConfig.bookingUrl,
-        deepLink: res.url,
-        selections,
-        bonusPercentage: bonusPct > 0 ? bonusPct : undefined,
-      };
-    }
-    const errorDetails = `[Component / Bookmaker: SportPesa Kenya]\n[Failed Step: Code Generation]\n[Observed Behavior: ${res.error}]\n[Technical Obstacle: ${res.technicalObstacle || 'Akamai WAF restricted data center IP.'}]`;
-    return emptyErrorResponse(bookie, selections, errorDetails);
-  }
-
+  // Only SportyBet + betPawa are supported targets.
   return emptyErrorResponse(bookie, selections, 'Unsupported destination bookmaker.');
 }
