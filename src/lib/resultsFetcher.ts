@@ -36,8 +36,15 @@ export interface SlipEvaluationResult {
   }[];
 }
 
+export interface FetchResultsOptions {
+  theSportsDbKey?: string | null;
+  apiFootballKey?: string | null;
+  footballDataKey?: string | null;
+}
+
 const THESPORTSDB_KEY = process.env.THESPORTSDB_API_KEY || '3';
-const THESPORTSDB_BASE = `https://www.thesportsdb.com/api/v1/json/${THESPORTSDB_KEY}`;
+const THESPORTSDB_BASE = (key: string) => `https://www.thesportsdb.com/api/v1/json/${key}`;
+const FOOTBALL_DATA_BASE = 'https://api.football-data.org/v4';
 
 /**
  * Normalizes string for fuzzy match comparison
@@ -61,15 +68,98 @@ function teamsMatch(nameA: string, nameB: string): boolean {
 }
 
 /**
- * Fetch soccer match results for a given date from free credible sources (TheSportsDB & ESPN)
+ * Fetch match results for a date from football-data.org (free fallback)
+ * Covers: PL, BL, SA, L1, PD, CL, EL, FL1 (Championship), DED (Eredivisie), PPL, BSA, etc.
+ * Not covered: Belgium, MLS, Argentina on free tier.
  */
-export async function fetchResultsForDate(dateStr?: string): Promise<{
+async function fetchFootballDataResults(dateStr: string, apiKey?: string | null): Promise<MatchResult[]> {
+  if (!apiKey) return [];
+
+  const results: MatchResult[] = [];
+  const dateFormatted = dateStr.replace(/-/g, '');
+
+  // Competitions we care about (football-data.org competition codes)
+  const competitions = [
+    'PL', // Premier League
+    'BL', // Bundesliga
+    'SA', // Serie A
+    'PD', // La Liga
+    'FL1', // Ligue 1
+    'CL', // Champions League
+    'EL', // Europa League
+    'DED', // Eredivisie
+    'PPL', // Primeira Liga
+    'BSA', // Brasileiro Serie A
+  ];
+
+  for (const comp of competitions) {
+    try {
+      const url = `${FOOTBALL_DATA_BASE}/competitions/${comp}/matches?dateFrom=${dateFormatted}&dateTo=${dateFormatted}`;
+      const res = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          'X-Auth-Token': apiKey,
+        },
+        next: { revalidate: 300 },
+      } as RequestInit & { next?: { revalidate?: number } });
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      const matches = data?.matches || [];
+
+      for (const m of matches) {
+        const homeScore = m.score?.fullTime?.home !== null && m.score?.fullTime?.home !== undefined ? m.score.fullTime.home : null;
+        const awayScore = m.score?.fullTime?.away !== null && m.score?.fullTime?.away !== undefined ? m.score.fullTime.away : null;
+        const isFinished = m.status === 'FINISHED' || m.status === 'POSTPONED' || (homeScore !== null && awayScore !== null);
+
+        let winner: '1' | 'X' | '2' | null = null;
+        let totalGoals: number | null = null;
+        let btts: boolean | null = null;
+
+        if (homeScore !== null && awayScore !== null) {
+          totalGoals = homeScore + awayScore;
+          btts = homeScore > 0 && awayScore > 0;
+          if (homeScore > awayScore) winner = '1';
+          else if (homeScore < awayScore) winner = '2';
+          else winner = 'X';
+        }
+
+        results.push({
+          id: `fd-${m.id || results.length}`,
+          homeTeam: m.homeTeam?.name || 'Home',
+          awayTeam: m.awayTeam?.name || 'Away',
+          league: m.competition?.name || comp,
+          date: m.utcDate || `${dateStr}T00:00:00`,
+          status: isFinished ? (m.status === 'POSTPONED' ? 'POSTPONED' : 'FINISHED') : 'IN_PLAY',
+          homeScore,
+          awayScore,
+          winner,
+          totalGoals,
+          btts,
+          source: 'football-data.org (Free)',
+        });
+      }
+    } catch {
+      // Skip individual competition errors
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Fetch soccer match results for a given date from free credible sources.
+ * Order: TheSportsDB → football-data.org → ESPN
+ */
+export async function fetchResultsForDate(
+  dateStr?: string,
+  options?: FetchResultsOptions
+): Promise<{
   success: boolean;
   date: string;
   source: string;
   results: MatchResult[];
 }> {
-  // Default to yesterday in UTC
   let targetDate = dateStr;
   if (!targetDate) {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -77,10 +167,12 @@ export async function fetchResultsForDate(dateStr?: string): Promise<{
   }
 
   const results: MatchResult[] = [];
+  const sources: string[] = [];
 
+  // 1. TheSportsDB free eventsday endpoint
+  const tsdbKey = options?.theSportsDbKey || THESPORTSDB_KEY;
   try {
-    // 1. TheSportsDB free eventsday endpoint
-    const url = `${THESPORTSDB_BASE}/eventsday.php?d=${targetDate}&s=Soccer`;
+    const url = `${THESPORTSDB_BASE(tsdbKey)}/eventsday.php?d=${targetDate}&s=Soccer`;
     const res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 300 },
@@ -89,6 +181,7 @@ export async function fetchResultsForDate(dateStr?: string): Promise<{
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data?.events)) {
+        sources.push('TheSportsDB (Free Verified Feed)');
         for (const ev of data.events) {
           const homeScore = ev.intHomeScore !== null && ev.intHomeScore !== '' ? parseInt(ev.intHomeScore, 10) : null;
           const awayScore = ev.intAwayScore !== null && ev.intAwayScore !== '' ? parseInt(ev.intAwayScore, 10) : null;
@@ -127,7 +220,25 @@ export async function fetchResultsForDate(dateStr?: string): Promise<{
     console.error('Error fetching from TheSportsDB:', err);
   }
 
-  // 2. Fetch top leagues from ESPN if count is low
+  // 2. football-data.org fallback if results are low or TheSportsDB failed
+  if (results.length < 8 || sources.length === 0) {
+    const fdResults = await fetchFootballDataResults(targetDate, options?.footballDataKey || process.env.FOOTBALL_DATA_API_KEY || undefined);
+    if (fdResults.length > 0) {
+      sources.push('football-data.org (Free Fallback)');
+      for (const r of fdResults) {
+        // Avoid duplicates with TheSportsDB
+        const exists = results.find(
+          (e) =>
+            teamsMatch(e.homeTeam, r.homeTeam) && teamsMatch(e.awayTeam, r.awayTeam)
+        );
+        if (!exists) {
+          results.push({ ...r, source: 'football-data.org (Free Fallback)' });
+        }
+      }
+    }
+  }
+
+  // 3. Fetch top leagues from ESPN if count is still low
   if (results.length < 8) {
     const leagues = ['eng.1', 'esp.1', 'ita.1', 'ger.1', 'fra.1', 'uefa.champions', 'uefa.europa'];
     const espnDate = targetDate.replace(/-/g, '');
@@ -188,7 +299,7 @@ export async function fetchResultsForDate(dateStr?: string): Promise<{
   return {
     success: true,
     date: targetDate,
-    source: 'TheSportsDB & ESPN Feeds (Free Credible Sources)',
+    source: sources.length > 0 ? sources.join(' + ') : 'No sources available',
     results,
   };
 }

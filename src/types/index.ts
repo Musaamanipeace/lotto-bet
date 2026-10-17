@@ -60,6 +60,16 @@ export interface StandardGame {
   h2hRecent5?: H2HMatch[];
   abnormalOddsFlag?: boolean;
   insights?: MatchInsights;
+  /** Key player availability: GK, CB, top scorer/creator ruled out near kickoff */
+  playerAvailability?: {
+    home: PlayerAvailability[];
+    away: PlayerAvailability[];
+  };
+  /** Recent match dates for fatigue calculation (last 14 days) */
+  recentMatches?: {
+    home: { date: string; opponent: string }[];
+    away: { date: string; opponent: string }[];
+  };
 }
 
 export interface SelectedPick {
@@ -219,6 +229,14 @@ export interface InjuryInfo {
   players: { name: string; position: string; severity: number }[];
   severity: number;
   source: string;
+}
+
+export interface PlayerAvailability {
+  name: string;
+  position: 'GK' | 'CB' | 'ST' | 'CM' | 'other';
+  status: 'INJURED' | 'SUSPENDED' | 'DOUBTFUL' | 'AVAILABLE';
+  ruledOutAt?: string; // ISO timestamp when ruled out
+  isKeyPlayer: boolean; // starting GK, primary CB, top scorer/creator
 }
 
 export interface MatchInsights {

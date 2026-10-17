@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { StandardGame, FilterCriteria, SelectedPick, BookieId, UserProfile } from '@/types';
+import { StandardGame, FilterCriteria, SelectedPick, BookieId, UserProfile, SavedBetslip } from '@/types';
 import { DEFAULT_FILTER_CRITERIA, BOOKIE_CONFIGS } from '@/lib/constants';
 import {
   evaluateAndFilterGames,
@@ -12,7 +12,6 @@ import {
   removeLeastPreferredPicks,
 } from '@/lib/filterEngine';
 import { FilterBar } from '@/components/FilterBar';
-import { GameCard } from '@/components/GameCard';
 import { BetslipDrawer } from '@/components/BetslipDrawer';
 import { ExportModal } from '@/components/ExportModal';
 import { AccountPanel } from '@/components/AccountPanel';
@@ -26,7 +25,10 @@ import { SettingsModal } from '@/components/SettingsModal';
 import { OnboardingModal } from '@/components/OnboardingModal';
 import { TopAlertBanner } from '@/components/TopAlertBanner';
 import { KeyGuardModal } from '@/components/KeyGuardModal';
-import { getCurrentUser, signOutUser, listSavedSlips } from '@/lib/storage';
+import { AiPicksPanel } from '@/components/AiPicksPanel';
+import { MyPicksPanel } from '@/components/MyPicksPanel';
+import { ChatTab } from '@/components/ChatTab';
+import { getCurrentUser, signOutUser, listSavedSlips, listUsers } from '@/lib/storage';
 import { getByokKeys, hasActiveAiKey, BYOK_CHANGED_EVENT } from '@/lib/byokStorage';
 import { ByokKeys } from '@/types';
 import {
@@ -35,7 +37,7 @@ import {
   ShieldCheck,
   CheckCheck,
   AlertTriangle,
-  Flame,
+  Trophy,
   Layers,
   Zap,
   Building2,
@@ -44,10 +46,13 @@ import {
   LogOut,
   Bookmark,
   Bot,
-  Trophy,
   Plus,
   Key,
   Settings,
+  Sparkles as SparklesIcon,
+  Check as CheckIcon,
+  TrendingUp,
+  Clock,
 } from 'lucide-react';
 
 function useDebouncedValue<T>(value: T, delay: number): T {
@@ -61,6 +66,15 @@ function useDebouncedValue<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+type AppTab = 'ai-picks' | 'my-picks' | 'saved' | 'chat';
+
+const TAB_LABELS: Record<AppTab, { label: string; icon: React.ElementType }> = {
+  'ai-picks': { label: 'AI Picks', icon: SparklesIcon },
+  'my-picks': { label: 'My Picks', icon: TrendingUp },
+  saved: { label: 'Saved', icon: CheckIcon },
+  chat: { label: 'Chat', icon: Clock },
+};
+
 export default function HomePage() {
   const [games, setGames] = useState<StandardGame[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +86,7 @@ export default function HomePage() {
   const [selectedPicks, setSelectedPicks] = useState<SelectedPick[]>([]);
   const [stake, setStake] = useState<number>(50);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'algo' | 'picked'>('all');
+  const [activeTab, setActiveTab] = useState<AppTab>('my-picks');
   const [algoPicks, setAlgoPicks] = useState<SelectedPick[]>([]);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -83,7 +97,7 @@ export default function HomePage() {
   const [savedSlipsCount, setSavedSlipsCount] = useState<number>(0);
   const [lastBookingCode] = useState<string | undefined>();
 
-  // BYOK (Bring Your Own Key) & Onboarding state
+  // BYOK state
   const [byok, setByok] = useState<ByokKeys>(getByokKeys());
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
@@ -95,7 +109,6 @@ export default function HomePage() {
 
   const hasAiKey = hasActiveAiKey(byok);
 
-  // Initialize user session and saved slips count, plus BYOK onboarding check
   useEffect(() => {
     const u = getCurrentUser();
     setUser(u);
@@ -123,7 +136,6 @@ export default function HomePage() {
     setSelectedPicks(next);
   };
 
-  // Fetch games from /api/odds
   const loadOdds = async () => {
     setLoading(true);
     setError(null);
@@ -147,19 +159,16 @@ export default function HomePage() {
     loadOdds();
   }, []);
 
-  // Compute evaluations and filtering for the active criteria
   const evaluations = useMemo(() => {
     return evaluateAndFilterGames(games, debouncedCriteria);
   }, [games, debouncedCriteria]);
 
-  // Compute live counts for each company filter
   const companyCounts = useMemo(() => {
     const all = evaluateAndFilterGames(games, { ...debouncedCriteria, selectedCompany: 'ALL' }).length;
     const sportybet = evaluateAndFilterGames(games, { ...debouncedCriteria, selectedCompany: 'sportybet:ke' }).length;
     return { all, sportybet };
   }, [games, debouncedCriteria]);
 
-  // Extract unique available leagues for dropdown filter
   const availableLeagues = useMemo(() => {
     const set = new Set<string>();
     games.forEach((g) => {
@@ -168,19 +177,16 @@ export default function HomePage() {
     return Array.from(set).sort();
   }, [games]);
 
-  // Map of currently selected picks on the betslip by gameId for fast lookup
   const selectedPicksMap = useMemo(() => {
     const map = new Map<string, SelectedPick>();
     selectedPicks.forEach((p) => map.set(p.gameId, p));
     return map;
   }, [selectedPicks]);
 
-  // Remaining available games (evaluations not already in the betslip)
   const remainingEvaluations = useMemo(() => {
     return evaluations.filter((ev) => !selectedPicksMap.has(ev.game.id));
   }, [evaluations, selectedPicksMap]);
 
-  // Keep algo candidate picks in sync with remaining available games and pickCount
   useEffect(() => {
     setAlgoPicks((prev) => {
       const valid = prev.filter((p) => !selectedPicksMap.has(p.gameId));
@@ -194,7 +200,6 @@ export default function HomePage() {
     return new Set(algoPicks.map((p) => p.gameId));
   }, [algoPicks]);
 
-  // Handle changing target company
   const handleCompanyChange = (bookie: 'ALL' | BookieId) => {
     setCriteria((prev) => ({ ...prev, selectedCompany: bookie }));
     if (bookie === 'sportybet:ke' && stake < 15) {
@@ -202,12 +207,10 @@ export default function HomePage() {
     }
   };
 
-  /** Toggle full-market-data filter — for testing real booking codes */
   const handleUseBookableOnly = () => {
     setCriteria((prev) => ({ ...prev, requireFullMarketData: !prev.requireFullMarketData }));
   };
 
-  /** AI pick `count` new games from remaining, ADD to slip */
   const handleAddAiPicks = (count: number) => {
     if (!hasAiKey) {
       setKeyGuard({
@@ -225,7 +228,6 @@ export default function HomePage() {
     commitPicks((prev) => mergePicksIntoSlip(prev, fresh));
   };
 
-  /** Random pick `count` new games from remaining, ADD to slip */
   const handleAddRandomPicks = (count: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
     const fresh = pickRandomSelections(remainingEvaluations, n);
@@ -233,10 +235,6 @@ export default function HomePage() {
     commitPicks((prev) => mergePicksIntoSlip(prev, fresh));
   };
 
-  /**
-   * Shuffle: drops down to either "staging" (Staging Area) or "slip" (In Slip)
-   * Supports both 'ai' (educated analysis) and 'random' modes.
-   */
   const handleShuffle = (target: 'staging' | 'slip', count?: number, mode?: 'ai' | 'random') => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
     const effectiveMode = mode || criteria.pickingStrategy || 'ai';
@@ -267,10 +265,6 @@ export default function HomePage() {
     }
   };
 
-  /**
-   * Next (Add Next):
-   * Adds candidate Pick N games from staging area (or up to N from remaining games) to betslip.
-   */
   const handlePickPicks = (count?: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
     const toAdd = algoPicks.length > 0 ? algoPicks.slice(0, n) : pickRandomSelections(remainingEvaluations, n);
@@ -278,25 +272,19 @@ export default function HomePage() {
     commitPicks((prev) => mergePicksIntoSlip(prev, toAdd));
   };
 
-  /**
-   * Remove games you can "do without with" (least preferred, highest risk legs).
-   */
   const handleRemoveGames = (count: number) => {
     const n = Math.max(1, Math.min(100, count || criteria.pickCount));
     commitPicks((prev) => removeLeastPreferredPicks(prev, n));
   };
 
-  /** Reset filter criteria to defaults without clearing the betslip */
   const handleResetFiltersKeepSlip = () => {
     setCriteria({ ...DEFAULT_FILTER_CRITERIA });
   };
 
-  /** Solo button on any filter box snaps selecting area to only that filter */
   const handleSoloFilter = (_market: string) => {
-    setActiveTab('algo');
+    setActiveTab('my-picks');
   };
 
-  // Toggle selection on/off for a given pick
   const handleTogglePick = (pick: SelectedPick) => {
     commitPicks((prev) => {
       const exists = prev.some((p) => p.gameId === pick.gameId);
@@ -308,7 +296,6 @@ export default function HomePage() {
     });
   };
 
-  // Select a specific market pick for a match
   const handleSelectSpecificPick = (pick: SelectedPick) => {
     commitPicks((prev) => {
       const filtered = prev.filter((p) => p.gameId !== pick.gameId);
@@ -316,23 +303,20 @@ export default function HomePage() {
     });
   };
 
-  // Remove individual pick
   const handleRemovePick = (gameId: string) => {
     commitPicks((prev) => prev.filter((p) => p.gameId !== gameId));
   };
 
-  // Clear entire slip
   const handleClearSlip = () => {
     commitPicks([]);
   };
 
-  // Separate Accumulator Odds for Staging Area and In-Slip
   const totalOdds = useMemo(() => calculateAccumulatorOdds(selectedPicks), [selectedPicks]);
   const stagingOdds = useMemo(() => calculateAccumulatorOdds(algoPicks), [algoPicks]);
 
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 pb-36">
-      {/* Top Persistent Alert Banner for Keyless / Guest Mode */}
+      {/* Top Persistent Alert Banner */}
       <TopAlertBanner
         isMissingKeys={!hasAiKey}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
@@ -341,7 +325,6 @@ export default function HomePage() {
       {/* Top Navbar */}
       <header className="sticky top-0 z-30 bg-[#0d1422]/90 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          {/* Logo & Branding */}
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 p-0.5 shadow-lg shadow-emerald-500/20">
               <div className="w-full h-full bg-[#0d1422] rounded-[10px] flex items-center justify-center text-emerald-400">
@@ -354,7 +337,7 @@ export default function HomePage() {
                   Lotto<span className="text-emerald-400">Bet</span>
                 </h1>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
-                  KE v1.0
+                  KE v2.0
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 hidden sm:block">
@@ -363,7 +346,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Right Header Status Controls */}
           <div className="flex items-center gap-2.5">
             <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -381,7 +363,6 @@ export default function HomePage() {
               <span className="hidden sm:inline">Refresh</span>
             </button>
 
-            {/* BYOK Settings Panel Button */}
             <button
               onClick={() => setIsSettingsModalOpen(true)}
               className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all ${
@@ -389,7 +370,7 @@ export default function HomePage() {
                   ? 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
                   : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-300'
               }`}
-              title="Manage Bring Your Own Key (BYOK) API keys"
+              title="Manage BYOK API keys"
             >
               <Key className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Settings</span>
@@ -400,34 +381,21 @@ export default function HomePage() {
               )}
             </button>
 
-            {/* Yesterday's Results & Saved Betslip Tracking Button */}
             <button
               onClick={() => setIsResultsModalOpen(true)}
               className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
-              title="View yesterday's match results and saved betslip results from free credible sources"
+              title="View match results"
             >
               <Trophy className="w-3.5 h-3.5 text-amber-400" />
               <span>Results</span>
             </button>
 
-            {/* AI Agent Button */}
-            <button
-              onClick={() => setIsAiAgentOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 hover:from-emerald-500/30 hover:to-teal-500/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
-              title="Open AI Betting Agent to discuss and build slips"
-            >
-              <Bot className="w-3.5 h-3.5 text-emerald-400" />
-              <span>AI Agent</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            </button>
-
-            {/* Saved Slips & User Account */}
             {user ? (
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setIsSavedSlipsModalOpen(true)}
                   className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition-colors"
-                  title="View, edit, or concatenate saved betslips"
+                  title="View saved betslips"
                 >
                   <Bookmark className="w-3.5 h-3.5 text-amber-400" />
                   <span className="hidden sm:inline">Saved Slips</span>
@@ -478,9 +446,8 @@ export default function HomePage() {
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
-        {/* Quick Highlights Banner with separate accumulators for Staging Area & In Slip */}
+        {/* Quick Highlights Banner */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          {/* Card 1: Staging Area Accumulator */}
           <div className="bg-[#111927] border border-amber-500/30 rounded-xl p-3 flex items-center gap-3">
             <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-400">
               <Sparkles className="w-5 h-5" />
@@ -495,7 +462,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Card 2: In Betslip Accumulator */}
           <div className="bg-[#111927] border border-emerald-500/30 rounded-xl p-3 flex items-center gap-3">
             <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400">
               <CheckCheck className="w-5 h-5" />
@@ -510,7 +476,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Card 3: Eligible Pool */}
           <div className="bg-[#111927] border border-slate-800/80 rounded-xl p-3 flex items-center gap-3">
             <div className="p-2.5 rounded-lg bg-blue-500/10 text-blue-400">
               <ShieldCheck className="w-5 h-5" />
@@ -521,7 +486,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Card 4: Active Company */}
           <div className="bg-[#111927] border border-slate-800/80 rounded-xl p-3 flex items-center gap-3">
             <div className="p-2.5 rounded-lg bg-purple-500/10 text-purple-400">
               <Building2 className="w-5 h-5" />
@@ -529,15 +493,13 @@ export default function HomePage() {
             <div>
               <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Active Company</span>
               <span className="text-xs font-bold text-slate-200">
-                {criteria.selectedCompany === 'ALL'
-                  ? 'All (SportyBet)'
-                  : BOOKIE_CONFIGS[criteria.selectedCompany].shortName}
+                {criteria.selectedCompany === 'ALL' ? 'All (SportyBet)' : BOOKIE_CONFIGS[criteria.selectedCompany].shortName}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Filter Configuration Bar with Company Selector, Solo, Reset, & Typable Pick */}
+        {/* Filter Bar */}
         <FilterBar
           criteria={criteria}
           onChange={setCriteria}
@@ -561,45 +523,27 @@ export default function HomePage() {
           }
         />
 
-        {/* Fixtures Section Header Tabs */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab('all')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                activeTab === 'all'
-                  ? 'bg-emerald-500 text-slate-950 shadow-md'
-                  : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>All Qualifying Fixtures ({evaluations.length})</span>
-            </button>
-
-            {/* Renamed tab from "Algo Pick N" to "Pick" with its own Staging Odds */}
-            <button
-              onClick={() => setActiveTab('algo')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                activeTab === 'algo'
-                  ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold'
-                  : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Pick ({algoPicks.length}) · {stagingOdds}x</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('picked')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                activeTab === 'picked'
-                  ? 'bg-emerald-500 text-slate-950 shadow-md'
-                  : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-              }`}
-            >
-              <CheckCheck className="w-3.5 h-3.5" />
-              <span>In Betslip ({selectedPicks.length}) · {totalOdds}x</span>
-            </button>
+        {/* Tab Navigation */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto sm:overflow-visible">
+            {(['ai-picks', 'my-picks', 'saved', 'chat'] as AppTab[]).map((tab) => {
+              const active = activeTab === tab;
+              const { label, icon: Icon } = TAB_LABELS[tab];
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                    active
+                      ? 'bg-emerald-500 text-slate-950 shadow-md border-emerald-500'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border-slate-800'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex items-center gap-2 text-xs text-slate-400">
@@ -610,7 +554,7 @@ export default function HomePage() {
             </span>
             <button
               onClick={handleUseBookableOnly}
-              title="Only fixtures with complete SportyBet market IDs, then shuffle — use this to test real booking codes"
+              title="Only fixtures with complete SportyBet market IDs"
               className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 border ${
                 criteria.requireFullMarketData
                   ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
@@ -623,52 +567,110 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Staging Area Info Banner when Pick tab is active */}
-        {activeTab === 'algo' && (
-          <div className="mb-4 p-3.5 bg-gradient-to-r from-amber-950/30 via-slate-900 to-slate-900 border border-amber-500/30 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  Selecting Area (Staging)
-                  <span className="font-mono text-amber-400 font-black px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">
-                    Staging Accumulator: {stagingOdds}x
-                  </span>
-                </h3>
-                <p className="text-[11px] text-slate-400">
-                  {algoPicks.length} staged candidate games selected by filters. Click Next to add them to your betslip.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handlePickPicks(criteria.pickCount)}
-                className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl flex items-center gap-1 transition-all"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Next (Add to Slip)</span>
-              </button>
-              <button
-                onClick={() => handleShuffle('staging', criteria.pickCount)}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl flex items-center gap-1 border border-slate-700 transition-colors"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Shuffle Staging</span>
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Tab Panels */}
+        <div className="space-y-6">
+          {activeTab === 'ai-picks' && (
+            <AiPicksPanel
+              games={games}
+              evaluations={evaluations.map((ev) => ({ game: ev.game, eligiblePicks: ev.eligiblePicks }))}
+              selectedPicks={selectedPicks}
+              onAddAiPicks={handleAddAiPicks}
+              onAddRandomPicks={handleAddRandomPicks}
+              onAppendToSlip={(picks) => {
+                const newPicks = picks.filter((p) => !selectedPicksMap.has(p.gameId));
+                if (newPicks.length > 0) commitPicks((prev) => mergePicksIntoSlip(prev, newPicks));
+              }}
+              onRemovePick={handleRemovePick}
+              hasAiKey={hasAiKey}
+              onRequireKey={(feature) =>
+                setKeyGuard({
+                  isOpen: true,
+                  featureName: feature,
+                  description: 'AI Picks require an API key. Configure in Settings.',
+                })
+              }
+              cashoutOnly={criteria.cashoutOnly}
+            />
+          )}
 
-        {/* Loading State */}
+          {activeTab === 'my-picks' && (
+            <MyPicksPanel
+              games={games}
+              evaluations={evaluations.map((ev) => ({ game: ev.game, eligiblePicks: ev.eligiblePicks }))}
+              selectedPicks={selectedPicks}
+              selectedCompany={criteria.selectedCompany}
+              onTogglePick={handleTogglePick}
+              onSelectSpecificPick={handleSelectSpecificPick}
+            />
+          )}
+
+          {activeTab === 'saved' && (
+            <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Bookmark className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-base font-bold text-white">Saved Betslips</h3>
+                </div>
+                {user ? (
+                  <button
+                    onClick={() => setIsSavedSlipsModalOpen(true)}
+                    className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-semibold rounded-xl flex items-center gap-1.5 border border-amber-500/30"
+                  >
+                    <span>Manage Saved</span>
+                  </button>
+                ) : (
+                  <span className="text-xs text-slate-500">Sign in to save slips</span>
+                )}
+              </div>
+
+              {user ? (
+                <SavedSlipsModal
+                  isOpen={isSavedSlipsModalOpen}
+                  onClose={() => setIsSavedSlipsModalOpen(false)}
+                  username={user.username}
+                  currentSlip={selectedPicks}
+                  onLoadSlip={(sels) => {
+                    commitPicks(sels);
+                    setActiveTab('my-picks');
+                  }}
+                  onAppendToSlip={(sels) => {
+                    commitPicks((prev) => mergePicksIntoSlip(prev, sels));
+                    setActiveTab('my-picks');
+                  }}
+                />
+              ) : (
+                <div className="py-8 text-center">
+                  <span className="text-xs text-slate-500">Sign in to view and manage your saved betslips.</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'chat' && (
+            <div className="bg-[#0f172a] border border-slate-800 rounded-xl h-[600px] flex flex-col overflow-hidden">
+              <ChatTab
+                isOpen={true}
+                activeSlip={selectedPicks}
+                availableMatches={games}
+                onLoadSlip={(sels) => {
+                  commitPicks(sels);
+                  setActiveTab('my-picks');
+                }}
+                onAppendToSlip={(sels) => {
+                  commitPicks((prev) => mergePicksIntoSlip(prev, sels));
+                  setActiveTab('my-picks');
+                }}
+                onOpenSettings={() => setIsSettingsModalOpen(true)}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Loading / Error / Empty states */}
         {loading && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[...Array(6)].map((_, i) => (
-              <div
-                key={i}
-                className="bg-[#111927]/60 border border-slate-800 rounded-xl p-4 animate-pulse space-y-3"
-              >
+              <div key={i} className="bg-[#111927]/60 border border-slate-800 rounded-xl p-4 animate-pulse space-y-3">
                 <div className="h-4 bg-slate-800 rounded w-1/3" />
                 <div className="space-y-2">
                   <div className="h-5 bg-slate-800 rounded w-3/4" />
@@ -680,9 +682,8 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Error State */}
         {error && !loading && (
-          <div className="p-6 bg-red-500/10 border border-red-500/30 rounded-2xl text-center space-y-3 my-8">
+          <div className="p-6 bg-red-500/10 border border-red-500/30 rounded-2xl text-center space-y-3 my-6">
             <AlertTriangle className="w-8 h-8 text-red-400 mx-auto" />
             <h3 className="text-base font-bold text-white">Odds Ingestion Notice</h3>
             <p className="text-xs text-slate-400 max-w-md mx-auto">{error}</p>
@@ -695,15 +696,12 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Empty State */}
-        {!loading && !error && evaluations.length === 0 && (
+        {!loading && !error && evaluations.length === 0 && activeTab === 'my-picks' && (
           <div className="bg-[#111927] border border-slate-800 rounded-2xl p-10 text-center space-y-3 my-6">
             <ShieldCheck className="w-10 h-10 text-slate-600 mx-auto" />
-            <h3 className="text-base font-bold text-white">
-              No Matches Found For {criteria.selectedCompany === 'ALL' ? 'Selected Criteria' : BOOKIE_CONFIGS[criteria.selectedCompany].name}
-            </h3>
+            <h3 className="text-base font-bold text-white">No Matches Found For Selected Criteria</h3>
             <p className="text-xs text-slate-400 max-w-md mx-auto">
-              Try switching bookmakers, widening the odds bounds (e.g., increase Double Chance max to 1.25), or choosing a longer kickoff timeframe.
+              Try switching bookmakers, widening the odds bounds, or choosing a longer kickoff timeframe.
             </p>
             <div className="flex justify-center gap-2 pt-2">
               <button
@@ -721,56 +719,9 @@ export default function HomePage() {
             </div>
           </div>
         )}
-
-        {/* Fixtures List / Grid */}
-        {!loading && !error && evaluations.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {evaluations
-              .filter((ev) => {
-                if (activeTab === 'picked') {
-                  return selectedPicksMap.has(ev.game.id);
-                }
-                if (activeTab === 'algo') {
-                  return algoPicksGameIdSet.has(ev.game.id);
-                }
-                return true;
-              })
-              .map((evaluation) => {
-                const currentSelection = selectedPicksMap.get(evaluation.game.id) || null;
-                const isAlgoCandidate = algoPicksGameIdSet.has(evaluation.game.id);
-                return (
-                  <GameCard
-                    key={evaluation.game.id}
-                    game={evaluation.game}
-                    eligiblePicks={evaluation.eligiblePicks}
-                    currentSelection={currentSelection}
-                    selectedCompany={criteria.selectedCompany}
-                    isAlgoCandidate={isAlgoCandidate}
-                    onTogglePick={handleTogglePick}
-                    onSelectSpecificPick={handleSelectSpecificPick}
-                    onOpenStats={setStatsGame}
-                  />
-                );
-              })}
-          </div>
-        )}
-
-        <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-4 pb-28">
-          <AccountPanel
-            selections={selectedPicks}
-            stake={stake}
-            bookingCode={lastBookingCode}
-            onLoadSlip={(sels) => {
-              commitPicks(sels);
-              setActiveTab('picked');
-            }}
-            onUserChange={setUser}
-          />
-          <AiCoachPanel selections={selectedPicks} games={games} user={user} />
-        </div>
       </main>
 
-      {/* Docked Betslip Drawer */}
+      {/* Betslip Drawer (only generate-code control) */}
       <BetslipDrawer
         selections={selectedPicks}
         selectedCompany={criteria.selectedCompany}
@@ -816,7 +767,7 @@ export default function HomePage() {
         savedSlipsCount={savedSlipsCount}
       />
 
-      {/* Booking Code Export Modal */}
+      {/* Modals */}
       <ExportModal
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
@@ -827,7 +778,6 @@ export default function HomePage() {
         onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
-      {/* Auth Modal (Username & Password only) */}
       <AuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
@@ -837,28 +787,23 @@ export default function HomePage() {
         }}
       />
 
-      {/* Saved Betslips Modal (Named, Edited, Deleted, Concatenate) */}
       {user && (
         <SavedSlipsModal
           isOpen={isSavedSlipsModalOpen}
-          onClose={() => {
-            setIsSavedSlipsModalOpen(false);
-            setSavedSlipsCount(listSavedSlips(user.username).length);
-          }}
+          onClose={() => setIsSavedSlipsModalOpen(false)}
           username={user.username}
           currentSlip={selectedPicks}
           onLoadSlip={(sels) => {
             commitPicks(sels);
-            setActiveTab('picked');
+            setActiveTab('my-picks');
           }}
           onAppendToSlip={(sels) => {
             commitPicks((prev) => mergePicksIntoSlip(prev, sels));
-            setActiveTab('picked');
+            setActiveTab('my-picks');
           }}
         />
       )}
 
-      {/* Results Modal (Yesterday's Results + Saved Betslip Results from free credible sources) */}
       <ResultsModal
         isOpen={isResultsModalOpen}
         onClose={() => setIsResultsModalOpen(false)}
@@ -867,7 +812,6 @@ export default function HomePage() {
         onOpenAuth={() => setIsAuthModalOpen(true)}
       />
 
-      {/* AI Betting Agent Drawer (Discuss, Build, Save Slips) */}
       <AiAgentDrawer
         isOpen={isAiAgentOpen}
         onClose={() => setIsAiAgentOpen(false)}
@@ -876,11 +820,11 @@ export default function HomePage() {
         user={user}
         onLoadSlip={(sels) => {
           commitPicks(sels);
-          setActiveTab('picked');
+          setActiveTab('my-picks');
         }}
         onAppendToSlip={(sels) => {
           commitPicks((prev) => mergePicksIntoSlip(prev, sels));
-          setActiveTab('picked');
+          setActiveTab('my-picks');
         }}
         onRefreshSavedSlips={() => {
           if (user) setSavedSlipsCount(listSavedSlips(user.username).length);
@@ -888,7 +832,6 @@ export default function HomePage() {
         onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
-      {/* Match Stats Modal (H2H, Form, Scoring, Goals, Cashout status) */}
       <StatsModal
         isOpen={Boolean(statsGame)}
         onClose={() => setStatsGame(null)}
@@ -899,20 +842,17 @@ export default function HomePage() {
         onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
-      {/* BYOK Settings Modal */}
       <SettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
       />
 
-      {/* BYOK Onboarding Modal */}
       <OnboardingModal
         isOpen={isOnboardingModalOpen}
         onClose={() => setIsOnboardingModalOpen(false)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
-      {/* Key Guard Alert Modal for Blocked Guest Features */}
       <KeyGuardModal
         isOpen={keyGuard.isOpen}
         onClose={() => setKeyGuard((prev) => ({ ...prev, isOpen: false }))}

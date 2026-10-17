@@ -1,4 +1,4 @@
-import { StandardGame, FilterCriteria, SelectedPick, BookieId, GameMarkets, SportyBetMarket } from '@/types';
+import { StandardGame, FilterCriteria, SelectedPick, BookieId, GameMarkets, SportyBetMarket, PlayerAvailability } from '@/types';
 
 /**
  * Normalizes team or league names: converts to lowercase, strips accents/diacritics,
@@ -273,6 +273,41 @@ export function evaluateAndFilterGames(
       if (!criteria.selectedLeagues.some((lg) => normalizeTeamName(lg) === normLeague)) {
         continue;
       }
+    }
+
+    // 5b. Exclusion Triggers: discard if key player (GK, CB, top scorer/creator)
+    // ruled out within 2 hours of kick-off
+    const kickoffIn2h = kickoffMs - 2 * 60 * 60 * 1000;
+    const keyPlayerOut = (avail: PlayerAvailability[] | undefined) =>
+      avail?.some(
+        (p) =>
+          p.isKeyPlayer &&
+          (p.status === 'INJURED' || p.status === 'SUSPENDED') &&
+          p.ruledOutAt &&
+          new Date(p.ruledOutAt).getTime() >= kickoffIn2h &&
+          new Date(p.ruledOutAt).getTime() <= kickoffMs
+      );
+    if (keyPlayerOut(game.playerAvailability?.home) || keyPlayerOut(game.playerAvailability?.away)) {
+      continue;
+    }
+
+    // 5c. Fixture Fatigue Boundary: avoid "Safe" accumulator legs on teams
+    // playing their 3rd match within a 7-day period
+    const fatigueCutoff = kickoffMs - 7 * 24 * 60 * 60 * 1000;
+    const recentMatchCount = (matches: { date: string; opponent: string }[] | undefined) =>
+      matches?.filter((m) => {
+        const d = new Date(m.date).getTime();
+        return d >= fatigueCutoff && d <= kickoffMs;
+      }).length || 0;
+    const homeFatigue = recentMatchCount(game.recentMatches?.home);
+    const awayFatigue = recentMatchCount(game.recentMatches?.away);
+    // If either team has 2+ matches in last 7 days, they are on their 3rd match → fatigue
+    if (homeFatigue >= 2 || awayFatigue >= 2) {
+      // Only exclude "Safe" market picks (low odds, high confidence). Let the
+      // caller decide which market tier this applies to by tagging the game.
+      game.abnormalOddsFlag = game.abnormalOddsFlag ?? false;
+      // Mark fatigue so upper layers can deprioritize safe legs on these teams
+      (game as unknown as { _fatigue?: boolean })._fatigue = true;
     }
 
     // 6. Search Query Filter

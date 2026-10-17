@@ -810,13 +810,28 @@ export async function convertSelectionsToBookingCode(
 
     if (res.clientBody && res.mappedCount) {
       const bodyJson = JSON.stringify(res.clientBody);
-      const snippet = [
-        `fetch('/api/sportsbook/v3/booking-number',{`,
-        `method:'POST',`,
-        `headers:{'content-type':'application/json','x-pawa-brand':'betpawa-kenya','x-pawa-language':'en','devicetype':'web'},`,
-        `body:'${bodyJson.replace(/'/g, "\\'")}'`,
-        `}).then(r=>r.json()).then(d=>{console.log(d);alert(d.code?('betPawa code: '+d.code):JSON.stringify(d));})`,
-      ].join('');
+      // Embed body as a real JS value (JSON.parse-safe), not a single-quoted string.
+      // JSON.stringify(body) produces valid JS object literal, so nesting it inside
+      // another JSON.stringify() is safe against quote-breaking in team names.
+      const literal = JSON.stringify(bodyJson);
+      const snippet = `
+fetch('/api/sportsbook/v3/booking-number', {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    'x-pawa-brand': 'betpawa-kenya',
+    'x-pawa-language': 'en',
+    'devicetype': 'web'
+  },
+  body: JSON.stringify(${literal})
+}).then(function (r) { return r.json().then(function (d) { return { status: r.status, d: d }; }); })
+  .then(function (x) {
+    console.log(x);
+    if (x.d && x.d.code) alert('betPawa code: ' + x.d.code);
+    else alert('betPawa failed (' + x.status + '): ' + JSON.stringify(x.d));
+  })
+  .catch(function (e) { alert('Request failed: ' + e); });
+`.trim();
       base.clientCreate = {
         url: 'https://www.betpawa.co.ke/api/sportsbook/v3/booking-number',
         method: 'POST',

@@ -65,11 +65,21 @@ export async function executeAiRouter(req: AiRouterRequest): Promise<AiRouterRes
   const temperature = req.temperature ?? 0.4;
   const systemInstruction = req.systemInstruction || 'You are LottoBet AI Betting Assistant.';
 
-  // 1. Resolve API Key
+  // 1. Resolve API Key: client key (per-request, paid users) takes priority,
+// then server env var (app owner's credentials). Never hardcode.
   let apiKey = (req.apiKey || '').trim();
-  if (!apiKey && provider === 'gemini') {
-    // Optional fallback to server environment key for Gemini if no user BYOK key is supplied
-    apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) {
+    switch (provider) {
+      case 'gemini':
+        apiKey = (process.env.GEMINI_API_KEY || '').trim();
+        break;
+      case 'openrouter':
+        apiKey = (process.env.OPENROUTER_API_KEY || '').trim();
+        break;
+      case 'mistral':
+        apiKey = (process.env.MISTRAL_API_KEY || '').trim();
+        break;
+    }
   }
 
   if (!apiKey) {
@@ -79,7 +89,7 @@ export async function executeAiRouter(req: AiRouterRequest): Promise<AiRouterRes
       reply: '',
       provider,
       model: req.model || '',
-      error: `Missing API key for ${providerName}. Please enter your key in the BYOK Settings Panel.`,
+      error: `No API key configured for ${providerName}. Add your key in Settings (BYOK) or contact the administrator to enable server-side AI.`,
       errorCode: 'INVALID_KEY',
     };
   }
