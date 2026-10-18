@@ -108,6 +108,64 @@ export function Builder({ heading }: { heading?: string }) {
     setNotice({ tone: short || refused ? 'warn' : 'info', text: `Added ${res.added} random pick${res.added === 1 ? '' : 's'} (requested ${r.requested}).${short}${refused}` });
   }
 
+  async function addWithAi() {
+    const n = Number(randomCount);
+    if (!Number.isInteger(n) || n < 1 || n > 50) {
+      setNotice({ tone: 'warn', text: 'Count must be a whole number from 1 to 50.' });
+      return;
+    }
+    setNotice({ tone: 'info', text: 'Loading AI picks…' });
+    try {
+      const q = new URLSearchParams({ limit: String(n + 20) });
+      if (bookmaker) q.set('bookmaker', bookmaker);
+      const r = await fetch(`/api/ai/picks?${q}`);
+      const j = await r.json();
+      if (!j.ok) {
+        setNotice({ tone: 'warn', text: j.error ?? `AI picks failed (HTTP ${r.status})` });
+        return;
+      }
+      const inSlipIds = new Set(slip.legs.map((l) => l.gameId));
+      const aiRows = (j.picks as Array<{
+        gameId: string; bookmaker: string; home: string; away: string; kickoff: number; league: string | null;
+        odds: number; marketNativeId: string; outcomeNativeId: string; specifier: string; marketKey: string;
+        impliedProbability: number;
+      }>)
+        .filter((p) => p.bookmaker === bookmaker && !inSlipIds.has(p.gameId))
+        .slice(0, n)
+        .map((p) => ({
+          gameId: p.gameId,
+          nativeEventId: p.gameId.split(':')[1] ?? p.gameId,
+          bookmaker: p.bookmaker as 'sportybet' | 'betpawa',
+          home: p.home,
+          away: p.away,
+          kickoff: p.kickoff,
+          league: p.league,
+          pick: p.marketKey.replace(/_/g, ' '),
+          odds: p.odds,
+          marketNativeId: p.marketNativeId,
+          outcomeNativeId: p.outcomeNativeId,
+          specifier: p.specifier,
+          marketKind: '1x2' as const,
+          line: null as number | null,
+          outcomeKey: null,
+          implied: p.impliedProbability,
+        }));
+      if (aiRows.length === 0) {
+        setNotice({ tone: 'warn', text: 'No AI picks match your filters. Try widening filters or regenerating AI after a games refresh.' });
+        return;
+      }
+      const res = addMany(slip, aiRows);
+      setSlip(res.slip);
+      const short = aiRows.length < n ? ` Only ${aiRows.length} of ${n} AI picks matched the current bookmaker and slip.` : '';
+      setNotice({
+        tone: short ? 'warn' : 'info',
+        text: `Added ${res.added} AI pick${res.added === 1 ? '' : 's'} (Verified / Best fit from stored pool).${short}`,
+      });
+    } catch (e) {
+      setNotice({ tone: 'warn', text: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   function removeN() {
     if (!toolSel) return;
     const r = removeFromMarket(slip, toolSel.selector, Number(removeCount));
@@ -266,7 +324,10 @@ export function Builder({ heading }: { heading?: string }) {
                   <input className="field mt-1 w-20" inputMode="numeric" value={randomCount} onChange={(e) => setRandomCount(e.target.value.replace(/\D/g, ''))} />
                 </label>
                 {user ? (
-                  <button className="btn-ghost" disabled title="AI picks are not built yet">Add with AI (not built yet)</button>
+                  <>
+                    <button className="btn-gold" disabled={games.status !== 'ok'} onClick={() => void addWithAi()}>Add with AI</button>
+                    <button className="btn-ghost" disabled={games.status !== 'ok' || pool.length === 0} onClick={addRandom}>Add random</button>
+                  </>
                 ) : (
                   <button className="btn-gold" disabled={games.status !== 'ok' || pool.length === 0} onClick={addRandom}>Add random picks</button>
                 )}

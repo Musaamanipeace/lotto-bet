@@ -98,3 +98,43 @@ This branch implements the deterministic AI layer described in the design doc:
 6. Settlement from football-data.org results → win-rate indicator.
 
 Set `FOOTBALL_DATA_API_KEY` and/or `API_FOOTBALL_KEY` in `.env.local` when ready.
+
+## Complete AI implementation (this archive)
+
+### New modules
+| Path | Role |
+|------|------|
+| `src/lib/candidates.ts` | Map live markets → PickMarketKey; tier from odds bands |
+| `src/lib/ai-engine.ts` | Candidates → criteria eval → fit score → rank → slips |
+| `src/lib/ai-picks.ts` | Ranking, fit score, core/booster composition, target odds |
+| `src/lib/ai-store.ts` | In-process snapshot of latest AI picks/slips |
+| `src/lib/run-ai.ts` | Load games from store → generate → cache |
+| `src/lib/revalidate.ts` | Re-check stored picks vs current odds before export |
+| `src/lib/criteria.ts` | Provisional thresholds, Best-fit mode, mix ratios |
+| `src/lib/evaluator.ts` | Verified vs Best fit labels |
+| `src/lib/stats.ts` | Free-tier provider stubs |
+
+### API routes
+- `GET /api/ai/status` – providers, mode, snapshot summary
+- `POST /api/ai/generate` – regenerate from latest fetch run
+- `GET /api/ai/picks?market=&bookmaker=&limit=`
+- `GET /api/ai/slips` – 25+ accumulators
+- `GET /api/ai/pick-n?n=`
+- `GET /api/ai/target-odds?target=`
+
+### UI
+- `/ai-picks` – Best by market, Pick N, Target odds, 25+ slips
+- Builder: **Add with AI** for signed-in users
+- Menu link to AI Picks
+- Refresh / daily cron also runs AI generation after fetch
+
+### Verified
+- `tsc --noEmit` clean
+- `npm test` – 75 pass
+- `next build` – success
+
+### Still deferred (design §14)
+- Real HTTP in football-data.org / API-Football providers
+- Cashout class
+- LLM chat / Exchange / Shuffle (interfaces already present)
+- Settlement + win-rate indicator

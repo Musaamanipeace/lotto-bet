@@ -4,6 +4,7 @@ import { checkCronAuth } from './cron-auth.ts';
 import { runPipeline } from './pipeline.ts';
 import { PgStore } from './pg-store.ts';
 import { getMemoryStore } from './memory-store.ts';
+import { runAiGeneration } from './run-ai.ts';
 import type { Store } from './store.ts';
 import type { RunKind } from './store.ts';
 
@@ -26,8 +27,6 @@ export async function handleRefresh(req: Request, kind: RunKind): Promise<Respon
     const auth = checkCronAuth(req.headers.get('authorization'), secret);
     if (!auth.ok) return Response.json(auth, { status: auth.status ?? 401 });
   } else if (secret) {
-    // If a secret is configured even in dev, still honour it when the header is present,
-    // but do not require it.
     const header = req.headers.get('authorization');
     if (header) {
       const auth = checkCronAuth(header, secret);
@@ -36,8 +35,9 @@ export async function handleRefresh(req: Request, kind: RunKind): Promise<Respon
   }
 
   try {
+    const store = getStore();
     const r = await runPipeline({
-      store: getStore(),
+      store,
       kind,
       fetchers: {
         sportybet: (fetchRunId) => fetchSportyAllPages({ fetchRunId, timelineHours: 168 }),
@@ -45,8 +45,28 @@ export async function handleRefresh(req: Request, kind: RunKind): Promise<Respon
       },
     });
     if (!r.ok) return Response.json(r, { status: 500 });
+
+    // Deterministic AI generation after a successful fetch (design §3).
+    // Failure here is reported but does not fail the fetch itself.
+    let ai: { ok: true; pickCount: number; verifiedCount: number; bestFitCount: number } | { ok: false; error: string } | null = null;
+    try {
+      const aiR = await runAiGeneration(store);
+      if (aiR.ok) {
+        ai = {
+          ok: true,
+          pickCount: aiR.picks.length,
+          verifiedCount: aiR.verifiedCount,
+          bestFitCount: aiR.bestFitCount,
+        };
+      } else {
+        ai = { ok: false, error: aiR.error };
+      }
+    } catch (e) {
+      ai = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+
     const anyFailed = !r.results.sportybet.ok || !r.results.betpawa.ok;
-    return Response.json(r, { status: anyFailed ? 502 : 200 });
+    return Response.json({ ...r, ai }, { status: anyFailed ? 502 : 200 });
   } catch (e) {
     return Response.json(
       { ok: false, error: e instanceof Error ? e.message : String(e), details: {} },

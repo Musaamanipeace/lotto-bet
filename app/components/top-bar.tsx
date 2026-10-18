@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useAuth } from './auth-context';
 
 const MENU: { label: string; href?: string }[] = [
-  { label: 'AI Picks' },
+  { label: 'AI Picks', href: '/ai-picks' },
   { label: 'My Picks', href: '/my-picks' },
   { label: 'Saved Slips' },
   { label: 'Community' },
