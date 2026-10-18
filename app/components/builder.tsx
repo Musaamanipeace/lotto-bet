@@ -166,7 +166,54 @@ export function Builder({ heading }: { heading?: string }) {
     }
   }
 
+
+  async function saveCurrentSlip() {
+    if (slip.legs.length === 0) {
+      setNotice({ tone: 'warn', text: 'Slip is empty.' });
+      return;
+    }
+    const b = slipBookmaker(slip);
+    if (!b) {
+      setNotice({ tone: 'warn', text: 'Slip has no bookmaker.' });
+      return;
+    }
+    const totalsNow = slipTotals(slip);
+    const totalOdds = totalsNow.totalOdds.ok ? totalsNow.totalOdds.total : slip.legs.reduce((a, l) => a * l.odds, 1);
+    const combinedImplied = totalsNow.combined.ok ? totalsNow.combined.probability : null;
+    const payload = {
+      name: `${b} · ${slip.legs.length} legs · ${totalOdds.toFixed(2)}`,
+      bookmaker: b,
+      legs: slip.legs,
+      totalOdds,
+      combinedImplied,
+    };
+    try {
+      const r = await fetch('/api/slips/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json();
+      // Always mirror to localStorage for Saved Slips page
+      try {
+        const key = 'lb_saved_slips_v1';
+        const prev = JSON.parse(localStorage.getItem(key) || '[]');
+        const entry = j.ok && j.slip ? j.slip : { id: `local-${Date.now()}`, ...payload, createdAt: Date.now(), shared: false, userId: null };
+        const next = [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 50);
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch { /* ignore quota */ }
+      if (!j.ok) {
+        setNotice({ tone: 'warn', text: j.error ? `Saved locally only: ${j.error}` : 'Saved locally only.' });
+      } else {
+        setNotice({ tone: 'info', text: 'Slip saved. Open Saved Slips from the menu.' });
+      }
+    } catch (e) {
+      setNotice({ tone: 'warn', text: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   function removeN() {
+
     if (!toolSel) return;
     const r = removeFromMarket(slip, toolSel.selector, Number(removeCount));
     if (!r.ok) { setNotice({ tone: 'warn', text: r.error }); return; }
@@ -345,6 +392,7 @@ export function Builder({ heading }: { heading?: string }) {
                 </label>
                 <button className="btn-ghost" disabled={!toolSel} onClick={removeN}>Remove N games</button>
                 <button className="btn-ghost" disabled={!toolSel} onClick={() => toolSel && setSlip(greyMarket(slip, toolSel.selector, !greyedInTool))}>{greyedInTool ? 'Restore market' : 'Grey out market'}</button>
+                <button className="btn-gold" disabled={slip.legs.length === 0} onClick={() => void saveCurrentSlip()}>Save slip</button>
                 <button className="btn-ghost" disabled={slip.legs.length === 0} onClick={() => { setSlip(emptySlip()); setNotice(null); }}>Clear slip</button>
               </div>
             </div>

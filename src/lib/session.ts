@@ -3,9 +3,14 @@ import { PgAuthStore } from './pg-auth-store.ts';
 
 export const isSecure = () => process.env.NODE_ENV === 'production';
 
-/** The signed-in user for this request, or null for a guest. DB errors propagate (never treated as "guest"). */
+/** The signed-in user for this request, or null for a guest. Without DATABASE_URL always null. */
 export async function currentUser(req: Request): Promise<User | null> {
-  return userForToken(new PgAuthStore(), readSessionToken(req.headers.get('cookie')));
+  if (!process.env.DATABASE_URL) return null;
+  try {
+    return await userForToken(new PgAuthStore(), readSessionToken(req.headers.get('cookie')));
+  } catch {
+    return null;
+  }
 }
 
 /** State-changing JSON endpoints require a JSON content type (a cross-site form cannot send one without CORS). */

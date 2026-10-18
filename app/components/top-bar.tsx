@@ -3,13 +3,13 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { useAuth } from './auth-context';
 
-const MENU: { label: string; href?: string }[] = [
+const MENU: { label: string; href: string }[] = [
   { label: 'AI Picks', href: '/ai-picks' },
   { label: 'My Picks', href: '/my-picks' },
-  { label: 'Saved Slips' },
-  { label: 'Community' },
-  { label: 'AI Chat & Agent' },
-  { label: 'Active Leagues' },
+  { label: 'Saved Slips', href: '/saved-slips' },
+  { label: 'Community', href: '/community' },
+  { label: 'AI Chat & Agent', href: '/chat' },
+  { label: 'Active Leagues', href: '/leagues' },
 ];
 
 export function TopBar() {
@@ -42,17 +42,17 @@ export function TopBar() {
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
                 <div role="menu" className="glass absolute right-0 z-50 mt-2 w-60 bg-navy-900/95 p-1">
-                  {MENU.map((m) =>
-                    m.href ? (
-                      <Link key={m.label} role="menuitem" href={m.href} onClick={() => setOpen(false)} className="block rounded-lg px-3 py-2 text-sm hover:bg-white/10">
-                        {m.label}
-                      </Link>
-                    ) : (
-                      <div key={m.label} role="menuitem" aria-disabled="true" className="flex items-center justify-between rounded-lg px-3 py-2 text-sm text-slate-500">
-                        {m.label}<span className="text-[10px] uppercase tracking-wide">not built yet</span>
-                      </div>
-                    ),
-                  )}
+                  {MENU.map((m) => (
+                    <Link
+                      key={m.label}
+                      role="menuitem"
+                      href={m.href}
+                      onClick={() => setOpen(false)}
+                      className="block rounded-lg px-3 py-2 text-sm hover:bg-white/10"
+                    >
+                      {m.label}
+                    </Link>
+                  ))}
                 </div>
               </>
             )}
@@ -60,7 +60,9 @@ export function TopBar() {
         </div>
       </div>
       {sessionError && (
-        <div className="border-t border-red-500/30 bg-red-500/10 px-4 py-1.5 text-center text-xs text-red-300" role="alert">{sessionError}</div>
+        <div className="border-t border-red-500/30 bg-red-500/10 px-4 py-1.5 text-center text-xs text-red-300" role="alert">
+          {sessionError}
+        </div>
       )}
     </header>
   );
