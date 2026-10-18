@@ -60,3 +60,41 @@ See `.env.example` for `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`
 - Auto-bootstrap pipeline on first `/api/games` request
 - Refresh endpoint usable without `CRON_SECRET` in development
 - Codegen works without auth when not in production+DB mode
+
+## AI features (free-data build)
+
+This branch implements the deterministic AI layer described in the design doc:
+
+| Module | Role |
+|--------|------|
+| `src/lib/criteria.ts` | Odds bands, provisional criteria, Verified / Best-fit mode, fit-score weights, core/booster mixes |
+| `src/lib/evaluator.ts` | Criteria evaluation; unavailable never counts as pass; Best-fit vs Verified labels |
+| `src/lib/stats.ts` | StatsProvider interface + free-tier stubs (football-data.org, API-Football) |
+| `src/lib/ai-picks.ts` | Fit scoring, ranking, accumulator composition (25+, pick-N, target-odds) |
+
+### Principles (enforced in code)
+
+- Deterministic engine decides qualification; LLM only chooses among validated IDs.
+- Unavailable criteria never become a pass.
+- Provisional thresholds are flagged on every pick.
+- Only bookmaker implied probability (margin-removed) is shown as a probability.
+- No win language, no silent fallbacks, no fabricated sample slips.
+
+### Working assumptions (design §14)
+
+- Criteria without a stated number use league-relative / provisional cut-offs.
+- Fit-score weights and core/booster ratios (75/25 default) are provisional and tunable in `criteria.ts`.
+- Corners market uses Cards bands as placeholders until real bands are supplied.
+- Cashout class remains disabled until a verified feed field exists.
+- xG / PPDA / field tilt stay unavailable on free data.
+
+### Next steps (design §13)
+
+1. Wire real HTTP calls in `FootballDataOrgProvider` and `ApiFootballProvider`.
+2. Daily pipeline: candidate generation → evaluate → rank → store AI picks & slips.
+3. AI Picks UI (best-by-market, pick N, target odds, 25+).
+4. Re-validation + lineup exclusion cron.
+5. LLM tools for builder assistant / chat / Exchange (optional; can stay deterministic).
+6. Settlement from football-data.org results → win-rate indicator.
+
+Set `FOOTBALL_DATA_API_KEY` and/or `API_FOOTBALL_KEY` in `.env.local` when ready.
