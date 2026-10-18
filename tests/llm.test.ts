@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { callLlm, isTransient, parseOrder } from '../src/lib/llm/index.ts';
 import { jsonResponse } from './fixtures.ts';
 
-const KEYS = { GEMINI_API_KEY: 'g', OPENROUTER_API_KEY: 'o', OPENROUTER_MODEL: 'some/model', MISTRAL_API_KEY: 'm' };
+const KEYS = { GEMINI_API_KEY: 'g', OPENROUTER_API_KEY: 'o', OPENROUTER_MODEL: 'some/model', MISTRAL_API_KEY: 'm' }; // model pinned here so the tests can check it
 const geminiOk = { candidates: [{ content: { parts: [{ text: 'from gemini' }] } }] };
 const chatOk = (t: string) => ({ choices: [{ message: { content: t } }] });
 
@@ -54,9 +54,9 @@ test('network errors and empty responses also fail over', async () => {
 
 test('unconfigured providers are skipped and listed, never called; none configured is an explicit error', async () => {
   const { calls, fetchImpl } = router({ [M]: () => jsonResponse(200, chatOk('m')) });
-  const r = await callLlm({ prompt: 'hi' }, { MISTRAL_API_KEY: 'm', OPENROUTER_API_KEY: 'o' }, fetchImpl);
+  const r = await callLlm({ prompt: 'hi' }, { MISTRAL_API_KEY: 'm' }, fetchImpl);
   assert.ok(r.ok); assert.deepEqual(calls, [M]);
-  assert.deepEqual(r.attempts.map((a) => a.error), ['skipped: GEMINI_API_KEY is not set', 'skipped: OPENROUTER_MODEL is not set']);
+  assert.deepEqual(r.attempts.map((a) => a.error), ['skipped: GEMINI_API_KEY is not set', 'skipped: OPENROUTER_API_KEY is not set']);
   const none = await callLlm({ prompt: 'hi' }, {}, fetchImpl);
   assert.ok(!none.ok); assert.match(none.error, /No LLM provider is configured/);
 });
@@ -89,4 +89,13 @@ test('requests are shaped per provider (key in header, json mode, system prompt)
   assert.equal(g.body.systemInstruction.parts[0].text, 'be brief'); assert.match(g.url, /gemini-2\.5-flash:generateContent$/);
   assert.equal(o.h.authorization, 'Bearer o'); assert.equal(o.body.model, 'some/model'); assert.equal(o.body.messages[0].role, 'system'); assert.equal(o.body.response_format.type, 'json_object');
   assert.equal(m.h.authorization, 'Bearer m'); assert.equal(m.body.model, 'mistral-small-latest'); assert.equal(m.url, 'https://api.mistral.ai/v1/chat/completions');
+});
+
+test('OpenRouter defaults to openrouter/auto when OPENROUTER_MODEL is unset, and honours it when set', async () => {
+  const bodies: string[] = [];
+  const fetchImpl = (async (_u: string, init: RequestInit) => { bodies.push(JSON.parse(init.body as string).model); return jsonResponse(200, chatOk('ok')); }) as unknown as typeof fetch;
+  const a = await callLlm({ prompt: 'x' }, { OPENROUTER_API_KEY: 'o' }, fetchImpl);
+  assert.ok(a.ok); assert.equal(a.model, 'openrouter/auto');
+  await callLlm({ prompt: 'x' }, { OPENROUTER_API_KEY: 'o', OPENROUTER_MODEL: 'a/b' }, fetchImpl);
+  assert.deepEqual(bodies, ['openrouter/auto', 'a/b']);
 });

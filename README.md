@@ -31,7 +31,7 @@ Stage 5 adds auth and the first UI:
 ## Run
 - `npm test` runs the suite (Node >= 22.18, no install needed; tests use built-in type stripping)
 - `npm install && npm run dev` then open `/` (NOT yet run: no network in the build sandbox, so `next build`, Tailwind and the `.tsx` UI were never compiled or opened in a browser. Run `npm run typecheck` and `npm run build` first and expect to fix small type or styling errors.)
-- Apply `db/migrations/001_init.sql` then `002_auth.sql` to Postgres. Copy `.env.example` to `.env.local`.
+- Apply `db/migrations/001_init.sql`, `002_auth.sql` then `003_enable_rls.sql` to Postgres (in that order). Copy `.env.example` to `.env.local`.
 
 ## Assumptions
 - Source text lost its >= / <= symbols: Over, win and card-over thresholds are minimums; Under and card-under are maximums.
@@ -70,6 +70,6 @@ Rule 3 (isolation) and rule 6 (no retry) are covered, plus pipeline, stored-read
 `src/lib/llm/`: `callLlm({system?, prompt, json?})` tries Gemini, then OpenRouter, then Mistral (order via `LLM_PROVIDER_ORDER`), ONE request per provider with a 25 s timeout, no retries. On a failure it moves to the next provider.
 - `LLM_FAILOVER=any` (default): fail over on every error. `transient`: only on network errors, timeouts, 408, 429 and 5xx; a 4xx such as a bad request stops the chain.
 - Not silent, which deliberately refines engineering rule 1 for AI calls: the result carries `provider`, `model` and `attempts` (every earlier failure with its real message and HTTP status), and callers should show which provider answered. If all fail, the error lists every failure. Providers without keys are listed as skipped.
-- Keys: `GEMINI_API_KEY` (old `LLM_API_KEY` still accepted), `OPENROUTER_API_KEY` + `OPENROUTER_MODEL` (no default model, your choice), `MISTRAL_API_KEY`. Model overrides: `GEMINI_MODEL`, `MISTRAL_MODEL`.
+- Keys: `GEMINI_API_KEY` (old `LLM_API_KEY` still accepted), `OPENROUTER_API_KEY` (model defaults to `openrouter/auto`; set `OPENROUTER_MODEL` to pin one), `MISTRAL_API_KEY`. Model overrides: `GEMINI_MODEL`, `MISTRAL_MODEL`.
 - Nothing calls it yet; the stage 6 chat, Exchange and Shuffle will. There is deliberately no public route for it (it would spend your keys with no rate limiting). A bad JSON answer from one provider is not detected here; callers that need JSON must validate it.
 - Tests: 66 total, the 9 new ones use fake fetches only (no real API was called).

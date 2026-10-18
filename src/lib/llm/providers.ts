@@ -46,9 +46,9 @@ async function chatCompletions(who: string, url: string, key: string, model: str
 
 export const openrouter: LlmProvider = {
   name: 'openrouter',
-  // No default model: OpenRouter hosts many and the right one is your choice.
-  notConfigured: (env) => need(env.OPENROUTER_API_KEY, 'OPENROUTER_API_KEY') ?? need(env.OPENROUTER_MODEL, 'OPENROUTER_MODEL'),
-  call: (req, env, f) => chatCompletions('OpenRouter', 'https://openrouter.ai/api/v1/chat/completions', env.OPENROUTER_API_KEY as string, env.OPENROUTER_MODEL as string, {}, req, f),
+  // Default is OpenRouter's Auto Router, which picks a model per prompt. Set OPENROUTER_MODEL to pin one (e.g. "provider/model-name" from openrouter.ai/models).
+  notConfigured: (env) => need(env.OPENROUTER_API_KEY, 'OPENROUTER_API_KEY'),
+  call: (req, env, f) => chatCompletions('OpenRouter', 'https://openrouter.ai/api/v1/chat/completions', env.OPENROUTER_API_KEY as string, env.OPENROUTER_MODEL || 'openrouter/auto', {}, req, f),
 };
 
 export const mistral: LlmProvider = {
