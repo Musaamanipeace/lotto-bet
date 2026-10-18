@@ -166,7 +166,7 @@ export async function fetchMetric(
     if (!p.supports(req.metric)) continue;
     const r = await p.fetchMetric(req);
     if (!r.ok) return r;
-    if (r.value.value !== null) return ok({ value: r.value.value, provider: p.name });
+    if (r.value !== null) return ok({ value: r.value, provider: p.name });
   }
   return ok({ value: null });
 }
