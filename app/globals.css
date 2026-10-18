@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html { color-scheme: dark; }
+body { @apply bg-navy-950 text-slate-200 font-sans antialiased; }
+
+@layer components {
+  .glass { @apply rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-md; }
+  .field { @apply w-full rounded-lg border border-white/10 bg-navy-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none; }
+  .btn { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40; }
+  .btn-gold { @apply btn bg-gold-400 text-navy-950 hover:bg-gold-300; }
+  .btn-emerald { @apply btn bg-emerald-500 text-navy-950 hover:bg-emerald-400; }
+  .btn-ghost { @apply btn border border-white/15 text-slate-200 hover:bg-white/10; }
+  .odds { @apply font-display font-bold tabular-nums text-gold-400; }
+}
+
+/* Landing backdrop: plain dark, faint dot grid, soft blurred colour glows. No photo layer. */
+.dotgrid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.glow { position: absolute; border-radius: 9999px; filter: blur(90px); opacity: 0.22; pointer-events: none; }
+
+/* Floating lottery-ball motifs (landing page only). */
+@keyframes floaty { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-14px) rotate(6deg); } }
+.ball {
+  position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 9999px;
+  font-family: var(--font-display); font-weight: 700; color: #060a18; opacity: 0.55; pointer-events: none;
+  box-shadow: inset -6px -8px 14px rgba(0, 0, 0, 0.28), inset 4px 4px 10px rgba(255, 255, 255, 0.35);
+  animation: floaty 7s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .ball { animation: none; } }
