@@ -5,14 +5,20 @@ import { currentUser, jsonError, requireJson } from '@/lib/session.ts';
 
 export const dynamic = 'force-dynamic';
 
-// Requires a signed-in session (stage 5). Still add rate limiting before a public deploy.
+// In production, requires a signed-in session. In development (no DATABASE_URL or NODE_ENV=development)
+// auth is optional so you can generate SportyBet share codes without Postgres/auth setup.
 export async function POST(req: Request) {
   const notJson = requireJson(req); if (notJson) return notJson;
-  try {
-    if (!(await currentUser(req))) return jsonError('Sign in to generate booking codes', 401);
-  } catch (e) {
-    return jsonError(`Could not check the session: ${e instanceof Error ? e.message : String(e)}`, 500);
+
+  const requireAuth = process.env.NODE_ENV === 'production' && !!process.env.DATABASE_URL;
+  if (requireAuth) {
+    try {
+      if (!(await currentUser(req))) return jsonError('Sign in to generate booking codes', 401);
+    } catch (e) {
+      return jsonError(`Could not check the session: ${e instanceof Error ? e.message : String(e)}`, 500);
+    }
   }
+
   let body: unknown;
   try { body = await req.json(); } catch { return Response.json({ ok: false, error: 'Request body is not valid JSON', details: {} }, { status: 400 }); }
   const { destination, legs } = (body ?? {}) as { destination?: string; legs?: unknown };
