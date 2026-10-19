@@ -1,17 +1,16 @@
 import { prepareBetPawaScript } from '@/lib/codegen/betpawa.ts';
 import { generateCode, parseLegs, type Destination } from '@/lib/codegen/index.ts';
+import { codegenRequiresSignIn } from '@/lib/codegen-access.ts';
 import { generateSportyBetCode } from '@/lib/codegen/sportybet.ts';
 import { currentUser, jsonError, requireJson } from '@/lib/session.ts';
 
 export const dynamic = 'force-dynamic';
 
-// In production, requires a signed-in session. In development (no DATABASE_URL or NODE_ENV=development)
-// auth is optional so you can generate SportyBet share codes without Postgres/auth setup.
+// Requires a signed-in session only in production with a database (see codegen-access.ts). Otherwise guests may generate codes.
 export async function POST(req: Request) {
   const notJson = requireJson(req); if (notJson) return notJson;
 
-  const requireAuth = process.env.NODE_ENV === 'production' && !!process.env.DATABASE_URL;
-  if (requireAuth) {
+  if (codegenRequiresSignIn()) {
     try {
       if (!(await currentUser(req))) return jsonError('Sign in to generate booking codes', 401);
     } catch (e) {

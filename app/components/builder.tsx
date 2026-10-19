@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MarketSelector, PickRow } from '@/lib/filters.ts';
+import { aiPickToRow } from '@/lib/ai-rows.ts';
+import type { AiPick } from '@/lib/ai-picks.ts';
 import { GOAL_LINES_FALLBACK, cardsToRules, defaultCards } from '@/lib/market-cards.ts';
 import { randomPicks } from '@/lib/random-picks.ts';
 import {
@@ -125,31 +127,11 @@ export function Builder({ heading }: { heading?: string }) {
         return;
       }
       const inSlipIds = new Set(slip.legs.map((l) => l.gameId));
-      const aiRows = (j.picks as Array<{
-        gameId: string; bookmaker: string; home: string; away: string; kickoff: number; league: string | null;
-        odds: number; marketNativeId: string; outcomeNativeId: string; specifier: string; marketKey: string;
-        impliedProbability: number;
-      }>)
+      const aiRows = (j.picks as AiPick[])
         .filter((p) => p.bookmaker === bookmaker && !inSlipIds.has(p.gameId))
-        .slice(0, n)
-        .map((p) => ({
-          gameId: p.gameId,
-          nativeEventId: p.gameId.split(':')[1] ?? p.gameId,
-          bookmaker: p.bookmaker as 'sportybet' | 'betpawa',
-          home: p.home,
-          away: p.away,
-          kickoff: p.kickoff,
-          league: p.league,
-          pick: p.marketKey.replace(/_/g, ' '),
-          odds: p.odds,
-          marketNativeId: p.marketNativeId,
-          outcomeNativeId: p.outcomeNativeId,
-          specifier: p.specifier,
-          marketKind: '1x2' as const,
-          line: null as number | null,
-          outcomeKey: null,
-          implied: p.impliedProbability,
-        }));
+        .map(aiPickToRow)
+        .filter((row): row is PickRow => row !== null)
+        .slice(0, n);
       if (aiRows.length === 0) {
         setNotice({ tone: 'warn', text: 'No AI picks match your filters. Try widening filters or regenerating AI after a games refresh.' });
         return;

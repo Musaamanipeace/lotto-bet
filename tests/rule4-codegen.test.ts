@@ -38,7 +38,7 @@ test('SportyBet: one POST, exact body shape, deep link', async () => {
   assert.equal(s.calls[0].url, 'https://www.sportybet.com/api/ke/orders/share');
   assert.equal(s.calls[0].init.method, 'POST');
   assert.deepEqual(JSON.parse(s.calls[0].init.body as string), { selections: [
-    { eventId: 'sr:match:1', marketId: '1', outcomeId: '1', specifier: '' },
+    { eventId: 'sr:match:1', marketId: '1', outcomeId: '1', specifier: null }, // no specifier is sent as null, like the original app
     { eventId: 'sr:match:1', marketId: '18', outcomeId: '12', specifier: 'total=2.5' },
   ] });
   const h = s.calls[0].init.headers as Record<string, string>;
@@ -50,7 +50,7 @@ test('SportyBet: non-10000 bizCode fails visibly after exactly one attempt (no a
   const r = await generateSportyBetCode([homeWin], s.impl);
   assert.equal(s.calls.length, 1);
   assert.equal(r.ok, false);
-  if (!r.ok) { assert.match(r.error, /11000/); assert.match(r.error, /odds changed/); }
+  if (!r.ok) { assert.match(r.error, /11000/); assert.match(r.error, /odds changed/); assert.match(r.details.bodySnippet ?? '', /odds changed/); }
 });
 
 test('SportyBet: betPawa-sourced legs are rejected without any request', async () => {

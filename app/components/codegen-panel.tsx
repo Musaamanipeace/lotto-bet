@@ -15,7 +15,7 @@ type Outcome =
 const NAME: Record<Destination, string> = { sportybet: 'SportyBet', betpawa: 'betPawa' };
 
 export function CodegenPanel({ legs, sourceBookmaker }: { legs: PickRow[]; sourceBookmaker: string | null }) {
-  const { user, loading, openAuth } = useAuth();
+  const { user, loading, openAuth, codegenRequiresSignIn } = useAuth();
   const [destination, setDestination] = useState<Destination>('sportybet');
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -41,7 +41,7 @@ export function CodegenPanel({ legs, sourceBookmaker }: { legs: PickRow[]; sourc
   }
 
   if (loading) return null;
-  if (!user) {
+  if (!user && codegenRequiresSignIn) {
     return (
       <div className="glass p-4 text-sm">
         <p className="font-semibold text-white">Booking codes</p>

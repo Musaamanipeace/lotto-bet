@@ -9,6 +9,8 @@ import type { Bookmaker, MarketKind } from '@/lib/types.ts';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+const KICKOFF_BUFFER_MS = 2 * 60 * 1000;
+
 const num = (v: string | null) => (v === null || v === '' || Number.isNaN(Number(v)) ? undefined : Number(v));
 
 /**
@@ -46,9 +48,12 @@ export async function GET(req: Request) {
     const r = await readGames(getStore(), (b as Bookmaker | null) ?? undefined);
     if (!r.ok) return Response.json(r, { status: r.details.httpStatus ?? 502 });
     const kind = q.get('market') as MarketKind | null;
+    // Never offer games that have started or are about to: the stored snapshot can be hours old, and the original
+    // app only listed games kicking off at least 2 minutes from now. SportyBet refuses to share a slip with a started game.
+    const earliest = Date.now() + KICKOFF_BUFFER_MS;
     const filter: Filter = {
       leagues: q.get('leagues')?.split(',').filter(Boolean),
-      dateFrom: num(q.get('dateFrom')), dateTo: num(q.get('dateTo')),
+      dateFrom: Math.max(num(q.get('dateFrom')) ?? 0, earliest), dateTo: num(q.get('dateTo')),
       oddsMin: num(q.get('oddsMin')), oddsMax: num(q.get('oddsMax')),
       market: kind ? { kind, line: num(q.get('line')) } : undefined,
       rules,

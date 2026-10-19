@@ -8,6 +8,8 @@ type Ctx = {
   loading: boolean;
   /** Set when the session check itself failed (e.g. database unreachable). Not the same as "signed out". */
   sessionError: string | null;
+  /** False when this deployment lets guests generate booking codes (no database, or not production). */
+  codegenRequiresSignIn: boolean;
   authOpen: AuthMode | null;
   openAuth: (mode: AuthMode) => void;
   closeAuth: () => void;
@@ -26,6 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [codegenRequiresSignIn, setCodegenRequiresSignIn] = useState(true);
   const [authOpen, setAuthOpen] = useState<AuthMode | null>(null);
 
   useEffect(() => {
@@ -34,7 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then(async (r) => {
         const j = await r.json().catch(() => null);
         if (!live) return;
-        if (j && j.ok) setUser(j.user);
+        if (j && j.ok) { setUser(j.user); setCodegenRequiresSignIn(j.codegenRequiresSignIn !== false); }
         else setSessionError(j?.error ?? `Session check failed (HTTP ${r.status})`);
       })
       .catch((e) => live && setSessionError(`Session check failed: ${e instanceof Error ? e.message : String(e)}`))
@@ -52,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ user, loading, sessionError, authOpen, openAuth: setAuthOpen, closeAuth: () => setAuthOpen(null), setUser, logout }}>
+    <AuthCtx.Provider value={{ user, loading, sessionError, codegenRequiresSignIn, authOpen, openAuth: setAuthOpen, closeAuth: () => setAuthOpen(null), setUser, logout }}>
       {children}
     </AuthCtx.Provider>
   );

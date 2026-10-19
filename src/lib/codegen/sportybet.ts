@@ -17,7 +17,9 @@ export async function generateSportyBetCode(legs: PickRow[], fetchImpl: FetchImp
   if (foreign.length > 0) {
     return fail(`${foreign.length} leg(s) are not SportyBet picks, so a SportyBet code cannot be generated: ${foreign.map((l) => `${l.home} v ${l.away}`).join('; ')}`, { bookmaker: 'sportybet' });
   }
-  const body = { selections: legs.map((l) => ({ eventId: l.nativeEventId, marketId: l.marketNativeId, outcomeId: l.outcomeNativeId, specifier: l.specifier })) };
+  // A market without a specifier is stored as '' (see parseSportyMarket). The original app, which is known to
+  // have produced codes, sent null in that case (`specifier: s.specifier ?? null`), so we do the same.
+  const body = { selections: legs.map((l) => ({ eventId: l.nativeEventId, marketId: l.marketNativeId, outcomeId: l.outcomeNativeId, specifier: l.specifier === '' ? null : l.specifier })) };
   const url = `${SPORTYBET_BASE}/api/ke/orders/share`;
   const res = await fetchJsonOnce(
     fetchImpl, url,
@@ -29,6 +31,8 @@ export async function generateSportyBetCode(legs: PickRow[], fetchImpl: FetchImp
   if (!isRec(b) || b.bizCode !== 10000) {
     return fail(`SportyBet bizCode ${isRec(b) ? String(b.bizCode) : '?'}: ${isRec(b) ? String(b.message ?? 'no message') : 'unexpected response body'}`, {
       bookmaker: 'sportybet', url, bizCode: isRec(b) ? (b.bizCode as number | string) : undefined,
+      // SportyBet's own words, so a rejected slip can be diagnosed instead of guessed at.
+      bodySnippet: JSON.stringify(b).slice(0, 300),
     });
   }
   const code = isRec(b.data) ? b.data.shareCode : undefined;
