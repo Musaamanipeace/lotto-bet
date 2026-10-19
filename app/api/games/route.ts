@@ -1,4 +1,4 @@
-import { candidateRows, deriveFilterOptions, type Filter } from '@/lib/filters.ts';
+import { candidateRows, deriveFilterOptions, parseRules, type Filter } from '@/lib/filters.ts';
 import { getStore } from '@/lib/server.ts';
 import { readGames } from '@/lib/read-games.ts';
 import { runPipeline } from '@/lib/pipeline.ts';
@@ -35,6 +35,11 @@ export async function GET(req: Request) {
   if (b !== null && b !== 'sportybet' && b !== 'betpawa') {
     return Response.json({ ok: false, error: `Unknown bookmaker "${b}"`, details: {} }, { status: 400 });
   }
+  const rulesParam = q.get('rules');
+  const rules = rulesParam === null ? undefined : parseRules(rulesParam);
+  if (rules === null) {
+    return Response.json({ ok: false, error: 'The "rules" parameter is not valid market-filter JSON.', details: {} }, { status: 400 });
+  }
   try {
     // Auto-bootstrap on first request so SportyBet games appear without a prior cron/refresh.
     await ensureData();
@@ -46,6 +51,7 @@ export async function GET(req: Request) {
       dateFrom: num(q.get('dateFrom')), dateTo: num(q.get('dateTo')),
       oddsMin: num(q.get('oddsMin')), oddsMax: num(q.get('oddsMax')),
       market: kind ? { kind, line: num(q.get('line')) } : undefined,
+      rules,
     };
     const rows = candidateRows(r.games, filter);
     return Response.json({

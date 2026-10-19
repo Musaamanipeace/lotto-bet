@@ -6,12 +6,82 @@ export const FT_LINE_MIN = 0.5;
 export const FT_LINE_MAX = 5.5;
 
 export type MarketSelector = { kind: MarketKind; line?: number };
+
+/**
+ * One market card from the filter UI. A row passes a rule when it is the same market kind, its
+ * submarket is among `subs` (omitted = any, including unlabelled outcomes), its line is among `lines`
+ * (over/under only; omitted = any) and its odds sit inside the optional range.
+ * Submarkets: 1x2 -> home|draw|away, double_chance -> 1X|12|X2, over_under -> over|under, btts -> yes|no.
+ */
+export type PickRule = { kind: MarketKind; subs?: string[]; lines?: number[]; oddsMin?: number; oddsMax?: number };
+
+export const DOUBLE_CHANCE_SUBS = ['1X', '12', 'X2'] as const;
+
+const DC_ALIASES: Record<string, string[]> = {
+  '1X': ['1x', 'x1', 'home or draw', 'home/draw', '1 or x', '1 or draw', 'home or x'],
+  '12': ['12', '21', 'home or away', 'home/away', '1 or 2', 'home or 2'],
+  X2: ['x2', '2x', 'draw or away', 'draw/away', 'x or 2', 'draw or 2', 'x or away'],
+};
+
+/**
+ * Double chance is labelled by description only (the ids were never verified, see outcomes.ts), so this is a
+ * label match that returns null for anything it does not recognise instead of guessing.
+ */
+export function doubleChanceSubOf(desc: string): string | null {
+  const d = desc.toLowerCase().replace(/\s+/g, ' ').trim();
+  for (const [sub, aliases] of Object.entries(DC_ALIASES)) if (aliases.includes(d)) return sub;
+  return null;
+}
+
+/** The submarket an outcome belongs to, or null when it cannot be identified. */
+function subOf(m: Market, o: Outcome, key: OutcomeKey | null): string | null {
+  if (m.kind === 'double_chance') return doubleChanceSubOf(o.desc);
+  return key; // 1x2: home|draw|away, btts: yes|no, over_under: over|under
+}
+
+function passesRules(rules: PickRule[], m: Market, sub: string | null, odds: number): boolean {
+  return rules.some((r) => {
+    if (r.kind !== m.kind) return false;
+    if (r.subs && (sub === null || !r.subs.includes(sub))) return false;
+    if (r.lines && (m.line === null || !r.lines.includes(m.line))) return false;
+    if (r.oddsMin !== undefined && odds < r.oddsMin) return false;
+    if (r.oddsMax !== undefined && odds > r.oddsMax) return false;
+    return true;
+  });
+}
+
+const KINDS: MarketKind[] = ['1x2', 'double_chance', 'over_under', 'btts'];
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
+
+/** Parses the `rules` query parameter. Returns null for anything malformed so the API can answer 400. */
+export function parseRules(json: string): PickRule[] | null {
+  let raw: unknown;
+  try { raw = JSON.parse(json); } catch { return null; }
+  if (!Array.isArray(raw) || raw.length > 20) return null;
+  const out: PickRule[] = [];
+  for (const r of raw) {
+    if (typeof r !== 'object' || r === null) return null;
+    const x = r as Record<string, unknown>;
+    if (!KINDS.includes(x.kind as MarketKind)) return null;
+    const rule: PickRule = { kind: x.kind as MarketKind };
+    if (x.subs !== undefined) { if (!strings(x.subs)) return null; rule.subs = x.subs; }
+    if (x.lines !== undefined) { if (!Array.isArray(x.lines) || !x.lines.every(finite)) return null; rule.lines = x.lines as number[]; }
+    if (x.oddsMin !== undefined) { if (!finite(x.oddsMin)) return null; rule.oddsMin = x.oddsMin; }
+    if (x.oddsMax !== undefined) { if (!finite(x.oddsMax)) return null; rule.oddsMax = x.oddsMax; }
+    out.push(rule);
+  }
+  return out;
+}
+
 export type Filter = {
   leagues?: string[];
   dateFrom?: number; dateTo?: number; // kickoff, epoch ms, inclusive
   oddsMin?: number; oddsMax?: number; // inclusive
   bookmaker?: Bookmaker;
   market?: MarketSelector;
+  /** Market cards: when present a row must pass at least one rule (an empty list matches nothing). */
+  rules?: PickRule[];
 };
 
 /** What a game row shows: teams, pick, odd, kickoff (rest is for adding to a slip). */
@@ -69,6 +139,7 @@ export function candidateRows(games: Game[], f: Filter = {}): PickRow[] {
         if (!o.isActive) continue;
         if (f.oddsMin !== undefined && o.odds < f.oddsMin) continue;
         if (f.oddsMax !== undefined && o.odds > f.oddsMax) continue;
+        if (f.rules && !passesRules(f.rules, m, subOf(m, o, outcomeKeyOf(g.bookmaker, m.kind!, o)), o.odds)) continue;
         out.push(row(g, m, o));
       }
     }

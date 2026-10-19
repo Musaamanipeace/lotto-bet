@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MarketSelector, PickRow } from '@/lib/filters.ts';
+import { GOAL_LINES_FALLBACK, cardsToRules, defaultCards } from '@/lib/market-cards.ts';
 import { randomPicks } from '@/lib/random-picks.ts';
 import {
   MAX_LEGS, addLeg, addMany, emptySlip, greyMarket, marketsInSlip, removeFromMarket, removeLeg, slipBookmaker, slipTotals, toggleGrey, type Slip,
@@ -10,6 +11,7 @@ import { BOOKMAKER_LABEL, type Bookmaker, type MarketKind } from '@/lib/types.ts
 import { useAuth } from './auth-context';
 import { CodegenPanel } from './codegen-panel';
 import { HealthBanner } from './health-banner';
+import { MarketFilters } from './market-filters';
 
 type GamesOk = {
   ok: true; runId: string; dataAsOf: string; count: number;
@@ -28,20 +30,14 @@ const ROW_RENDER_CAP = 300;
 
 const fmtKickoff = (ms: number) => new Date(ms).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const marketLabel = (s: MarketSelector) => `${KIND_LABEL[s.kind]}${s.line !== undefined ? ` ${s.line}` : ''}`;
-const parseMarket = (v: string): MarketSelector | undefined => {
-  if (!v) return undefined;
-  const [kind, line] = v.split(':');
-  return { kind: kind as MarketKind, ...(line !== undefined ? { line: Number(line) } : {}) };
-};
 
 export function Builder({ heading }: { heading?: string }) {
   const { user } = useAuth();
   const [bookmaker, setBookmaker] = useState<Bookmaker>('sportybet');
   const [leagues, setLeagues] = useState<string[]>([]);
   const [withinHours, setWithinHours] = useState<number | null>(null);
-  const [oddsMin, setOddsMin] = useState('');
-  const [oddsMax, setOddsMax] = useState('');
-  const [market, setMarket] = useState('');
+  const [cards, setCards] = useState(defaultCards);
+  const [options, setOptions] = useState<GamesOk['options'] | null>(null);
   const [games, setGames] = useState<GamesState>({ status: 'loading' });
   const [slip, setSlip] = useState<Slip>(emptySlip());
   const [showAvailable, setShowAvailable] = useState(true);
@@ -52,6 +48,9 @@ export function Builder({ heading }: { heading?: string }) {
   const [toolMarket, setToolMarket] = useState('');
   const reqId = useRef(0);
 
+  // The market cards become the rules the API filters by. Serialised once so the effect below only reruns on a real change.
+  const rulesKey = useMemo(() => JSON.stringify(cardsToRules(cards)), [cards]);
+
   // Live-updating pool: refetch (debounced) whenever a filter changes.
   useEffect(() => {
     const id = ++reqId.current;
@@ -61,15 +60,12 @@ export function Builder({ heading }: { heading?: string }) {
       const q = new URLSearchParams({ bookmaker });
       if (leagues.length) q.set('leagues', leagues.join(','));
       if (withinHours !== null) { q.set('dateFrom', String(Date.now())); q.set('dateTo', String(Date.now() + withinHours * 3_600_000)); }
-      if (oddsMin) q.set('oddsMin', oddsMin);
-      if (oddsMax) q.set('oddsMax', oddsMax);
-      const m = parseMarket(market);
-      if (m) { q.set('market', m.kind); if (m.line !== undefined) q.set('line', String(m.line)); }
+      q.set('rules', rulesKey);
       try {
         const r = await fetch(`/api/games?${q}`, { signal: ctrl.signal });
         const j = await r.json().catch(() => null);
         if (id !== reqId.current) return;
-        if (j && j.ok) setGames({ status: 'ok', data: j });
+        if (j && j.ok) { setGames({ status: 'ok', data: j }); setOptions(j.options); }
         else setGames({ status: 'error', error: j?.error ?? `Request failed (HTTP ${r.status})`, httpStatus: r.status, details: j?.details ?? {} });
       } catch (e) {
         if (ctrl.signal.aborted || id !== reqId.current) return;
@@ -77,10 +73,14 @@ export function Builder({ heading }: { heading?: string }) {
       }
     }, 250);
     return () => { clearTimeout(t); ctrl.abort(); };
-  }, [bookmaker, leagues, withinHours, oddsMin, oddsMax, market]);
+  }, [bookmaker, leagues, withinHours, rulesKey]);
 
   const inSlip = useMemo(() => new Set(slip.legs.map((l) => l.gameId)), [slip.legs]);
   const pool = useMemo(() => (games.status === 'ok' ? games.data.rows.filter((r) => !inSlip.has(r.gameId)) : []), [games, inSlip]);
+  const goalLines = useMemo(() => {
+    const lines = options?.markets.find((m) => m.kind === 'over_under')?.lines ?? [];
+    return lines.length ? lines : GOAL_LINES_FALLBACK;
+  }, [options]);
   const totals = slipTotals(slip);
   const activeLegs = slip.legs.filter((l) => !slip.greyed.includes(l.gameId));
   const slipMarkets = marketsInSlip(slip);
@@ -89,7 +89,7 @@ export function Builder({ heading }: { heading?: string }) {
   function chooseBookmaker(b: Bookmaker) {
     if (b === bookmaker) return;
     if (slip.legs.length > 0 && !window.confirm(`Switching to ${BOOKMAKER_LABEL[b]} clears your slip (odds are never mixed across bookmakers). Continue?`)) return;
-    setSlip(emptySlip()); setLeagues([]); setMarket(''); setNotice(null); setBookmaker(b);
+    setSlip(emptySlip()); setLeagues([]); setNotice(null); setBookmaker(b);
   }
 
   function add(row: PickRow) {
@@ -240,33 +240,19 @@ export function Builder({ heading }: { heading?: string }) {
           </span>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-xs text-slate-400">Kickoff
             <select className="field mt-1" value={withinHours ?? ''} onChange={(e) => setWithinHours(e.target.value === '' ? null : Number(e.target.value))}>
               {WITHIN.map((w) => <option key={w.label} value={w.hours ?? ''}>{w.label}</option>)}
             </select>
           </label>
-          <label className="text-xs text-slate-400">Market
-            <select className="field mt-1" value={market} onChange={(e) => setMarket(e.target.value)} disabled={games.status !== 'ok'}>
-              <option value="">All markets</option>
-              {games.status === 'ok' && games.data.options.markets.flatMap((m) =>
-                m.lines.length ? m.lines.map((l) => <option key={`${m.kind}:${l}`} value={`${m.kind}:${l}`}>{KIND_LABEL[m.kind]} {l}</option>)
-                  : [<option key={m.kind} value={m.kind}>{KIND_LABEL[m.kind]}</option>])}
-            </select>
-          </label>
-          <label className="text-xs text-slate-400">Min odds
-            <input className="field mt-1" inputMode="decimal" placeholder="e.g. 1.30" value={oddsMin} onChange={(e) => setOddsMin(e.target.value.replace(/[^0-9.]/g, ''))} />
-          </label>
-          <label className="text-xs text-slate-400">Max odds
-            <input className="field mt-1" inputMode="decimal" placeholder="e.g. 1.80" value={oddsMax} onChange={(e) => setOddsMax(e.target.value.replace(/[^0-9.]/g, ''))} />
-          </label>
           <details className="relative text-xs text-slate-400">
             <summary className="field mt-5 cursor-pointer list-none text-slate-200">Leagues{leagues.length ? ` (${leagues.length})` : ''} ▾</summary>
             <div className="glass absolute z-30 mt-1 max-h-64 w-64 overflow-auto bg-navy-900/95 p-2">
-              {games.status !== 'ok' ? <p className="p-2">Loading…</p> : games.data.options.leagues.length === 0 ? <p className="p-2">No leagues in the data.</p> : (
+              {!options ? <p className="p-2">Loading…</p> : options.leagues.length === 0 ? <p className="p-2">No leagues in the data.</p> : (
                 <>
                   <button className="mb-1 text-emerald-400 underline" onClick={() => setLeagues([])}>Clear</button>
-                  {games.data.options.leagues.map((l) => (
+                  {options.leagues.map((l) => (
                     <label key={l} className="flex items-center gap-2 px-1 py-1 text-slate-200">
                       <input type="checkbox" checked={leagues.includes(l)} onChange={() => setLeagues((cur) => (cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l]))} />{l}
                     </label>
@@ -277,6 +263,8 @@ export function Builder({ heading }: { heading?: string }) {
           </details>
         </div>
       </div>
+
+      <MarketFilters cards={cards} onChange={setCards} goalLines={goalLines} qualifying={games.status === 'ok' ? pool.length : null} />
 
       {notice && (
         <p className={`mt-3 rounded-lg border px-3 py-2 text-sm ${notice.tone === 'warn' ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`} role="status">{notice.text}</p>
