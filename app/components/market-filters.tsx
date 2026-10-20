@@ -1,16 +1,14 @@
 'use client';
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import {
-  BTTS_CHOICES, CARDS, DC_CHOICES, isSolo, resetCard, soloCard, toggleSub, clearedCards,
+  BTTS_CHOICES, CARDS, DC_CHOICES, MATCH_RESULT_CHOICES, isSolo, resetCard, soloCard, toggleSub, clearedCards,
   type CardDef, type CardId, type CardsState,
 } from '@/lib/market-cards.ts';
 
 /** Full class names on purpose: Tailwind only generates classes it can read literally in these files. */
 const ACCENT: Record<CardId, { dot: string; title: string; edge: string; chipOn: string; fill: string; handle: string }> = {
   dc:    { dot: 'bg-emerald-400', title: 'text-emerald-300', edge: 'border-emerald-400/40', chipOn: 'border-emerald-400 bg-emerald-400 text-navy-950', fill: 'bg-emerald-400/45', handle: 'border-emerald-400' },
-  home:  { dot: 'bg-cyan-400',    title: 'text-cyan-300',    edge: 'border-cyan-400/40',    chipOn: 'border-cyan-400 bg-cyan-400 text-navy-950',       fill: 'bg-cyan-400/45',    handle: 'border-cyan-400' },
-  draw:  { dot: 'bg-gold-400',    title: 'text-gold-300',    edge: 'border-gold-400/40',    chipOn: 'border-gold-400 bg-gold-400 text-navy-950',       fill: 'bg-gold-400/45',    handle: 'border-gold-400' },
-  away:  { dot: 'bg-violet-400',  title: 'text-violet-300',  edge: 'border-violet-400/40',  chipOn: 'border-violet-400 bg-violet-400 text-navy-950',   fill: 'bg-violet-400/45',  handle: 'border-violet-400' },
+  '1x2': { dot: 'bg-purple-400', title: 'text-purple-300', edge: 'border-purple-400/40', chipOn: 'border-purple-400 bg-purple-400 text-navy-950', fill: 'bg-purple-400/45', handle: 'border-purple-400' },
   over:  { dot: 'bg-sky-400',     title: 'text-sky-300',     edge: 'border-sky-400/40',     chipOn: 'border-sky-400 bg-sky-400 text-navy-950',         fill: 'bg-sky-400/45',     handle: 'border-sky-400' },
   under: { dot: 'bg-rose-400',    title: 'text-rose-300',    edge: 'border-rose-400/40',    chipOn: 'border-rose-400 bg-rose-400 text-navy-950',       fill: 'bg-rose-400/45',    handle: 'border-rose-400' },
   btts:  { dot: 'bg-orange-400',  title: 'text-orange-300',  edge: 'border-orange-400/40',  chipOn: 'border-orange-400 bg-orange-400 text-navy-950',   fill: 'bg-orange-400/45',  handle: 'border-orange-400' },
@@ -128,6 +126,13 @@ export function MarketFilters({ cards, onChange, goalLines, qualifying }: {
     if (def.id === 'dc') {
       return DC_CHOICES.map((d) => (
         <button key={d.id} type="button" aria-pressed={c.subs.includes(d.id)} title={d.note} className={`${chip(c.subs.includes(d.id), 'dc')} flex-1`} onClick={() => pick(d.id)}>
+          {d.label}<span className="ml-1 hidden text-[10px] font-normal opacity-70 xl:inline">{d.note}</span>
+        </button>
+      ));
+    }
+    if (def.id === '1x2') {
+      return MATCH_RESULT_CHOICES.map((d) => (
+        <button key={d.id} type="button" aria-pressed={c.subs.includes(d.id)} title={d.note} className={`${chip(c.subs.includes(d.id), '1x2')} flex-1`} onClick={() => pick(d.id)}>
           {d.label}<span className="ml-1 hidden text-[10px] font-normal opacity-70 xl:inline">{d.note}</span>
         </button>
       ));

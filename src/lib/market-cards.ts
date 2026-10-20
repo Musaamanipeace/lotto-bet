@@ -2,15 +2,15 @@ import { DOUBLE_CHANCE_SUBS, type PickRule } from './filters.ts';
 import type { MarketKind } from './types.ts';
 
 /** The market cards of the filter panel. Each card owns its submarket toggles and its own odds range. */
-export type CardId = 'dc' | 'home' | 'draw' | 'away' | 'over' | 'under' | 'btts';
-export const CARD_IDS: CardId[] = ['dc', 'home', 'draw', 'away', 'over', 'under', 'btts'];
+export type CardId = 'dc' | '1x2' | 'over' | 'under' | 'btts';
+export const CARD_IDS: CardId[] = ['dc', '1x2', 'over', 'under', 'btts'];
 
 export type CardState = {
   on: boolean;
   /** Odds range chosen on the slider. `high` at the track ceiling means "no upper limit". */
   low: number;
   high: number;
-  /** Toggled submarkets: DC picks, goal lines ('2.5'), or BTTS picks. Unused by single-outcome cards. */
+  /** Toggled submarkets: match-result picks (home/draw/away), DC picks (1X/12/X2), goal lines ('2.5'), or BTTS picks. */
   subs: string[];
 };
 export type CardsState = Record<CardId, CardState>;
@@ -33,15 +33,17 @@ export const DC_CHOICES = [
   { id: 'X2', label: 'X2', note: 'Draw / Away' },
 ] as const;
 
+export const MATCH_RESULT_CHOICES = [
+  { id: 'home', label: 'Win', note: 'Home (1)' },
+  { id: 'draw', label: 'Draw', note: 'Draw (X)' },
+  { id: 'away', label: 'Loss', note: 'Away (2)' },
+] as const;
+
 export const CARDS: CardDef[] = [
   { id: 'dc', title: 'Double Chance', hint: '1X, 12, X2', kind: 'double_chance', min: 1, max: 3, step: 0.01,
     defaults: { on: true, low: 1.08, high: 1.2, subs: [...DOUBLE_CHANCE_SUBS] } },
-  { id: 'home', title: 'Home Win (1)', hint: 'Match result', kind: '1x2', min: 1, max: 3, step: 0.01,
-    defaults: { on: true, low: 1.3, high: 1.5, subs: [] } },
-  { id: 'draw', title: 'Draw (X)', hint: 'Match result', kind: '1x2', min: 1.5, max: 6, step: 0.05,
-    defaults: { on: false, low: 1.5, high: 6, subs: [] } },
-  { id: 'away', title: 'Away Win (2)', hint: 'Match result', kind: '1x2', min: 1, max: 3, step: 0.01,
-    defaults: { on: true, low: 1.5, high: 1.6, subs: [] } },
+  { id: '1x2', title: 'Match Result (1X2)', hint: 'Win, Draw, Loss — pick one or more', kind: '1x2', min: 1, max: 6, step: 0.01,
+    defaults: { on: true, low: 1.3, high: 2.5, subs: ['home', 'draw', 'away'] } },
   { id: 'over', title: 'Over Goals', hint: 'Pick one or more lines', kind: 'over_under', min: 1.01, max: 3, step: 0.01,
     defaults: { on: true, low: 1.01, high: 3, subs: ['0.5'] } },
   { id: 'under', title: 'Under Goals', hint: 'Pick one or more lines', kind: 'over_under', min: 1.01, max: 3, step: 0.01,
@@ -96,9 +98,12 @@ export function cardsToRules(cards: CardsState): PickRule[] {
       ...(c.high < def.max ? { oddsMax: round2(c.high) } : {}),
     };
     switch (def.id) {
-      case 'home': rules.push({ kind: '1x2', subs: ['home'], ...range }); break;
-      case 'draw': rules.push({ kind: '1x2', subs: ['draw'], ...range }); break;
-      case 'away': rules.push({ kind: '1x2', subs: ['away'], ...range }); break;
+      case '1x2': {
+        if (c.subs.length === 0) break; // card is on but nothing picked: matches nothing
+        const all = MATCH_RESULT_CHOICES.every((m) => c.subs.includes(m.id));
+        rules.push({ kind: '1x2', ...(all ? {} : { subs: c.subs }), ...range });
+        break;
+      }
       case 'dc': {
         if (c.subs.length === 0) break; // card is on but nothing picked: matches nothing
         const all = DOUBLE_CHANCE_SUBS.every((s) => c.subs.includes(s));

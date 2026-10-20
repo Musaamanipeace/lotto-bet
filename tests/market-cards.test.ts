@@ -23,21 +23,28 @@ const game: Game = {
 };
 const picks = (rows: ReturnType<typeof candidateRows>) => rows.map((r) => r.pick).sort();
 
-test('home / draw / away cards each match only their own 1X2 outcome', () => {
-  const c = clearedCards();
-  assert.deepEqual(picks(candidateRows([game], { rules: cardsToRules({ ...c, home: { ...c.home, on: true } }) })), ['Home']);
-  assert.deepEqual(picks(candidateRows([game], { rules: cardsToRules({ ...c, draw: { ...c.draw, on: true } }) })), ['Draw']);
-  assert.deepEqual(picks(candidateRows([game], { rules: cardsToRules({ ...c, away: { ...c.away, on: true } }) })), ['Away']);
+test('1X2 card toggles Win / Draw / Loss independently', () => {
+  let c = clearedCards();
+  c = { ...c, '1x2': { ...c['1x2'], on: true } }; // all three subs on by default
+  assert.deepEqual(picks(candidateRows([game], { rules: cardsToRules(c) })), ['Away', 'Draw', 'Home']);
+  c = toggleSub(c, '1x2', 'draw');
+  assert.deepEqual(picks(candidateRows([game], { rules: cardsToRules(c) })), ['Away', 'Home']);
+  c = toggleSub(toggleSub(c, '1x2', 'home'), '1x2', 'away');
+  assert.equal(cardsToRules(c).length, 0); // card on, nothing picked: matches nothing
+  assert.equal(candidateRows([game], { rules: cardsToRules(c) }).length, 0);
 });
 
-test('each card applies its own odds range, and the slider ceiling means no upper limit', () => {
-  const c = clearedCards();
-  const home = { ...c.home, on: true, low: 1.5, high: 3 }; // 1.40 is below the minimum
-  assert.equal(candidateRows([game], { rules: cardsToRules({ ...c, home }) }).length, 0);
-  const away = { ...c.away, on: true, low: 1, high: 3 }; // 7.50 is above the track but the ceiling is open
-  assert.deepEqual(picks(candidateRows([game], { rules: cardsToRules({ ...c, away }) })), ['Away']);
-  const awayCapped = { ...c.away, on: true, low: 1, high: 2.9 };
-  assert.equal(candidateRows([game], { rules: cardsToRules({ ...c, away: awayCapped }) }).length, 0);
+test('1X2 card odds range applies across picks and the ceiling means no upper limit', () => {
+  const base = clearedCards();
+  // handle at the ceiling (high === max): no upper bound, so Away (7.50) stays
+  let c = { ...base, '1x2': { ...base['1x2'], on: true, low: 1, high: 6 } };
+  assert.deepEqual(picks(candidateRows([game], { rules: cardsToRules(c) })), ['Away', 'Draw', 'Home']);
+  // raise the floor: Home (1.40) drops out, Draw (4.20) and Away (7.50) remain
+  c = { ...base, '1x2': { ...base['1x2'], on: true, low: 1.5, high: 6 } };
+  assert.deepEqual(picks(candidateRows([game], { rules: cardsToRules(c) })), ['Away', 'Draw']);
+  // cap the ceiling: Away (7.50) is now above oddsMax 4.20 -> only Draw
+  c = { ...base, '1x2': { ...base['1x2'], on: true, low: 1.5, high: 4.2 } };
+  assert.deepEqual(picks(candidateRows([game], { rules: cardsToRules(c) })), ['Draw']);
 });
 
 test('double chance sub-toggles filter 1X / 12 / X2 independently', () => {
@@ -82,8 +89,8 @@ test('BTTS: GG, NGG, or both', () => {
 test('no card switched on shows nothing; defaults mirror the original starting filters', () => {
   assert.equal(candidateRows([game], { rules: cardsToRules(clearedCards()) }).length, 0);
   const d = defaultCards();
-  assert.deepEqual(Object.entries(d).filter(([, v]) => v.on).map(([k]) => k), ['dc', 'home', 'away', 'over', 'under', 'btts']);
-  assert.deepEqual([d.dc.low, d.dc.high, d.home.low, d.home.high, d.away.low, d.away.high], [1.08, 1.2, 1.3, 1.5, 1.5, 1.6]);
+  assert.deepEqual(Object.entries(d).filter(([, v]) => v.on).map(([k]) => k), ['dc', '1x2', 'over', 'under', 'btts']);
+  assert.deepEqual([d.dc.low, d.dc.high, d['1x2'].low, d['1x2'].high], [1.08, 1.2, 1.3, 2.5]);
 });
 
 test('solo, reset and toggling a sub-market on', () => {
@@ -95,11 +102,12 @@ test('solo, reset and toggling a sub-market on', () => {
   assert.equal(toggleSub(off, 'over', '2.5').over.on, true);
 });
 
-test('rules without an odds range leave odds unrestricted, and the old filters still combine with rules', () => {
+test('a single 1X2 sub narrows picks; a rule without an odds range leaves odds unrestricted, and a top-level band still applies', () => {
   const c = clearedCards();
-  const r = cardsToRules({ ...c, home: { ...c.home, on: true } });
-  assert.deepEqual(r, [{ kind: '1x2', subs: ['home'] }]);
-  assert.equal(candidateRows([game], { rules: r, oddsMax: 1.3 }).length, 0);
+  const r = cardsToRules({ ...c, '1x2': { ...c['1x2'], on: true, subs: ['home'] } });
+  assert.deepEqual(r, [{ kind: '1x2', subs: ['home'] }]); // no oddsMin/oddsMax in the rule
+  assert.deepEqual(picks(candidateRows([game], { rules: r })), ['Home']);
+  assert.equal(candidateRows([game], { rules: r, oddsMax: 1.3 }).length, 0); // top-level cap still works
 });
 
 test('parseRules accepts what the UI sends and rejects malformed input', () => {

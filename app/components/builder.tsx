@@ -28,7 +28,7 @@ const WITHIN: { label: string; hours: number | null }[] = [
   { label: 'Any time (next 7 days)', hours: null }, { label: 'Next 6 hours', hours: 6 }, { label: 'Next 12 hours', hours: 12 },
   { label: 'Next 24 hours', hours: 24 }, { label: 'Next 48 hours', hours: 48 }, { label: 'Next 3 days', hours: 72 },
 ];
-const ROW_RENDER_CAP = 300;
+const GAME_RENDER_CAP = 60;
 
 const fmtKickoff = (ms: number) => new Date(ms).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const marketLabel = (s: MarketSelector) => `${KIND_LABEL[s.kind]}${s.line !== undefined ? ` ${s.line}` : ''}`;
@@ -79,6 +79,15 @@ export function Builder({ heading }: { heading?: string }) {
 
   const inSlip = useMemo(() => new Set(slip.legs.map((l) => l.gameId)), [slip.legs]);
   const pool = useMemo(() => (games.status === 'ok' ? games.data.rows.filter((r) => !inSlip.has(r.gameId)) : []), [games, inSlip]);
+  const byGame = useMemo(() => {
+    if (pool.length === 0) return [];
+    const map = new Map<string, PickRow[]>();
+    for (const r of pool) {
+      const arr = map.get(r.gameId);
+      if (arr) arr.push(r); else map.set(r.gameId, [r]);
+    }
+    return [...map.values()].sort((a, b) => a[0].kickoff - b[0].kickoff);
+  }, [pool]);
   const goalLines = useMemo(() => {
     const lines = options?.markets.find((m) => m.kind === 'over_under')?.lines ?? [];
     return lines.length ? lines : GOAL_LINES_FALLBACK;
@@ -246,7 +255,7 @@ export function Builder({ heading }: { heading?: string }) {
         </div>
       </div>
 
-      <MarketFilters cards={cards} onChange={setCards} goalLines={goalLines} qualifying={games.status === 'ok' ? pool.length : null} />
+      <MarketFilters cards={cards} onChange={setCards} goalLines={goalLines} qualifying={games.status === 'ok' ? byGame.length : null} />
 
       {notice && (
         <p className={`mt-3 rounded-lg border px-3 py-2 text-sm ${notice.tone === 'warn' ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`} role="status">{notice.text}</p>
@@ -257,7 +266,7 @@ export function Builder({ heading }: { heading?: string }) {
           <div className="glass p-4">
             <div className="flex items-baseline justify-between">
               <h2 className="font-display text-lg font-bold text-white">Available Games</h2>
-              <span className="text-sm text-slate-300" aria-live="polite">{games.status === 'ok' ? `${pool.length} game${pool.length === 1 ? '' : 's'}` : '…'}</span>
+              <span className="text-sm text-slate-300" aria-live="polite">{games.status === 'ok' ? `${byGame.length} game${byGame.length === 1 ? '' : 's'}` : '…'}</span>
             </div>
             {games.status === 'ok' && <p className="text-xs text-slate-500">Data as of {new Date(games.data.dataAsOf).toLocaleString()}</p>}
 
@@ -274,21 +283,33 @@ export function Builder({ heading }: { heading?: string }) {
             )}
             {games.status === 'ok' && pool.length > 0 && (
               <>
-                <ul className="mt-3 max-h-[32rem] divide-y divide-white/5 overflow-auto">
-                  {pool.slice(0, ROW_RENDER_CAP).map((r) => (
-                    <li key={`${r.gameId}|${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`}>
-                      <button className="flex w-full items-center gap-3 px-1 py-2 text-left hover:bg-white/5" onClick={() => add(r)} aria-label={`Add ${r.home} v ${r.away}, ${r.pick} at ${r.odds.toFixed(2)}`}>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm text-white">{r.home} v {r.away}</span>
-                          <span className="block text-xs text-slate-400">{r.pick} · {fmtKickoff(r.kickoff)}</span>
-                        </span>
-                        <span className="odds text-base">{r.odds.toFixed(2)}</span>
-                        <span aria-hidden className="text-emerald-400">＋</span>
-                      </button>
-                    </li>
-                  ))}
+                <ul className="mt-3 space-y-3 max-h-[36rem] overflow-auto">
+                  {byGame.slice(0, GAME_RENDER_CAP).map((rows) => {
+                    const g = rows[0];
+                    return (
+                      <li key={g.gameId} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="block truncate text-sm font-semibold text-white">{g.home} v {g.away}</p>
+                            <p className="block text-xs text-slate-400">{g.league ?? '—'} · {fmtKickoff(g.kickoff)}</p>
+                          </div>
+                          <span className="shrink-0 text-xs text-slate-400">{rows.length} pick{rows.length === 1 ? '' : 's'}</span>
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                          {rows.map((r) => (
+                            <button key={`${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`}
+                              className="flex items-center justify-between rounded-lg border border-white/10 bg-navy-800/40 px-2 py-1.5 text-left transition hover:border-emerald-400/40 hover:bg-white/5"
+                              onClick={() => add(r)} aria-label={`Add ${r.home} v ${r.away}, ${r.pick} at ${r.odds.toFixed(2)}`}>
+                              <span className="truncate text-xs text-slate-300">{r.pick}</span>
+                              <span className="odds text-base">{r.odds.toFixed(2)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
-                {pool.length > ROW_RENDER_CAP && <p className="mt-2 text-xs text-amber-300">Showing the first {ROW_RENDER_CAP} of {pool.length}. Narrow the filters to see the rest.</p>}
+                {byGame.length > GAME_RENDER_CAP && <p className="mt-2 text-xs text-amber-300">Showing the first {GAME_RENDER_CAP} of {byGame.length} games. Narrow the filters to see the rest.</p>}
               </>
             )}
           </div>
