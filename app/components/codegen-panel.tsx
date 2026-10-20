@@ -75,9 +75,9 @@ export function CodegenPanel({ legs, sourceBookmaker }: { legs: PickRow[]; sourc
         <>
           <ErrorBox error={outcome.result.error} status={outcome.httpStatus} details={outcome.result.details} />
           {outcome.destination === 'betpawa' && (
-            <button className="btn-ghost w-full" disabled={busy} onClick={() => { setDestination('sportybet'); void generate('sportybet'); }}>
-              Generate SportyBet code instead
-            </button>
+              <button className="btn-ghost w-full" disabled={busy} onClick={() => { setDestination('sportybet'); void generate('sportybet'); }}>
+                Generate SportyBet code
+              </button>
           )}
         </>
       )}

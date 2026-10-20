@@ -1,5 +1,5 @@
 import { fail, ok, type Result } from '../result.ts';
-import { fetchJsonOnce, isRec, type FetchImpl } from '../http.ts';
+import { fetchJsonOnce, isRec, type FetchImpl, type Rec } from '../http.ts';
 import type { Game, Market, MarketKind, Outcome, Skipped } from '../types.ts';
 
 const B = 'betpawa' as const;
@@ -13,7 +13,7 @@ export const BETPAWA_BASE = 'https://www.betpawa.co.ke';
 export const BETPAWA_MARKET_KINDS: Record<string, { kind: MarketKind; note?: string }> = {
   '3743': { kind: '1x2' },
   '3795': { kind: 'btts' },
-  '5000': { kind: 'over_under', note: 'betPawa over/under line not identified from payload (awaiting live sample)' },
+  '5000': { kind: 'over_under' },
 };
 
 export const betPawaHeaders = () => ({
@@ -96,15 +96,25 @@ function parseBetPawaMarket(m: unknown, eventId: string, skipped: Skipped[]): Ma
     const outcomes: Outcome[] = [];
     let valid = true;
     for (const p of prices) {
-      const odds = isRec(p) ? Number(p.price) : NaN;
+      const odds = isRec(p) ? Number(p.odds) : NaN;
       if (!isRec(p) || p.id === undefined || !Number.isFinite(odds)) { valid = false; break; }
-      outcomes.push({ bookmaker: B, nativeId: String(p.id), desc: String(p.name ?? ''), odds, isActive: true });
+      outcomes.push({ bookmaker: B, nativeId: String(p.id), desc: String(p.name ?? ''), odds, isActive: (p as Rec).suspended !== true });
     }
-    if (!valid) { skipped.push({ ref: `${eventId}/market ${typeId}`, reason: 'price without id or numeric price' }); continue; }
+    if (!valid) { skipped.push({ ref: `${eventId}/market ${typeId}`, reason: 'price without id or numeric odds' }); continue; }
+    let line: number | null = null;
+    let lineReason: string | null = null;
+    const spec = isRec(row.specifier) ? (row.specifier as Rec) : null;
+    if (spec !== null && spec.total !== undefined) {
+      line = Number(spec.total);
+      if (!Number.isFinite(line)) { line = null; lineReason = 'over/under total is not a number'; }
+    }
+    if (known?.kind === 'over_under' && line === null) {
+      lineReason = lineReason ?? 'betPawa over/under line not identified in row specifier';
+    }
     out.push({
-      bookmaker: B, nativeId: typeId, specifier: '', line: null,
+      bookmaker: B, nativeId: typeId, specifier: '', line,
       kind: known?.kind ?? null,
-      unavailableReason: known ? known.note ?? null : `betPawa market type ${typeId} is not identified`,
+      unavailableReason: known ? lineReason ?? null : `betPawa market type ${typeId} is not identified`,
       outcomes,
     });
   }

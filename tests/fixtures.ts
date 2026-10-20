@@ -19,8 +19,8 @@ export const betpawaBody = {
     participants: [{ position: 1, name: 'Arsenal' }, { position: 2, name: 'Chelsea' }],
     competition: { name: 'Premier League' },
     markets: [
-      { marketType: { id: 3743 }, row: [{ prices: [ { id: 1001, name: '1', price: 2.2 }, { id: 1002, name: 'X', price: 3.3 }, { id: 1003, name: '2', price: 3.5 } ] }] },
-      { marketType: { id: 4242 }, row: [{ prices: [ { id: 2001, name: 'A', price: 1.5 }, { id: 2002, name: 'B', price: 2.5 } ] }] },
+      { marketType: { id: 3743 }, row: [{ prices: [ { id: 1001, name: '1', odds: 2.2 }, { id: 1002, name: 'X', odds: 3.3 }, { id: 1003, name: '2', odds: 3.5 } ] }] },
+      { marketType: { id: 4242 }, row: [{ prices: [ { id: 2001, name: 'A', odds: 1.5 }, { id: 2002, name: 'B', odds: 2.5 } ] }] },
     ],
   }] }],
 };

@@ -16,6 +16,7 @@ const SPORTY_BY_ID: Partial<Record<MarketKind, Record<string, OutcomeKey>>> = {
 export const BETPAWA_BY_NAME: Partial<Record<MarketKind, Record<string, OutcomeKey>>> = {
   '1x2': { '1': 'home', x: 'draw', '2': 'away' },
   btts: { yes: 'yes', no: 'no' },
+  over_under: { over: 'over', under: 'under' },
 };
 
 /**
