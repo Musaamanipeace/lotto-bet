@@ -1,7 +1,7 @@
 'use client';
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import {
-  BTTS_CHOICES, CARDS, DC_CHOICES, MATCH_RESULT_CHOICES, isSolo, resetCard, soloCard, toggleSub, clearedCards,
+  BTTS_CHOICES, CARDS, DC_CHOICES, MATCH_RESULT_CHOICES, allAvailableCards, isSolo, resetCard, soloCard, toggleSub,
   type CardDef, type CardId, type CardsState,
 } from '@/lib/market-cards.ts';
 
@@ -163,7 +163,7 @@ export function MarketFilters({ cards, onChange, goalLines, qualifying }: {
           </h2>
           <p className="text-xs text-slate-400">Switch a market on, choose its submarkets, then set the odds range it must fall in.</p>
         </div>
-        <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={() => onChange(clearedCards())} title="Switch every market off and open every odds range">↺ Reset all</button>
+        <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={() => onChange(allAvailableCards(goalLines))} title="Turn every market on with all submarkets selected and full odds ranges">↺ All available</button>
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">

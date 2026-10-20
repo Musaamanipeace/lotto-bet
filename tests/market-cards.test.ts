@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { candidateRows, doubleChanceSubOf, parseRules } from '../src/lib/filters.ts';
 import {
-  cardsToRules, clearedCards, defaultCards, isSolo, resetCard, soloCard, toggleSub,
+  GOAL_LINES_FALLBACK, allAvailableCards, cardsToRules, clearedCards, defaultCards, isSolo, resetCard, soloCard, toggleSub,
 } from '../src/lib/market-cards.ts';
 import type { Game, Market, Outcome } from '../src/lib/types.ts';
 
@@ -119,4 +119,18 @@ test('parseRules accepts what the UI sends and rejects malformed input', () => {
   assert.equal(parseRules('[{"kind":"corners"}]'), null);
   assert.equal(parseRules('[{"kind":"btts","oddsMin":"1.2"}]'), null);
   assert.equal(parseRules('[{"kind":"over_under","lines":["2.5"]}]'), null);
+});
+
+test('"All available" turns every card on with every sub and full ranges; cleared turns them off', () => {
+  const g = GOAL_LINES_FALLBACK;
+  const all = allAvailableCards(g);
+  assert.ok(Object.values(all).every((c) => c.on), 'every card is on');
+  assert.deepEqual([all.dc.low, all.dc.high], [1, 3]);
+  assert.deepEqual([all['1x2'].low, all['1x2'].high], [1, 6]);
+  assert.deepEqual(all['1x2'].subs, ['home', 'draw', 'away']);
+  assert.deepEqual(all['over'].subs, g.map(String));
+  assert.deepEqual(all['under'].subs, g.map(String));
+  assert.deepEqual(all['btts'].subs, ['GG', 'NGG']);
+  const none = clearedCards();
+  assert.ok(Object.values(none).every((c) => !c.on), 'every card is off');
 });

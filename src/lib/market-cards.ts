@@ -65,6 +65,21 @@ export function clearedCards(): CardsState {
   return Object.fromEntries(CARDS.map((c) => [c.id, { ...copy(c.defaults), on: false, low: c.min, high: c.max }])) as CardsState;
 }
 
+/** "All on": every card on, every submarket selected, every odds range fully open — the widest possible pool. */
+export function allAvailableCards(goalLines: number[] = []): CardsState {
+  const lines = goalLines.length ? goalLines : GOAL_LINES_FALLBACK;
+  const subsFor = (id: CardId): string[] => {
+    switch (id) {
+      case 'dc': return [...DOUBLE_CHANCE_SUBS];
+      case '1x2': return MATCH_RESULT_CHOICES.map((m) => m.id);
+      case 'over':
+      case 'under': return lines.map(String);
+      case 'btts': return BTTS_CHOICES.map((b) => b.id);
+    }
+  };
+  return Object.fromEntries(CARDS.map((c) => [c.id, { on: true, low: c.min, high: c.max, subs: subsFor(c.id) }])) as CardsState;
+}
+
 /** "Solo": this card on, every other card off. Ranges and toggles are left as they are. */
 export function soloCard(cards: CardsState, id: CardId): CardsState {
   return Object.fromEntries(CARD_IDS.map((k) => [k, { ...cards[k], on: k === id }])) as CardsState;
