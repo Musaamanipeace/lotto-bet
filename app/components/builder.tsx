@@ -33,6 +33,52 @@ const GAME_RENDER_CAP = 60;
 const fmtKickoff = (ms: number) => new Date(ms).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const marketLabel = (s: MarketSelector) => `${KIND_LABEL[s.kind]}${s.line !== undefined ? ` ${s.line}` : ''}`;
 
+type MarketGroup = { label: string; rows: PickRow[] };
+
+/** Bucket a game's qualifying rows into markets. One group per (kind, line, specifier). */
+function groupByMarket(rows: PickRow[]): MarketGroup[] {
+  const order: string[] = [];
+  const map = new Map<string, PickRow[]>();
+  for (const r of rows) {
+    const key = `${r.marketKind}|${r.line ?? ''}|${r.specifier}`;
+    const arr = map.get(key);
+    if (arr) arr.push(r); else { map.set(key, [r]); order.push(key); }
+  }
+  return order.map((k) => {
+    const rs = map.get(k)!;
+    const head = rs[0];
+    return { label: `${KIND_LABEL[head.marketKind]}${head.line != null ? ` ${head.line}` : ''}`, rows: rs };
+  });
+}
+
+/** One market group inside a game card: a single qualifying pick renders as a button, multiple render as a dropdown. */
+function MarketPickRow({ group, onAdd }: { group: MarketGroup; onAdd: (row: PickRow) => void }) {
+  const { label, rows } = group;
+  const [sel, setSel] = useState(0);
+  const pick = rows[sel];
+  if (rows.length === 1) {
+    return (
+      <button className="flex items-center justify-between rounded-lg border border-white/10 bg-navy-800/40 px-2 py-1.5 text-left text-xs transition hover:border-emerald-400/40 hover:bg-white/5"
+        onClick={() => onAdd(pick)} aria-label={`Add ${label}: ${pick.pick} at ${pick.odds.toFixed(2)}`}>
+        <span className="truncate text-slate-300">{label}: {pick.pick}</span>
+        <span className="odds text-sm">{pick.odds.toFixed(2)}</span>
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <select className="field flex-1 text-xs" value={String(sel)} onChange={(e) => setSel(Number(e.target.value))}>
+        {rows.map((r, i) => (
+          <option key={`${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`} value={i}>{r.pick} — {r.odds.toFixed(2)}</option>
+        ))}
+      </select>
+      <button className="btn-ghost flex h-7 items-center justify-center px-2 text-xs" onClick={() => onAdd(pick)} aria-label={`Add ${label}: ${pick.pick} at ${pick.odds.toFixed(2)}`}>
+        ＋
+      </button>
+    </div>
+  );
+}
+
 export function Builder({ heading }: { heading?: string }) {
   const { user } = useAuth();
   const [bookmaker, setBookmaker] = useState<Bookmaker>('sportybet');
@@ -295,14 +341,9 @@ export function Builder({ heading }: { heading?: string }) {
                           </div>
                           <span className="shrink-0 text-xs text-slate-400">{rows.length} pick{rows.length === 1 ? '' : 's'}</span>
                         </div>
-                        <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                          {rows.map((r) => (
-                            <button key={`${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`}
-                              className="flex items-center justify-between rounded-lg border border-white/10 bg-navy-800/40 px-2 py-1.5 text-left transition hover:border-emerald-400/40 hover:bg-white/5"
-                              onClick={() => add(r)} aria-label={`Add ${r.home} v ${r.away}, ${r.pick} at ${r.odds.toFixed(2)}`}>
-                              <span className="truncate text-xs text-slate-300">{r.pick}</span>
-                              <span className="odds text-base">{r.odds.toFixed(2)}</span>
-                            </button>
+                        <div className="mt-2 space-y-1.5">
+                          {groupByMarket(rows).map((grp) => (
+                            <MarketPickRow key={`${grp.rows[0].marketNativeId}|${grp.rows[0].specifier}`} group={grp} onAdd={add} />
                           ))}
                         </div>
                       </li>
