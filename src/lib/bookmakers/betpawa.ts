@@ -25,22 +25,55 @@ export const betPawaHeaders = () => ({
 
 export type BetPawaFetchOptions = { take?: number; marketTypes?: string[]; fetchRunId?: string };
 
-export async function fetchBetPawaGames(
-  opts: BetPawaFetchOptions = {},
-  fetchImpl: FetchImpl = fetch,
-): Promise<Result<{ games: Game[]; skipped: Skipped[] }>> {
+export const BETPAWA_MAX_TAKE = 100;
+/** Safety valve so a misbehaving upstream can never make us loop forever. */
+const BETPAWA_MAX_PAGES = 10;
+
+async function fetchBetPawaPage(skip: number, take: number, marketTypes: string[], fetchImpl: FetchImpl) {
   const query = {
     queries: [{
       query: { eventType: 'UPCOMING', categories: ['2'] },
       sort: { popularity: 'DESC' },
-      take: opts.take ?? 100,
-      view: { marketTypes: opts.marketTypes ?? Object.keys(BETPAWA_MARKET_KINDS) },
+      skip,
+      take,
+      view: { marketTypes },
     }],
   };
   const url = `${BETPAWA_BASE}/api/sportsbook/v4/events/lists/by-queries?q=${encodeURIComponent(JSON.stringify(query))}`;
-  const res = await fetchJsonOnce(fetchImpl, url, { method: 'GET', headers: betPawaHeaders() }, { name: 'betPawa', bookmaker: B });
-  if (!res.ok) return res;
-  return parseBetPawaResponse(res.body, opts.fetchRunId);
+  return fetchJsonOnce(fetchImpl, url, { method: 'GET', headers: betPawaHeaders() }, { name: 'betPawa', bookmaker: B });
+}
+
+/** Number of raw events in a response page (before the parser drops malformed ones). */
+function rawEventCount(body: unknown): number {
+  if (!isRec(body) || !Array.isArray(body.responses)) return 0;
+  return body.responses.reduce<number>((n, g) => n + (isRec(g) && Array.isArray(g.responses) ? g.responses.length : 0), 0);
+}
+
+/**
+ * Fetches up to `opts.take` events (default 100). Never sends take > 100: larger requests are
+ * split into pages using `skip` (the only paging parameter betPawa honours), stopping at the first short page.
+ */
+export async function fetchBetPawaGames(
+  opts: BetPawaFetchOptions = {},
+  fetchImpl: FetchImpl = fetch,
+): Promise<Result<{ games: Game[]; skipped: Skipped[] }>> {
+  const want = Math.max(1, opts.take ?? BETPAWA_MAX_TAKE);
+  const marketTypes = opts.marketTypes ?? Object.keys(BETPAWA_MARKET_KINDS);
+  const games: Game[] = [];
+  const skipped: Skipped[] = [];
+  const seen = new Set<string>();
+
+  for (let page = 0, skip = 0; skip < want && page < BETPAWA_MAX_PAGES; page++, skip += BETPAWA_MAX_TAKE) {
+    const pageSize = Math.min(BETPAWA_MAX_TAKE, want - skip);
+    const res = await fetchBetPawaPage(skip, pageSize, marketTypes, fetchImpl);
+    if (!res.ok) return res;
+    const parsed = parseBetPawaResponse(res.body, opts.fetchRunId);
+    if (!parsed.ok) return parsed;
+    for (const g of parsed.games) if (!seen.has(g.id)) { seen.add(g.id); games.push(g); }
+    skipped.push(...parsed.skipped);
+    if (rawEventCount(res.body) < pageSize) break; // short page = last page
+  }
+  return ok({ games, skipped });
 }
 
 /**

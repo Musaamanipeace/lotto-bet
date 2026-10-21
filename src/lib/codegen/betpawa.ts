@@ -1,3 +1,4 @@
+import { betPawaBrowserEnabled, createBetPawaCodeInBrowser, type BrowserCodeResult } from './betpawa-browser.ts';
 import { fetchBetPawaGames } from '../bookmakers/betpawa.ts';
 import { MATCHING } from '../criteria.ts';
 import type { PickRow } from '../filters.ts';
@@ -9,7 +10,7 @@ import type { Game } from '../types.ts';
 
 export type BetPawaBody = { selections: { type: 'SINGLE'; selections: number[] }[] };
 export type BetPawaScriptResult =
-  | { ok: true; destination: 'betpawa'; mapped: number; total: number; unmapped: { leg: string; reason: string }[]; body: BetPawaBody; script: string }
+  | { ok: true; destination: 'betpawa'; mapped: number; total: number; unmapped: { leg: string; reason: string }[]; body: BetPawaBody; script: string; code?: string; browserError?: string }
   | Failure;
 
 export const BETPAWA_STEPS = [
@@ -75,14 +76,26 @@ export function mapLegsToBetPawa(legs: PickRow[], fresh: Game[], threshold: numb
 }
 
 /** Fetches fresh betPawa events NOW (price ids expire), maps legs, builds the script. GET only. */
-export async function prepareBetPawaScript(legs: PickRow[], fetchImpl: FetchImpl = fetch): Promise<BetPawaScriptResult> {
+export async function prepareBetPawaScript(
+  legs: PickRow[],
+  fetchImpl: FetchImpl = fetch,
+  browser: { enabled: () => boolean; create: (b: BetPawaBody) => Promise<BrowserCodeResult> } = { enabled: betPawaBrowserEnabled, create: createBetPawaCodeInBrowser },
+): Promise<BetPawaScriptResult> {
   if (legs.length === 0) return fail('Cannot generate a betPawa script for an empty slip', { bookmaker: 'betpawa' });
-  const events = await fetchBetPawaGames({ take: 300 }, fetchImpl);
+  const events = await fetchBetPawaGames({ take: 300 }, fetchImpl) // paged internally; a single request never exceeds take=100;
   if (!events.ok) return fail(`Failed to fetch fresh betPawa events: ${events.error}`, { ...events.details, bookmaker: 'betpawa' });
   const { priceIds, unmapped } = mapLegsToBetPawa(legs, events.games);
   if (priceIds.length === 0) {
     return fail(`0/${legs.length} legs mapped to betPawa; no script generated`, { bookmaker: 'betpawa', unmapped });
   }
   const body: BetPawaBody = { selections: priceIds.map((id) => ({ type: 'SINGLE' as const, selections: [id] })) };
-  return { ok: true, destination: 'betpawa', mapped: priceIds.length, total: legs.length, unmapped, body, script: buildBetPawaConsoleSnippet(body) };
+  const result: Extract<BetPawaScriptResult, { ok: true }> = {
+    ok: true, destination: 'betpawa', mapped: priceIds.length, total: legs.length, unmapped, body, script: buildBetPawaConsoleSnippet(body),
+  };
+  // Optional server-side browser path. The console script is ALWAYS returned as the fallback.
+  if (browser.enabled()) {
+    const r = await browser.create(body);
+    if (r.ok) result.code = r.code; else result.browserError = r.error;
+  }
+  return result;
 }

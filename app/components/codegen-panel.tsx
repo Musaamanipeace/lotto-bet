@@ -129,6 +129,14 @@ function BetPawaResult({ r, copied, onCopy }: { r: Extract<BetPawaScriptResult, 
   return (
     <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
       <p className="font-semibold text-emerald-300">{r.mapped}/{r.total} legs mapped</p>
+      {r.code && (
+        <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-2">
+          <p className="text-xs text-emerald-300">betPawa code</p>
+          <p className="my-1 font-display text-2xl font-bold tracking-wider text-white">{r.code}</p>
+          <button className="btn-ghost" onClick={() => onCopy(r.code as string)}>Copy code</button>
+        </div>
+      )}
+      {r.browserError && <p className="text-xs text-amber-300">Automatic code creation failed ({r.browserError}). Use the console script below.</p>}
       {r.unmapped.length > 0 && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-amber-200">
           <p className="text-xs font-semibold">Not included in the script:</p>

@@ -48,6 +48,23 @@ See `.env.example` for `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`
 - Bookmakers are isolated: one failing never blocks the other.
 - Pipeline stores a run + games; `/api/games` reads the latest finished run (or auto-runs one if none exists).
 
+### betPawa booking codes
+
+**Paging rule.** betPawa rejects any single request with `take > 100` (HTTP 400 "The maximum number of events is 100"). `fetchBetPawaGames` never sends more than `BETPAWA_MAX_TAKE` (100); larger requests are split across pages using `skip` (the only paging parameter betPawa honours), stopping at the first short page. Raw event count — not parsed game count — is the stop signal.
+
+**Why the server must not POST `/api/sportsbook/v3/booking-number` directly.** betPawa rejects server-origin booking requests (separate 400). Booking codes are created either (a) by the user running a console script pasted into the browser (always generated and returned as the guaranteed fallback), or (b) optionally by a real headless-browser session on `betpawa.co.ke` so origin and cookies are the site's own.
+
+**Optional headless-browser path** (`src/lib/codegen/betpawa-browser.ts`). Free open-source Playwright + Chromium — no paid browser service. Two modes:
+
+- **In-process** — set `BETPAWA_BROWSER=1` (requires a long-running Node host with Chromium installed).
+- **Worker mode** — set `BETPAWA_BROWSER_WORKER_URL` + `BETPAWA_WORKER_SECRET` to POST the booking body to your own worker service (deploy `worker/betpawa-worker.mjs` on Fly.io, Railway, Render, or a VPS; Vercel serverless functions are a poor fit for Chromium). The worker validates the booking body and requires a bearer secret. Concurrency is capped at 2.
+
+If the browser path fails, `browserError` is attached and the console-script fallback is still returned.
+
+**Test one real booking from the worker host first** — if betPawa blocks that host, the console-script fallback still works.
+
+> Price IDs expire. Generate and post in the same request; if the script fails or time has passed, regenerate it instead of reusing it.
+
 ## Requirements
 
 - Node.js **>= 18**
