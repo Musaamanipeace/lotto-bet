@@ -172,7 +172,27 @@ function SlipCard({ slip, title }: { slip: Slip; title?: string }) {
   );
 }
 
+type TierResult = { slip: Slip | null; achieved: number; gap: number; message: string | null };
+type TargetData = { target: number; lower: TierResult; average: TierResult; higher: TierResult };
+
+const TARGET_TIER_LABEL = {
+  lower: 'Lower risk (Safe picks only)',
+  average: 'Average (Safe + Balanced)',
+  higher: 'Higher risk (all tiers)',
+} as const;
+
 type Tab = 'market' | 'n' | 'target' | '25plus';
+
+const parseN = (t: string): number | null => {
+  const v = Number(t);
+  return t.trim() !== '' && Number.isInteger(v) && v >= 1 && v <= 50 ? v : null;
+};
+const parseTarget = (t: string): number | null => {
+  const v = Number(t);
+  return t.trim() !== '' && Number.isFinite(v) && v > 1 ? v : null;
+};
+
+const INPUT_CLS = 'ml-1 rounded border border-white/10 bg-navy-900 px-2 py-1 text-white focus:border-emerald-500 focus:outline-none';
 
 export default function AiPicksPage() {
   const [tab, setTab] = useState<Tab>('market');
@@ -180,9 +200,11 @@ export default function AiPicksPage() {
   const [picks, setPicks] = useState<AiPick[]>([]);
   const [slips25, setSlips25] = useState<Slip[]>([]);
   const [pickN, setPickN] = useState<{ lower: Slip | null; average: Slip | null; higher: Slip | null; message: string | null; qualified: number } | null>(null);
-  const [targetResult, setTargetResult] = useState<{ slip: Slip | null; achieved: number; gap: number; message: string | null; target: number } | null>(null);
-  const [n, setN] = useState(15);
-  const [target, setTarget] = useState(20);
+  const [targetResult, setTargetResult] = useState<TargetData | null>(null);
+  // Inputs are free-typed text; nothing is fetched until the action button (or Enter) is used.
+  const [nText, setNText] = useState('15');
+  const [targetText, setTargetText] = useState('20');
+  const [inputError, setInputError] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<{ statsNote: string | null; verifiedCount?: number; bestFitCount?: number; generatedAt?: number } | null>(null);
@@ -236,7 +258,7 @@ export default function AiPicksPage() {
     }
   }, []);
 
-  const loadPickN = useCallback(async () => {
+  const loadPickN = useCallback(async (n: number) => {
     setStatus('loading');
     setError(null);
     try {
@@ -259,9 +281,9 @@ export default function AiPicksPage() {
       setStatus('error');
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [n]);
+  }, []);
 
-  const loadTarget = useCallback(async () => {
+  const loadTarget = useCallback(async (target: number) => {
     setStatus('loading');
     setError(null);
     try {
@@ -272,26 +294,43 @@ export default function AiPicksPage() {
         setError(j.error ?? `HTTP ${r.status}`);
         return;
       }
-      setTargetResult({
-        slip: j.slip,
-        achieved: j.achieved,
-        gap: j.gap,
-        message: j.message,
-        target: j.target,
-      });
+      setTargetResult({ target: j.target, lower: j.lower, average: j.average, higher: j.higher });
       setStatus('idle');
     } catch (e) {
       setStatus('error');
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [target]);
+  }, []);
 
+  // Market chips are single clicks, so they refetch right away.
   useEffect(() => {
     if (tab === 'market') void loadPicks();
+  }, [tab, loadPicks]);
+
+  // Pick N / Target odds load on first open only. Typing never refetches; the action button does.
+  useEffect(() => {
     if (tab === '25plus') void load25();
-    if (tab === 'n') void loadPickN();
-    if (tab === 'target') void loadTarget();
-  }, [tab, loadPicks, load25, loadPickN, loadTarget]);
+    if (tab === 'n' && !pickN) void loadPickN(parseN(nText) ?? 15);
+    if (tab === 'target' && !targetResult) void loadTarget(parseTarget(targetText) ?? 20);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  function submitN(e?: React.FormEvent) {
+    e?.preventDefault();
+    const v = parseN(nText);
+    if (v === null) { setInputError('Games must be a whole number from 1 to 50.'); return; }
+    setInputError(null);
+    setNText(String(v));
+    void loadPickN(v);
+  }
+
+  function submitTarget(e?: React.FormEvent) {
+    e?.preventDefault();
+    const v = parseTarget(targetText);
+    if (v === null) { setInputError('Target odds must be a number greater than 1.'); return; }
+    setInputError(null);
+    void loadTarget(v);
+  }
 
   async function regenerate() {
     setGenerating(true);
@@ -305,8 +344,8 @@ export default function AiPicksPage() {
         // reload active tab
         if (tab === 'market') await loadPicks();
         if (tab === '25plus') await load25();
-        if (tab === 'n') await loadPickN();
-        if (tab === 'target') await loadTarget();
+        if (tab === 'n') await loadPickN(parseN(nText) ?? 15);
+        if (tab === 'target') await loadTarget(parseTarget(targetText) ?? 20);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -360,7 +399,7 @@ export default function AiPicksPage() {
           <button
             key={t.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => { setTab(t.id); setInputError(null); }}
             className={`rounded-lg px-3 py-1.5 text-sm ${
               tab === t.id ? 'bg-white/15 text-white' : 'text-slate-400 hover:bg-white/5'
             }`}
@@ -412,66 +451,96 @@ export default function AiPicksPage() {
         </div>
       )}
 
-      {tab === 'n' && status !== 'loading' && (
+      {tab === 'n' && (
         <div>
-          <div className="mb-4 flex flex-wrap items-center gap-3">
+          <form onSubmit={submitN} className="mb-4 flex flex-wrap items-center gap-3">
             <label className="text-sm text-slate-300">
-              Games{' '}
+              Games
               <input
-                type="number"
-                min={1}
-                max={50}
-                value={n}
-                onChange={(e) => setN(Number(e.target.value))}
-                className="ml-1 w-16 rounded border border-white/10 bg-navy-900 px-2 py-1 text-white"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
+                value={nText}
+                onChange={(e) => setNText(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                className={`${INPUT_CLS} w-16`}
+                aria-label="Number of games"
               />
             </label>
-            <button type="button" className="btn-ghost" onClick={() => void loadPickN()}>
-              Build
+            <button type="submit" className="btn-emerald" disabled={status === 'loading'}>
+              {status === 'loading' ? 'Building…' : 'Build slips'}
             </button>
-          </div>
-          {pickN?.message && <p className="mb-3 text-sm text-amber-300">{pickN.message}</p>}
-          <div className="grid gap-4 lg:grid-cols-3">
-            {pickN?.lower && <SlipCard slip={pickN.lower} title="Lower risk (~90% core)" />}
-            {pickN?.average && <SlipCard slip={pickN.average} title="Average (~75% core)" />}
-            {pickN?.higher && <SlipCard slip={pickN.higher} title="Higher risk (~60% core)" />}
-          </div>
-          {!pickN?.lower && !pickN?.average && !pickN?.higher && !error && (
-            <p className="text-sm text-slate-400">No slips could be built from qualifying picks.</p>
+            <span className="text-xs text-slate-500">1 to 50</span>
+          </form>
+          {inputError && <p className="mb-3 text-sm text-red-300" role="alert">{inputError}</p>}
+          {status !== 'loading' && (
+            <>
+              {pickN?.message && <p className="mb-3 text-sm text-amber-300">{pickN.message}</p>}
+              <div className="grid gap-4 lg:grid-cols-3">
+                {pickN?.lower && <SlipCard slip={pickN.lower} title="Lower risk (~90% core)" />}
+                {pickN?.average && <SlipCard slip={pickN.average} title="Average (~75% core)" />}
+                {pickN?.higher && <SlipCard slip={pickN.higher} title="Higher risk (~60% core)" />}
+              </div>
+              {!pickN?.lower && !pickN?.average && !pickN?.higher && !error && (
+                <p className="text-sm text-slate-400">No slips could be built from qualifying picks.</p>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {tab === 'target' && status !== 'loading' && (
+      {tab === 'target' && (
         <div>
-          <div className="mb-4 flex flex-wrap items-center gap-3">
+          <form onSubmit={submitTarget} className="mb-4 flex flex-wrap items-center gap-3">
             <label className="text-sm text-slate-300">
-              Target odds{' '}
+              Target odds
               <input
-                type="number"
-                min={1.1}
-                step={0.5}
-                value={target}
-                onChange={(e) => setTarget(Number(e.target.value))}
-                className="ml-1 w-24 rounded border border-white/10 bg-navy-900 px-2 py-1 text-white"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                value={targetText}
+                onChange={(e) => {
+                  // digits and a single dot only
+                  const t = e.target.value.replace(/[^\d.]/g, '');
+                  const dot = t.indexOf('.');
+                  setTargetText(dot === -1 ? t.slice(0, 7) : (t.slice(0, dot + 1) + t.slice(dot + 1).replace(/\./g, '')).slice(0, 9));
+                }}
+                className={`${INPUT_CLS} w-24`}
+                aria-label="Target odds"
               />
             </label>
-            <button type="button" className="btn-ghost" onClick={() => void loadTarget()}>
-              Find closest
+            <button type="submit" className="btn-emerald" disabled={status === 'loading'}>
+              {status === 'loading' ? 'Finding…' : 'Find closest'}
             </button>
-          </div>
-          {targetResult?.message && <p className="mb-3 text-sm text-amber-300">{targetResult.message}</p>}
-          {targetResult?.slip && (
-            <div>
-              <p className="mb-2 text-sm text-slate-400">
-                Requested {targetResult.target.toFixed(2)} · achieved {targetResult.achieved.toFixed(2)} · gap{' '}
-                {targetResult.gap.toFixed(2)}
-              </p>
-              <SlipCard slip={targetResult.slip} title="Closest Safe-tier slip" />
-            </div>
-          )}
-          {!targetResult?.slip && !error && (
-            <p className="text-sm text-slate-400">No Safe-tier slip available for this target.</p>
+          </form>
+          {inputError && <p className="mb-3 text-sm text-red-300" role="alert">{inputError}</p>}
+          {status !== 'loading' && targetResult && (
+            <>
+              <p className="mb-3 text-sm text-slate-400">Requested {targetResult.target.toFixed(2)}, closest slip for each risk tier:</p>
+              <div className="grid gap-4 lg:grid-cols-3">
+                {(['lower', 'average', 'higher'] as const).map((tier) => {
+                  const t = targetResult[tier];
+                  return (
+                    <div key={tier}>
+                      {t.slip ? (
+                        <>
+                          <p className="mb-2 text-xs text-slate-400">
+                            achieved {t.achieved.toFixed(2)} · gap {t.gap.toFixed(2)}
+                          </p>
+                          <SlipCard slip={t.slip} title={TARGET_TIER_LABEL[tier]} />
+                        </>
+                      ) : (
+                        <article className="glass rounded-xl border border-white/10 p-4">
+                          <h3 className="mb-2 font-display text-sm font-semibold text-white">{TARGET_TIER_LABEL[tier]}</h3>
+                          <p className="text-sm text-slate-400">No slip available for this tier.</p>
+                        </article>
+                      )}
+                      {t.message && <p className="mt-2 text-xs text-amber-300">{t.message}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
