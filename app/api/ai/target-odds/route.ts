@@ -1,12 +1,34 @@
 import { ensureAiSnapshot } from '@/lib/run-ai.ts';
-import { pickTargetOdds } from '@/lib/ai-engine.ts';
+import { pickTargetOddsTiers, type AccumulatorSlip, type TargetResult } from '@/lib/ai-picks.ts';
 import { getStore } from '@/lib/server.ts';
 
 export const dynamic = 'force-dynamic';
 
+const serializeSlip = (s: AccumulatorSlip | null) =>
+  s
+    ? {
+        id: s.id,
+        legCount: s.picks.length,
+        totalOdds: s.totalOdds,
+        combinedImpliedProbability: s.combinedImpliedProbability,
+        riskLabel: s.riskLabel,
+        coreCount: s.coreCount,
+        boosterCount: s.boosterCount,
+        picks: s.picks,
+      }
+    : null;
+
+const serialize = (r: TargetResult) => ({
+  slip: serializeSlip(r.slip),
+  achieved: r.achieved,
+  gap: r.gap,
+  message: r.message ?? null,
+});
+
 /**
  * GET /api/ai/target-odds?target=20&bookmaker=sportybet
- * Closest Safe-tier slip to the requested total odds.
+ * Closest slip to the requested total odds, for each risk tier:
+ * lower (Safe only), average (Safe + Balanced), higher (all tiers).
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -23,22 +45,12 @@ export async function GET(req: Request) {
   let ranked = r.picks;
   if (bookmaker) ranked = ranked.filter((p) => p.bookmaker === bookmaker);
 
-  const result = pickTargetOdds(ranked, target);
+  const t = pickTargetOddsTiers(ranked, target);
   return Response.json({
     ok: true,
     target,
-    achieved: result.achieved,
-    gap: result.gap,
-    message: result.message ?? null,
-    slip: result.slip
-      ? {
-          id: result.slip.id,
-          legCount: result.slip.picks.length,
-          totalOdds: result.slip.totalOdds,
-          combinedImpliedProbability: result.slip.combinedImpliedProbability,
-          riskLabel: result.slip.riskLabel,
-          picks: result.slip.picks,
-        }
-      : null,
+    lower: serialize(t.lower),
+    average: serialize(t.average),
+    higher: serialize(t.higher),
   });
 }
