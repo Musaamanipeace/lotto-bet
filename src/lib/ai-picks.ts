@@ -227,48 +227,62 @@ export function pickNGames(
   };
 }
 
+export type TargetTier = 'lower' | 'average' | 'higher';
+export const TARGET_TIERS: TargetTier[] = ['lower', 'average', 'higher'];
+
+/** Which pick tiers each risk level may draw from. Lower = Safe only; Higher = everything. */
+export const TARGET_TIER_POOL: Record<TargetTier, AiPick['tier'][]> = {
+  lower: ['safe'],
+  average: ['safe', 'balanced'],
+  higher: ['safe', 'balanced', 'value'],
+};
+
+export type TargetResult = { slip: AccumulatorSlip | null; achieved: number; gap: number; message?: string };
+
 /**
- * Closest Safe-tier slip to a target odds (log-scale distance).
- * Ties broken by higher combined implied probability.
+ * Closest slip to a target odds for one risk tier (log-scale distance).
+ * Picks come from the tier's pool in rank order, one per game; a pick that would
+ * move the total further from the target than it already is gets skipped.
  */
-export function pickTargetOdds(
-  ranked: AiPick[],
-  targetOdds: number,
-): { slip: AccumulatorSlip | null; achieved: number; gap: number; message?: string } {
-  const safeOnly = ranked.filter((p) => p.tier === 'safe');
-  if (safeOnly.length === 0) {
-    return { slip: null, achieved: 0, gap: targetOdds, message: 'No Safe-tier picks available.' };
+export function pickTargetOdds(ranked: AiPick[], targetOdds: number, tier: TargetTier = 'lower'): TargetResult {
+  const allowed = new Set(TARGET_TIER_POOL[tier]);
+  const pool = ranked.filter((p) => allowed.has(p.tier));
+  const poolName = tier === 'lower' ? 'safe' : tier === 'average' ? 'safe and balanced' : 'qualifying';
+  if (pool.length === 0) {
+    return { slip: null, achieved: 0, gap: targetOdds, message: `No ${poolName} picks available.` };
   }
 
-  // Greedy: keep adding highest-fit safe picks until we pass or hit cap
   const used = new Set<string>();
   const selected: AiPick[] = [];
   let odds = 1;
 
-  for (const p of safeOnly) {
-    if (selected.length >= ACCUMULATOR.maxLegs) break;
+  for (const p of pool) {
+    if (selected.length >= ACCUMULATOR.maxLegs || (selected.length > 0 && odds >= targetOdds)) break;
     if (used.has(p.gameId)) continue;
     const next = odds * p.odds;
-    // Prefer not overshooting too far; still add if under target
-    if (odds < targetOdds || selected.length === 0) {
-      selected.push(p);
-      used.add(p.gameId);
-      odds = next;
-    }
-  }
-
-  if (selected.length === 0) {
-    return { slip: null, achieved: 0, gap: targetOdds, message: 'No Safe-tier picks available.' };
+    if (selected.length > 0 && Math.abs(Math.log(next / targetOdds)) > Math.abs(Math.log(odds / targetOdds))) continue;
+    selected.push(p);
+    used.add(p.gameId);
+    odds = next;
   }
 
   const slip = composeAccumulator(selected, selected.length, { core: 1, booster: 0 })!;
   const gap = Math.abs(slip.totalOdds - targetOdds);
   const message =
     slip.totalOdds < targetOdds
-      ? `The highest odds available from verified safe picks are ${slip.totalOdds.toFixed(2)}.`
+      ? `The highest odds available from ${poolName} picks are ${slip.totalOdds.toFixed(2)}.`
       : undefined;
 
   return { slip, achieved: slip.totalOdds, gap, message };
+}
+
+/** All three risk tiers for one target. */
+export function pickTargetOddsTiers(ranked: AiPick[], targetOdds: number): Record<TargetTier, TargetResult> {
+  return {
+    lower: pickTargetOdds(ranked, targetOdds, 'lower'),
+    average: pickTargetOdds(ranked, targetOdds, 'average'),
+    higher: pickTargetOdds(ranked, targetOdds, 'higher'),
+  };
 }
 
 /** Template rationale from stored criteria results (never LLM). */
