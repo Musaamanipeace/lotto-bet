@@ -5,6 +5,8 @@ import {
   computeFitScore,
   composeAccumulator,
   pickNGames,
+  pickTargetOdds,
+  pickTargetOddsTiers,
   type AiPick,
 } from '../src/lib/ai-picks.ts';
 import type { Evaluation } from '../src/lib/evaluator.ts';
@@ -118,4 +120,35 @@ test('pickNGames returns three risk variants', () => {
   assert.ok(average);
   assert.ok(higher);
   assert.ok(lower!.boosterCount <= average!.boosterCount);
+});
+
+test('pickTargetOdds widens its pool with each risk tier', () => {
+  const tiers = ['safe', 'balanced', 'value'] as const;
+  const picks = Array.from({ length: 30 }, (_, i) =>
+    makePick({ id: `t${i}`, gameId: `tg${i}`, tier: tiers[i % 3], odds: 1.2 }),
+  );
+  const ranked = rankAiPicks(picks);
+  const r = pickTargetOddsTiers(ranked, 50);
+  assert.ok(r.lower.slip && r.average.slip && r.higher.slip);
+  assert.ok(r.lower.slip!.picks.every((p) => p.tier === 'safe'));
+  assert.ok(r.average.slip!.picks.every((p) => p.tier !== 'value'));
+  assert.ok(r.higher.slip!.totalOdds >= r.average.slip!.totalOdds);
+  assert.ok(r.average.slip!.totalOdds >= r.lower.slip!.totalOdds);
+});
+
+test('pickTargetOdds does not overshoot when a smaller pick lands closer', () => {
+  const picks = [
+    makePick({ id: 'a', gameId: 'ga', odds: 2 }),
+    makePick({ id: 'b', gameId: 'gb', odds: 3 }),
+    makePick({ id: 'c', gameId: 'gc', odds: 1.1 }),
+  ];
+  const r = pickTargetOdds(picks, 2.2, 'lower');
+  assert.ok(r.slip);
+  assert.ok(Math.abs(r.slip!.totalOdds - 2.2) < 0.1);
+});
+
+test('pickTargetOdds reports an empty pool', () => {
+  const r = pickTargetOdds([makePick({ id: 'v', tier: 'value' })], 10, 'lower');
+  assert.equal(r.slip, null);
+  assert.ok(r.message);
 });
