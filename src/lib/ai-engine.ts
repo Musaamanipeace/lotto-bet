@@ -18,6 +18,7 @@ import {
   computeFitScore,
   pickNGames,
   pickTargetOdds,
+  pickTargetOddsTiers,
   rankAiPicks,
 } from './ai-picks.ts';
 import { generateCandidates, type RawCandidate } from './candidates.ts';
@@ -177,4 +178,4 @@ export async function generateAiPicks(games: Game[]): Promise<AiEngineResult> {
   };
 }
 
-export { pickNGames, pickTargetOdds, composeAccumulator, rankAiPicks };
+export { pickNGames, pickTargetOdds, pickTargetOddsTiers, composeAccumulator, rankAiPicks };
