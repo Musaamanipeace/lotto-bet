@@ -13,6 +13,7 @@ import { BOOKMAKER_LABEL, type Bookmaker, type MarketKind } from '@/lib/types.ts
 import { useAuth } from './auth-context';
 import { CodegenPanel } from './codegen-panel';
 import { GameCard } from './game-card';
+import { useStoredSlip } from './use-slip';
 import { HealthBanner } from './health-banner';
 import { MarketFilters } from './market-filters';
 
@@ -42,7 +43,7 @@ export function Builder({ heading }: { heading?: string }) {
   const [cards, setCards] = useState(defaultCards);
   const [options, setOptions] = useState<GamesOk['options'] | null>(null);
   const [games, setGames] = useState<GamesState>({ status: 'loading' });
-  const [slip, setSlip] = useState<Slip>(emptySlip());
+  const [slip, setSlip, slipReady] = useStoredSlip();
   const [showAvailable, setShowAvailable] = useState(true);
   const [showStaging, setShowStaging] = useState(true);
   const [notice, setNotice] = useState<{ tone: 'info' | 'warn'; text: string } | null>(null);
@@ -50,6 +51,33 @@ export function Builder({ heading }: { heading?: string }) {
   const [removeCount, setRemoveCount] = useState('1');
   const [toolMarket, setToolMarket] = useState('');
   const reqId = useRef(0);
+
+  // The Leagues list is a native <details>: close it on an outside click or Escape.
+  const leaguesRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const d = leaguesRef.current;
+      if (d?.open && !d.contains(e.target as Node)) d.open = false;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && leaguesRef.current?.open) leaguesRef.current.open = false;
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
+  // Picks added from the AI Picks page may be from either bookmaker: open the Builder on the slip's bookmaker.
+  const syncedBookmaker = useRef(false);
+  useEffect(() => {
+    if (!slipReady || syncedBookmaker.current) return;
+    syncedBookmaker.current = true;
+    const b = slipBookmaker(slip);
+    if (b) setBookmaker(b);
+  }, [slipReady, slip]);
 
   // The market cards become the rules the API filters by. Serialised once so the effect below only reruns on a real change.
   const rulesKey = useMemo(() => JSON.stringify(cardsToRules(cards)), [cards]);
@@ -220,7 +248,7 @@ export function Builder({ heading }: { heading?: string }) {
       {heading && <h1 className="font-display text-2xl font-bold text-white">{heading}</h1>}
       <div className="mt-2"><HealthBanner /></div>
 
-      <div className="glass mt-4 space-y-3 p-4">
+      <div className="glass relative z-20 mt-4 space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs uppercase tracking-wide text-slate-400">Bookmaker</span>
           {(['sportybet', 'betpawa'] as Bookmaker[]).map((b) => (
@@ -238,9 +266,9 @@ export function Builder({ heading }: { heading?: string }) {
               {WITHIN.map((w) => <option key={w.label} value={w.hours ?? ''}>{w.label}</option>)}
             </select>
           </label>
-          <details className="relative text-xs text-slate-400">
+          <details ref={leaguesRef} className="relative text-xs text-slate-400">
             <summary className="field mt-5 cursor-pointer list-none text-slate-200">Leagues{leagues.length ? ` (${leagues.length})` : ''} ▾</summary>
-            <div className="glass absolute z-30 mt-1 max-h-64 w-64 overflow-auto bg-navy-900/95 p-2">
+            <div className="glass absolute left-0 top-full z-50 mt-1 max-h-64 w-72 max-w-full overflow-auto bg-navy-900 p-2 shadow-xl backdrop-blur-none">
               {!options ? <p className="p-2">Loading…</p> : options.leagues.length === 0 ? <p className="p-2">No leagues in the data.</p> : (
                 <>
                   <button className="mb-1 text-emerald-400 underline" onClick={() => setLeagues([])}>Clear</button>
@@ -378,4 +406,3 @@ export function Builder({ heading }: { heading?: string }) {
     </section>
   );
 }
-
