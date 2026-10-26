@@ -13,7 +13,7 @@ import { BOOKMAKER_LABEL, type Bookmaker, type MarketKind } from '@/lib/types.ts
 import { useAuth } from './auth-context';
 import { CodegenPanel } from './codegen-panel';
 import { GameCard } from './game-card';
-import { useStoredSlip } from './use-slip';
+import { useStoredSlip } from './use-slips';
 import { HealthBanner } from './health-banner';
 import { MarketFilters } from './market-filters';
 
