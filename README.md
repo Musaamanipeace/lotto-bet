@@ -2,7 +2,7 @@
 
 AI-powered multi-bookmaker betslip filter and code generator (SportyBet + betPawa).
 
-## Quick start (no database required)
+## Quick start (no database required bro)
 
 ```bash
 npm install
@@ -12,8 +12,8 @@ npm run dev
 Open http://localhost:3000
 
 - On first request to `/api/games`, the app **automatically fetches** SportyBet (and betPawa) upcoming events and keeps them in memory for the lifetime of the Node process.
-- You can also force a refresh: `POST /api/admin/refresh` (no secret required in development).
-- SportyBet share-code generation works without sign-in in development.
+- You can also force a refresh: `POST /api/admin/refresh` (no secret required in development bro).
+- SportyBet share-code generation works without sign-in in development bro.
 
 ### Optional: Postgres (production)
 
