@@ -5,7 +5,7 @@ import Link from 'next/link';
 import type { AiPick } from '@/lib/ai-picks.ts';
 import { aiPickToRow } from '@/lib/ai-rows.ts';
 import { MAX_LEGS, addLeg, emptySlip, removeLeg, slipTotals, type Slip as BuilderSlip } from '@/lib/slip.ts';
-import { useStoredSlip } from '../components/use-slip';
+import { useStoredSlip } from '../components/use-slips';
 
 type CriterionEval = {
   id: string;
