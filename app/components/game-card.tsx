@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import type { PickRow } from '@/lib/filters.ts';
 import { BOOKMAKER_LABEL } from '@/lib/types.ts';
 
@@ -55,14 +56,16 @@ export function GameCard({ rows, onAdd, onStats, algo = false }: {
   /** Show the gold "Algo Pick" chip (pass true for games the AI engine picked). */
   algo?: boolean;
 }) {
+  const [picksOpen, setPicksOpen] = useState(true);
   const g = rows[0];
   const addDefault = () => onAdd(rows[0]);
+
   return (
-    <div className="rounded-xl border border-indigo-400/20 bg-gradient-to-b from-navy-800/70 to-navy-900/80 p-3.5">
+    <div className="rounded-xl border border-indigo-400/20 bg-gradient-to-b from-navy-800/70 to-navy-900/80 p-3.5 transition-all">
       {/* Header: league + chips + countdown */}
       <div className="flex items-center gap-1.5">
         <span aria-hidden className="text-sm leading-none text-gold-400">🏆</span>
-        <span className="min-w-0 max-w-[4rem] shrink truncate text-[11px] font-medium text-slate-300" title={g.league ?? ''}>{g.league ?? '—'}</span>
+        <span className="min-w-0 max-w-[8rem] shrink truncate text-[11px] font-medium text-slate-300" title={g.league ?? ''}>{g.league ?? '—'}</span>
         {algo && <Pill tone="border border-gold-500/50 bg-gold-400/15 text-gold-300">✦ Algo Pick</Pill>}
         <Pill tone="bg-white/10 text-slate-200">{BOOKMAKER_LABEL[g.bookmaker]}</Pill>
         <span className="ml-auto whitespace-nowrap font-mono text-[11px] text-slate-400">⏱ {timeUntil(g.kickoff)}</span>
@@ -80,11 +83,12 @@ export function GameCard({ rows, onAdd, onStats, algo = false }: {
             <span className="shrink-0 font-mono text-[11px] font-normal text-slate-400">2 (Away)</span>
           </p>
         </div>
-        <button type="button" onClick={() => onStats?.(g)} disabled={!onStats}
-          className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-2.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-400/20 disabled:opacity-40">
-          ∿ Stats
+        <button type="button" onClick={() => onStats?.(g)}
+          className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-2.5 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-400/20"
+          title={`Conform and audit statistical margins for ${g.home} vs ${g.away}`}>
+          ∿ Conform Stats
         </button>
-        <button type="button" onClick={addDefault} aria-label={`Add ${g.home} v ${g.away}`}
+        <button type="button" onClick={addDefault} aria-label={`Add default pick for ${g.home} v ${g.away}`}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/5 text-lg text-slate-200 transition hover:bg-white/10">
           +
         </button>
@@ -92,21 +96,40 @@ export function GameCard({ rows, onAdd, onStats, algo = false }: {
 
       <p className="mt-2 font-mono text-[11px] text-slate-400">Kickoff: {fmtKickoff(g.kickoff)}</p>
 
-      {/* Eligible picks */}
-      <div className="mt-3 border-t border-white/10 pt-3">
-        <p className="flex items-center gap-1.5 text-[11px] text-slate-400">
-          <span aria-hidden className="text-emerald-400">✔</span>Eligible Market Picks ({rows.length}):
-        </p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {rows.map((r) => (
-            <button key={`${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`} type="button" onClick={() => onAdd(r)}
-              aria-label={`Add ${r.pick} at ${r.odds.toFixed(2)}`}
-              className={`inline-flex h-6 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition ${chipTone(r)}`}>
-              {chipLabel(r)}
-              <span className="font-mono text-[10px] opacity-70">@{r.odds.toFixed(2)}</span>
-            </button>
-          ))}
+      {/* Eligible picks (Collapsible Subcomponent) */}
+      <div className="mt-3 border-t border-white/10 pt-2.5">
+        <div className="flex items-center justify-between text-[11px] text-slate-400">
+          <p className="flex items-center gap-1.5">
+            <span aria-hidden className="text-emerald-400">✔</span>
+            Eligible Market Picks ({rows.length}):
+          </p>
+          <button
+            type="button"
+            onClick={() => setPicksOpen((o) => !o)}
+            className="text-[11px] text-cyan-400 hover:text-cyan-300 font-medium"
+            aria-expanded={picksOpen}
+          >
+            {picksOpen ? '▲ Collapse' : `▼ Show (${rows.length})`}
+          </button>
         </div>
+
+        {picksOpen ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {rows.map((r) => (
+              <button key={`${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`} type="button" onClick={() => onAdd(r)}
+                aria-label={`Add ${r.pick} at ${r.odds.toFixed(2)}`}
+                className={`inline-flex h-6 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition ${chipTone(r)}`}>
+                {chipLabel(r)}
+                <span className="font-mono text-[10px] opacity-70">@{r.odds.toFixed(2)}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500">
+            <span>Sample: {rows.slice(0, 2).map((r) => `${chipLabel(r)} @${r.odds.toFixed(2)}`).join(', ')}</span>
+            {rows.length > 2 && <span>+{rows.length - 2} more hidden</span>}
+          </div>
+        )}
       </div>
     </div>
   );

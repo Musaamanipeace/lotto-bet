@@ -151,8 +151,10 @@ function PickCard({ pick, slip, onAdd, onRemove }: {
 }
 
 function SlipCard({ slip, title }: { slip: Slip; title?: string }) {
+  const [legsOpen, setLegsOpen] = useState(true);
+  const picksList = slip.picks ?? [];
   return (
-    <article className="glass rounded-xl border border-white/10 p-4">
+    <article className="glass rounded-xl border border-white/10 p-4 transition-all">
       {title && <h3 className="mb-2 font-display text-sm font-semibold text-white">{title}</h3>}
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
@@ -164,23 +166,37 @@ function SlipCard({ slip, title }: { slip: Slip; title?: string }) {
         <div className="text-right text-xs text-slate-400">
           <span className="rounded-full border border-white/10 px-2 py-0.5">{slip.riskLabel}</span>
           <p className="mt-1">
-            {slip.picks?.length ?? slip.legCount} legs · {slip.coreCount} core · {slip.boosterCount} boosters
+            {picksList.length || slip.legCount} legs · {slip.coreCount} core · {slip.boosterCount} boosters
           </p>
         </div>
       </div>
-      <ul className="mt-3 max-h-48 space-y-1 overflow-y-auto text-xs text-slate-300">
-        {(slip.picks ?? []).slice(0, 30).map((p) => (
-          <li key={p.id} className="flex justify-between gap-2 border-b border-white/5 py-1">
-            <span>
-              {p.home} vs {p.away} · {p.marketKey.replace(/_/g, ' ')}
-            </span>
-            <span className="text-gold-400">{p.odds.toFixed(2)}</span>
-          </li>
-        ))}
-        {(slip.picks?.length ?? 0) > 30 && (
-          <li className="text-slate-500">… and {(slip.picks?.length ?? 0) - 30} more</li>
-        )}
-      </ul>
+
+      <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2 text-xs">
+        <span className="text-slate-400">Picks Breakdown ({picksList.length || slip.legCount})</span>
+        <button
+          type="button"
+          onClick={() => setLegsOpen((o) => !o)}
+          className="text-cyan-400 hover:text-cyan-300"
+        >
+          {legsOpen ? '▲ Collapse legs' : '▼ Show legs'}
+        </button>
+      </div>
+
+      {legsOpen && (
+        <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-slate-300">
+          {picksList.slice(0, 30).map((p) => (
+            <li key={p.id} className="flex justify-between gap-2 border-b border-white/5 py-1">
+              <span>
+                {p.home} vs {p.away} · {p.marketKey.replace(/_/g, ' ')}
+              </span>
+              <span className="text-gold-400">{p.odds.toFixed(2)}</span>
+            </li>
+          ))}
+          {picksList.length > 30 && (
+            <li className="text-slate-500">… and {picksList.length - 30} more</li>
+          )}
+        </ul>
+      )}
     </article>
   );
 }

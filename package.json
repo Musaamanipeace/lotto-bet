@@ -3,11 +3,12 @@
   "version": "0.2.1",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3000 -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
     "test": "node --test \"tests/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
     "refresh": "curl -s -X POST http://localhost:3000/api/admin/refresh",
     "probe:sportybet": "node scripts/probe-sportybet-share.mjs"
   },

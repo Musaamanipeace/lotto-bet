@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../components/auth-context';
+import { writeSlip } from '@/lib/slip-store.ts';
+import { ConformStatsModal } from '../components/conform-stats-modal';
+import type { PickRow } from '@/lib/filters.ts';
 
 type SavedSlip = {
   id: string;
@@ -33,15 +36,116 @@ function saveLocal(slips: SavedSlip[]) {
   localStorage.setItem(LS_KEY, JSON.stringify(slips.slice(0, 50)));
 }
 
+function SavedSlipItem({
+  s,
+  user,
+  busy,
+  onRemove,
+  onShare,
+  onLoad,
+  onAudit,
+}: {
+  s: SavedSlip;
+  user: unknown;
+  busy: boolean;
+  onRemove: (id: string) => void;
+  onShare: (id: string) => void;
+  onLoad: (s: SavedSlip) => void;
+  onAudit: (s: SavedSlip) => void;
+}) {
+  const [legsOpen, setLegsOpen] = useState(true);
+
+  return (
+    <article className="glass rounded-xl border border-white/10 p-4 transition-all">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="font-display text-lg font-semibold text-white">{s.name}</h2>
+          <p className="text-xs text-slate-400">
+            {s.bookmaker} · {s.legs.length} legs · {new Date(s.createdAt).toLocaleString()}
+            {s.shared ? ' · shared' : ''}
+          </p>
+        </div>
+        <div className="text-right">
+          <span className="font-display text-xl font-bold text-gold-400">{Number(s.totalOdds).toFixed(2)}</span>
+          {s.combinedImplied != null && (
+            <p className="text-[11px] text-slate-400">
+              combined implied {(s.combinedImplied * 100).toFixed(4)}%
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2 text-xs">
+        <span className="text-slate-400">Legs Breakdown ({s.legs.length})</span>
+        <button
+          type="button"
+          onClick={() => setLegsOpen((o) => !o)}
+          className="text-cyan-400 hover:text-cyan-300"
+        >
+          {legsOpen ? '▲ Collapse legs' : '▼ Show legs'}
+        </button>
+      </div>
+
+      {legsOpen && (
+        <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-slate-300">
+          {s.legs.map((l, i) => (
+            <li key={`${l.gameId}-${i}`} className="flex justify-between gap-2 border-b border-white/5 py-1">
+              <span>
+                {l.home} vs {l.away} · {l.pick}
+              </span>
+              <span className="text-gold-400">{Number(l.odds).toFixed(2)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-2 pt-2 border-t border-white/5">
+        <button
+          type="button"
+          className="btn-emerald text-xs h-7 px-2.5"
+          onClick={() => onLoad(s)}
+        >
+          Load to Active Slip
+        </button>
+        <button
+          type="button"
+          className="btn-ghost text-xs h-7 px-2.5 text-cyan-300 border-cyan-500/30"
+          onClick={() => onAudit(s)}
+        >
+          ∿ Conform Stats
+        </button>
+        <button
+          type="button"
+          className="btn-ghost text-xs h-7 px-2.5"
+          disabled={busy || s.shared}
+          onClick={() => onShare(s.id)}
+          title={user ? 'Share to Community' : 'Sign in to share'}
+        >
+          {s.shared ? 'Shared' : 'Share to Community'}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost text-xs h-7 px-2.5 text-red-300 hover:bg-red-500/10"
+          disabled={busy}
+          onClick={() => onRemove(s.id)}
+        >
+          Delete
+        </button>
+      </div>
+    </article>
+  );
+}
+
 export default function SavedSlipsPage() {
   const { user, loading, openAuth } = useAuth();
   const [slips, setSlips] = useState<SavedSlip[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [auditSlip, setAuditSlip] = useState<{ legs: PickRow[]; title: string } | null>(null);
 
   const refresh = useCallback(async () => {
     setError(null);
-    // Always merge server + local
     const local = typeof window !== 'undefined' ? loadLocal() : [];
     try {
       const r = await fetch('/api/slips/list');
@@ -71,6 +175,8 @@ export default function SavedSlipsPage() {
       const next = loadLocal().filter((s) => s.id !== id);
       saveLocal(next);
       setSlips((cur) => cur.filter((s) => s.id !== id));
+      setNotice('Slip deleted.');
+      setTimeout(() => setNotice(null), 2500);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -96,12 +202,60 @@ export default function SavedSlipsPage() {
         setError(j.error ?? 'Share failed');
       } else {
         setSlips((cur) => cur.map((s) => (s.id === id ? { ...s, shared: true } : s)));
+        setNotice('Slip shared with the community!');
+        setTimeout(() => setNotice(null), 3000);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleLoadSlip(s: SavedSlip) {
+    const fullLegs = s.legs.map((l, idx) => ({
+      gameId: l.gameId || `leg-${Date.now()}-${idx}`,
+      nativeEventId: l.gameId || 'ev1',
+      home: l.home,
+      away: l.away,
+      bookmaker: (s.bookmaker as 'sportybet' | 'betpawa') || 'sportybet',
+      kickoff: Date.now() + 3600000,
+      league: null,
+      marketNativeId: 'm1',
+      outcomeNativeId: 'o1',
+      specifier: '',
+      marketKind: '1x2' as const,
+      line: null,
+      outcomeKey: null,
+      pick: l.pick,
+      odds: l.odds,
+      implied: l.odds > 0 ? 1 / l.odds : null,
+    }));
+    writeSlip({ legs: fullLegs, greyed: [] });
+    setNotice(`Loaded "${s.name}" with ${s.legs.length} legs into the builder slip.`);
+    setTimeout(() => setNotice(null), 3500);
+  }
+
+  function handleAuditSlip(s: SavedSlip) {
+    const fullLegs = s.legs.map((l, idx) => ({
+      gameId: l.gameId || `leg-${Date.now()}-${idx}`,
+      nativeEventId: l.gameId || 'ev1',
+      home: l.home,
+      away: l.away,
+      bookmaker: (s.bookmaker as 'sportybet' | 'betpawa') || 'sportybet',
+      kickoff: Date.now() + 3600000,
+      league: null,
+      marketNativeId: 'm1',
+      outcomeNativeId: 'o1',
+      specifier: '',
+      marketKind: '1x2' as const,
+      line: null,
+      outcomeKey: null,
+      pick: l.pick,
+      odds: l.odds,
+      implied: l.odds > 0 ? 1 / l.odds : null,
+    }));
+    setAuditSlip({ legs: fullLegs, title: s.name });
   }
 
   if (loading) {
@@ -114,13 +268,19 @@ export default function SavedSlipsPage() {
         <div>
           <h1 className="font-display text-3xl font-bold text-white">Saved Slips</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Slips you save from the builder. Sign in to share to Community. Server storage is in-process without Postgres.
+            Slips saved to your account. Reload into active slip, audit mathematical conformity, or share to Community.
           </p>
         </div>
         <Link href="/" className="btn-gold">
           Builder
         </Link>
       </div>
+
+      {notice && (
+        <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-200">
+          {notice}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-200" role="alert">
@@ -142,51 +302,26 @@ export default function SavedSlipsPage() {
 
       <div className="space-y-4">
         {slips.map((s) => (
-          <article key={s.id} className="glass rounded-xl border border-white/10 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <h2 className="font-display text-lg font-semibold text-white">{s.name}</h2>
-                <p className="text-xs text-slate-400">
-                  {s.bookmaker} · {s.legs.length} legs · {new Date(s.createdAt).toLocaleString()}
-                  {s.shared ? ' · shared' : ''}
-                </p>
-              </div>
-              <div className="text-right">
-                <span className="font-display text-xl font-bold text-gold-400">{Number(s.totalOdds).toFixed(2)}</span>
-                {s.combinedImplied != null && (
-                  <p className="text-[11px] text-slate-400">
-                    combined implied {(s.combinedImplied * 100).toFixed(4)}%
-                  </p>
-                )}
-              </div>
-            </div>
-            <ul className="mt-3 max-h-40 space-y-1 overflow-y-auto text-xs text-slate-300">
-              {s.legs.map((l, i) => (
-                <li key={`${l.gameId}-${i}`} className="flex justify-between gap-2 border-b border-white/5 py-1">
-                  <span>
-                    {l.home} vs {l.away} · {l.pick}
-                  </span>
-                  <span className="text-gold-400">{Number(l.odds).toFixed(2)}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" className="btn-ghost text-xs" disabled={busy} onClick={() => void remove(s.id)}>
-                Delete
-              </button>
-              <button
-                type="button"
-                className="btn-ghost text-xs"
-                disabled={busy || s.shared}
-                onClick={() => void share(s.id)}
-                title={user ? 'Share to Community' : 'Sign in to share'}
-              >
-                {s.shared ? 'Shared' : 'Share to Community'}
-              </button>
-            </div>
-          </article>
+          <SavedSlipItem
+            key={s.id}
+            s={s}
+            user={user}
+            busy={busy}
+            onRemove={remove}
+            onShare={share}
+            onLoad={handleLoadSlip}
+            onAudit={handleAuditSlip}
+          />
         ))}
       </div>
+
+      {auditSlip && (
+        <ConformStatsModal
+          legs={auditSlip.legs}
+          singleGameTitle={auditSlip.title}
+          onClose={() => setAuditSlip(null)}
+        />
+      )}
     </div>
   );
 }

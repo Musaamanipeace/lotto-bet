@@ -15,6 +15,59 @@ type CommunitySlip = {
   userId: string | null;
 };
 
+function CommunitySlipItem({ s }: { s: CommunitySlip }) {
+  const [legsOpen, setLegsOpen] = useState(false);
+
+  return (
+    <article className="glass rounded-xl border border-white/10 p-4 transition-all">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="font-display text-lg font-semibold text-white">{s.name}</h2>
+          <p className="text-xs text-slate-400">
+            {s.bookmaker} · {s.legs.length} legs · {new Date(s.createdAt).toLocaleString()}
+          </p>
+          {s.shareNote && <p className="mt-1 text-sm text-slate-300">{s.shareNote}</p>}
+        </div>
+        <div className="text-right">
+          <span className="font-display text-xl font-bold text-gold-400">{Number(s.totalOdds).toFixed(2)}</span>
+          {s.combinedImplied !== null && (
+            <p className="text-[11px] text-slate-400">implied {(s.combinedImplied * 100).toFixed(2)}%</p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2 text-xs">
+        <span className="text-slate-400">Selections ({s.legs.length})</span>
+        <button
+          type="button"
+          onClick={() => setLegsOpen((o) => !o)}
+          className="text-cyan-400 hover:text-cyan-300 font-medium"
+        >
+          {legsOpen ? '▲ Collapse selections' : `▼ Show all selections (${s.legs.length})`}
+        </button>
+      </div>
+
+      {legsOpen ? (
+        <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-slate-300">
+          {s.legs.map((l, i) => (
+            <li key={i} className="flex justify-between gap-2 border-b border-white/5 py-1">
+              <span>
+                {l.home} vs {l.away} · {l.pick}
+              </span>
+              <span className="text-gold-400">{Number(l.odds).toFixed(2)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="mt-1 text-xs text-slate-500">
+          {s.legs.slice(0, 2).map((l) => `${l.home} v ${l.away} (${l.pick})`).join(' · ')}
+          {s.legs.length > 2 && ` +${s.legs.length - 2} more`}
+        </div>
+      )}
+    </article>
+  );
+}
+
 export default function CommunityPage() {
   const [slips, setSlips] = useState<CommunitySlip[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -45,7 +98,7 @@ export default function CommunityPage() {
     <div className="mx-auto max-w-4xl px-4 py-8">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl font-bold text-white">Community</h1>
+          <h1 className="font-display text-3xl font-bold text-white">Community Slips</h1>
           <p className="mt-1 text-sm text-slate-400">
             Shared slips from other users. No win claims — only published selections and bookmaker odds.
           </p>
@@ -68,28 +121,7 @@ export default function CommunityPage() {
 
       <div className="space-y-4">
         {slips.map((s) => (
-          <article key={s.id} className="glass rounded-xl border border-white/10 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <h2 className="font-display text-lg font-semibold text-white">{s.name}</h2>
-                <p className="text-xs text-slate-400">
-                  {s.bookmaker} · {s.legs.length} legs · {new Date(s.createdAt).toLocaleString()}
-                </p>
-                {s.shareNote && <p className="mt-1 text-sm text-slate-300">{s.shareNote}</p>}
-              </div>
-              <span className="font-display text-xl font-bold text-gold-400">{Number(s.totalOdds).toFixed(2)}</span>
-            </div>
-            <ul className="mt-3 max-h-36 space-y-1 overflow-y-auto text-xs text-slate-300">
-              {s.legs.slice(0, 20).map((l, i) => (
-                <li key={i} className="flex justify-between gap-2 border-b border-white/5 py-1">
-                  <span>
-                    {l.home} vs {l.away} · {l.pick}
-                  </span>
-                  <span className="text-gold-400">{Number(l.odds).toFixed(2)}</span>
-                </li>
-              ))}
-            </ul>
-          </article>
+          <CommunitySlipItem key={s.id} s={s} />
         ))}
       </div>
     </div>

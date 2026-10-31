@@ -1,13 +1,12 @@
 import { readSessionToken, userForToken, type User } from './auth.ts';
-import { PgAuthStore } from './pg-auth-store.ts';
+import { getAuthStore } from './auth-store.ts';
 
 export const isSecure = () => process.env.NODE_ENV === 'production';
 
-/** The signed-in user for this request, or null for a guest. Without DATABASE_URL always null. */
+/** The signed-in user for this request, or null for a guest. Works with Postgres or in-memory fallback. */
 export async function currentUser(req: Request): Promise<User | null> {
-  if (!process.env.DATABASE_URL) return null;
   try {
-    return await userForToken(new PgAuthStore(), readSessionToken(req.headers.get('cookie')));
+    return await userForToken(getAuthStore(), readSessionToken(req.headers.get('cookie')));
   } catch {
     return null;
   }

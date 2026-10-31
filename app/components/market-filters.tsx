@@ -1,9 +1,18 @@
 'use client';
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import {
   BTTS_CHOICES, CARDS, DC_CHOICES, MATCH_RESULT_CHOICES, allAvailableCards, isSolo, resetCard, soloCard, toggleSub,
   type CardDef, type CardId, type CardsState,
 } from '@/lib/market-cards.ts';
+import {
+  DEFAULT_TEMPLATES,
+  deleteLocalTemplate,
+  getLocalTemplates,
+  notifyTemplateApplied,
+  onTemplateApplied,
+  saveLocalTemplate,
+  type FilterTemplate,
+} from '@/lib/template-store.ts';
 
 /** Full class names on purpose: Tailwind only generates classes it can read literally in these files. */
 const ACCENT: Record<CardId, { dot: string; title: string; edge: string; chipOn: string; fill: string; handle: string }> = {
@@ -17,10 +26,6 @@ const ACCENT: Record<CardId, { dot: string; title: string; edge: string; chipOn:
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/**
- * Two-handle odds range. While a handle is dragged only this component re-renders; the new range is
- * handed to the parent on release (or on each key press), so the games list is not refetched mid-drag.
- */
 function OddsRange({ def, low, high, accent, onCommit }: {
   def: CardDef; low: number; high: number; accent: CardId; onCommit: (low: number, high: number) => void;
 }) {
@@ -117,8 +122,86 @@ const chip = (on: boolean, accent: CardId) =>
 export function MarketFilters({ cards, onChange, goalLines, qualifying }: {
   cards: CardsState; onChange: (next: CardsState) => void; goalLines: number[]; qualifying: number | null;
 }) {
+  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [collapsedCards, setCollapsedCards] = useState<Record<string, boolean>>({});
+  const [templates, setTemplates] = useState<FilterTemplate[]>(DEFAULT_TEMPLATES);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [newTemplateDesc, setNewTemplateDesc] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTemplates(getLocalTemplates());
+    return onTemplateApplied((tpl) => {
+      setSelectedTemplateId(tpl.id);
+      onChange(tpl.cards);
+      setNotice(`Applied template: "${tpl.name}"`);
+      setTimeout(() => setNotice(null), 3000);
+    });
+  }, [onChange]);
+
   const set = (id: CardId, patch: Partial<CardsState[CardId]>) => onChange({ ...cards, [id]: { ...cards[id], ...patch } });
   const anyOn = Object.values(cards).some((c) => c.on);
+
+  const toggleCardCollapse = (id: string) => {
+    setCollapsedCards((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleAllCards = () => {
+    const allCollapsed = CARDS.every((d) => collapsedCards[d.id]);
+    const next: Record<string, boolean> = {};
+    CARDS.forEach((d) => { next[d.id] = !allCollapsed; });
+    setCollapsedCards(next);
+  };
+
+  function handleSelectTemplate(id: string) {
+    setSelectedTemplateId(id);
+    if (!id) return;
+    const tpl = templates.find((t) => t.id === id);
+    if (tpl) {
+      onChange(tpl.cards);
+      notifyTemplateApplied(tpl);
+      setNotice(`Applied template: "${tpl.name}"`);
+      setTimeout(() => setNotice(null), 3000);
+    }
+  }
+
+  async function handleSaveNewTemplate() {
+    if (!newTemplateName.trim()) return;
+    const tpl = saveLocalTemplate({
+      name: newTemplateName.trim(),
+      description: newTemplateDesc.trim() || undefined,
+      bookmaker: 'sportybet',
+      withinHours: null,
+      leagues: [],
+      cards,
+    });
+
+    // Also sync to server
+    fetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tpl),
+    }).catch(() => {});
+
+    setTemplates(getLocalTemplates());
+    setSelectedTemplateId(tpl.id);
+    setSaveModalOpen(false);
+    setNewTemplateName('');
+    setNewTemplateDesc('');
+    setNotice(`Saved template: "${tpl.name}"`);
+    setTimeout(() => setNotice(null), 3000);
+  }
+
+  function handleDeleteCurrentTemplate() {
+    if (!selectedTemplateId) return;
+    deleteLocalTemplate(selectedTemplateId);
+    setTemplates(getLocalTemplates());
+    setSelectedTemplateId('');
+    setNotice('Template deleted');
+    setTimeout(() => setNotice(null), 2500);
+  }
 
   function subToggles(def: CardDef) {
     const c = cards[def.id];
@@ -154,57 +237,248 @@ export function MarketFilters({ cards, onChange, goalLines, qualifying }: {
   }
 
   return (
-    <div className="glass mt-4 p-4">
+    <div className="glass mt-4 p-4 transition-all">
+      {/* Top Header with Collapsible Toggle */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="font-display text-lg font-bold text-white">
-            Market filters
-            {qualifying !== null && <span className="ml-2 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 align-middle font-mono text-xs font-semibold text-emerald-300">{qualifying} qualifying</span>}
-          </h2>
-          <p className="text-xs text-slate-400">Switch a market on, choose its submarkets, then set the odds range it must fall in.</p>
+          <div className="flex items-center gap-2">
+            <h2 className="font-display text-lg font-bold text-white">
+              Market Filters & Templates
+            </h2>
+            {qualifying !== null && (
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 align-middle font-mono text-xs font-semibold text-emerald-300">
+                {qualifying} qualifying
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-400">
+            Customize market cards or load saved filter templates for fast slip curation.
+          </p>
         </div>
-        <button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={() => onChange(allAvailableCards(goalLines))} title="Turn every market on with all submarkets selected and full odds ranges">↺ All available</button>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="btn-ghost px-3 py-1.5 text-xs text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/10"
+            onClick={() => setSaveModalOpen(true)}
+          >
+            💾 Save as Template
+          </button>
+          <button
+            type="button"
+            className="btn-ghost px-3 py-1.5 text-xs"
+            onClick={() => onChange(allAvailableCards(goalLines))}
+            title="Turn every market on with all submarkets selected and full odds ranges"
+          >
+            ↺ Reset All
+          </button>
+          <button
+            type="button"
+            className="btn-ghost px-3 py-1.5 text-xs"
+            onClick={() => setFiltersOpen((o) => !o)}
+            aria-expanded={filtersOpen}
+          >
+            {filtersOpen ? '▲ Collapse Section' : '▼ Expand Section'}
+          </button>
+        </div>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {CARDS.map((def) => {
-          const c = cards[def.id];
-          const a = ACCENT[def.id];
-          const toggles = subToggles(def);
-          return (
-            <div key={def.id} className={`rounded-xl border p-3.5 transition ${c.on ? `bg-navy-800/60 ${a.edge}` : 'border-white/10 bg-white/[0.02] opacity-60'}`}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className={`flex items-center gap-2 text-sm font-bold ${a.title}`}><span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${a.dot}`} />{def.title}</p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">{def.hint}</p>
+      {notice && (
+        <div className="mt-3 rounded-lg border border-cyan-500/30 bg-cyan-500/15 px-3 py-1.5 text-xs text-cyan-200">
+          {notice}
+        </div>
+      )}
+
+      {/* Filter Templates Quick Bar */}
+      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-white/5 bg-navy-950/40 p-2.5">
+        <span className="text-xs font-semibold text-slate-300">Preset Template:</span>
+        <select
+          className="field h-8 max-w-xs text-xs py-1"
+          value={selectedTemplateId}
+          onChange={(e) => handleSelectTemplate(e.target.value)}
+        >
+          <option value="">Choose a Template…</option>
+          <optgroup label="Default Presets">
+            {templates.filter((t) => t.isDefault).map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </optgroup>
+          {templates.some((t) => !t.isDefault) && (
+            <optgroup label="My Saved Templates">
+              {templates.filter((t) => !t.isDefault).map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+
+        {selectedTemplateId && !templates.find((t) => t.id === selectedTemplateId)?.isDefault && (
+          <button
+            type="button"
+            onClick={handleDeleteCurrentTemplate}
+            className="text-xs text-red-400 hover:underline px-1"
+          >
+            Delete Template
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={toggleAllCards}
+          className="ml-auto text-xs text-slate-400 hover:text-white"
+        >
+          Toggle All Market Details
+        </button>
+      </div>
+
+      {/* Collapsible Market Cards Grid */}
+      {filtersOpen && (
+        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {CARDS.map((def) => {
+            const c = cards[def.id];
+            const a = ACCENT[def.id];
+            const toggles = subToggles(def);
+            const isCardCollapsed = Boolean(collapsedCards[def.id]);
+
+            return (
+              <div
+                key={def.id}
+                className={`rounded-xl border p-3.5 transition ${
+                  c.on ? `bg-navy-800/60 ${a.edge}` : 'border-white/10 bg-white/[0.02] opacity-60'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className={`flex items-center gap-2 text-sm font-bold ${a.title}`}>
+                      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${a.dot}`} />
+                      {def.title}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{def.hint}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      aria-pressed={isSolo(cards, def.id)}
+                      title={`Solo: switch on only ${def.title}`}
+                      className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-bold transition ${
+                        isSolo(cards, def.id) ? a.chipOn : 'border-white/10 text-slate-300 hover:bg-white/10'
+                      }`}
+                      onClick={() => onChange(soloCard(cards, def.id))}
+                    >
+                      Solo
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Reset ${def.title}`}
+                      title="Reset this card's range and submarkets"
+                      className="rounded-md px-1.5 py-0.5 text-sm leading-none text-slate-400 transition hover:bg-white/10 hover:text-white"
+                      onClick={() => onChange(resetCard(cards, def.id))}
+                    >
+                      ↺
+                    </button>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={c.on}
+                      aria-label={`${def.title} on or off`}
+                      className={`relative h-5 w-9 rounded-full transition ${c.on ? 'bg-emerald-500' : 'bg-white/15'}`}
+                      onClick={() => set(def.id, { on: !c.on })}
+                    >
+                      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${c.on ? 'left-[1.125rem]' : 'left-0.5'}`} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleCardCollapse(def.id)}
+                      className="rounded p-1 text-slate-400 hover:text-white"
+                      title={isCardCollapsed ? 'Expand subcomponents' : 'Collapse subcomponents'}
+                    >
+                      {isCardCollapsed ? '▼' : '▲'}
+                    </button>
+                  </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <button type="button" aria-pressed={isSolo(cards, def.id)} title={`Solo: switch on only ${def.title}`}
-                    className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-bold transition ${isSolo(cards, def.id) ? a.chipOn : 'border-white/10 text-slate-300 hover:bg-white/10'}`}
-                    onClick={() => onChange(soloCard(cards, def.id))}>Solo</button>
-                  <button type="button" aria-label={`Reset ${def.title}`} title="Reset this card's range and submarkets"
-                    className="rounded-md px-1.5 py-0.5 text-sm leading-none text-slate-400 transition hover:bg-white/10 hover:text-white"
-                    onClick={() => onChange(resetCard(cards, def.id))}>↺</button>
-                  <button type="button" role="switch" aria-checked={c.on} aria-label={`${def.title} on or off`}
-                    className={`relative h-5 w-9 rounded-full transition ${c.on ? 'bg-emerald-500' : 'bg-white/15'}`}
-                    onClick={() => set(def.id, { on: !c.on })}>
-                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${c.on ? 'left-[1.125rem]' : 'left-0.5'}`} />
-                  </button>
-                </div>
+
+                {/* Submarket & Range Controls (Collapsible Subcomponent) */}
+                {!isCardCollapsed && (
+                  <>
+                    {toggles && <div className="mt-3 flex flex-wrap gap-1.5">{toggles}</div>}
+
+                    {c.on ? (
+                      <OddsRange
+                        def={def}
+                        low={c.low}
+                        high={c.high}
+                        accent={def.id}
+                        onCommit={(low, high) => set(def.id, { low, high })}
+                      />
+                    ) : (
+                      <p className="mt-3 text-[11px] text-slate-500">Switched off. Turn it on to include these picks.</p>
+                    )}
+                    {c.on && toggles && c.subs.length === 0 && (
+                      <p className="mt-2 text-[11px] text-amber-300">Pick at least one submarket above.</p>
+                    )}
+                  </>
+                )}
+
+                {isCardCollapsed && c.on && (
+                  <p className="mt-2 text-[11px] text-slate-400">
+                    Range: @{c.low.toFixed(2)} - @{c.high.toFixed(2)} · {c.subs.length} submarkets active
+                  </p>
+                )}
               </div>
+            );
+          })}
+        </div>
+      )}
 
-              {toggles && <div className="mt-3 flex flex-wrap gap-1.5">{toggles}</div>}
+      {!anyOn && (
+        <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200" role="status">
+          Every market is switched off, so no games are shown. Turn at least one card on.
+        </p>
+      )}
 
-              {c.on
-                ? <OddsRange def={def} low={c.low} high={c.high} accent={def.id} onCommit={(low, high) => set(def.id, { low, high })} />
-                : <p className="mt-3 text-[11px] text-slate-500">Switched off. Turn it on to include these picks.</p>}
-              {c.on && toggles && c.subs.length === 0 && <p className="mt-2 text-[11px] text-amber-300">Pick at least one submarket above.</p>}
+      {/* Save Template Modal */}
+      {saveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={() => setSaveModalOpen(false)}>
+          <div className="glass w-full max-w-md bg-navy-900/95 p-6 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h3 className="font-display text-base font-bold text-white">Save Current Filters as Template</h3>
+              <button type="button" onClick={() => setSaveModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
-          );
-        })}
-      </div>
-
-      {!anyOn && <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200" role="status">Every market is switched off, so no games are shown. Turn at least one card on.</p>}
+            <div>
+              <label className="text-xs text-slate-300">Template Name</label>
+              <input
+                className="field mt-1"
+                placeholder="e.g. Weekend Home Dominance, Safe GG Accumulator"
+                value={newTemplateName}
+                onChange={(e) => setNewTemplateName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-300">Description (Optional)</label>
+              <textarea
+                className="field mt-1 h-20 text-xs"
+                placeholder="Short note on what this strategy targets..."
+                value={newTemplateDesc}
+                onChange={(e) => setNewTemplateDesc(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+              <button type="button" onClick={() => setSaveModalOpen(false)} className="btn-ghost text-xs">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!newTemplateName.trim()}
+                onClick={() => void handleSaveNewTemplate()}
+                className="btn-gold text-xs"
+              >
+                Save Template
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

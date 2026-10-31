@@ -4,6 +4,7 @@ import { AuthProvider } from './components/auth-context';
 import { AuthModal } from './components/auth-modal';
 import { Footer } from './components/footer';
 import { TopBar } from './components/top-bar';
+import { TopCollapsibleHub } from './components/top-collapsible-hub';
 
 const display = Space_Grotesk({ subsets: ['latin'], variable: '--font-display' });
 const body = Plus_Jakarta_Sans({ subsets: ['latin'], variable: '--font-body' });
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen flex flex-col">
         <AuthProvider>
           <TopBar />
+          <TopCollapsibleHub />
           <div className="flex-1">{children}</div>
           <Footer />
           <AuthModal />
