@@ -59,11 +59,15 @@ export async function GET(req: Request) {
       rules,
     };
     const rows = candidateRows(r.games, filter);
+    // What the user would see with no filters at all (same kickoff buffer), so the UI can say what the filters hide.
+    const all = candidateRows(r.games, { dateFrom: earliest });
+    const unfiltered = { rows: all.length, games: new Set(all.map((x) => x.gameId)).size };
     return Response.json({
       ok: true,
       runId: r.runId,
       dataAsOf: new Date(r.dataAsOf).toISOString(),
       count: rows.length,
+      unfiltered,
       options: deriveFilterOptions(r.games),
       errors: r.errors,
       rows,
