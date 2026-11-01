@@ -23,6 +23,8 @@ import { onTemplateApplied } from '@/lib/template-store.ts';
 
 type GamesOk = {
   ok: true; runId: string; dataAsOf: string; count: number;
+  /** Games / odds that exist with no filters applied (absent from older API responses). */
+  unfiltered?: { games: number; rows: number };
   options: { leagues: string[]; bookmakers: Bookmaker[]; markets: { kind: MarketKind; lines: number[] }[] };
   errors: { bookmaker: Bookmaker; error: string; httpStatus?: number }[];
   rows: PickRow[];
@@ -43,6 +45,8 @@ export function Builder({ heading }: { heading?: string }) {
   const { user } = useAuth();
   const [bookmaker, setBookmaker] = useState<Bookmaker>('sportybet');
   const [leagues, setLeagues] = useState<string[]>([]);
+  /** true = ignore every filter and show the full market list for all upcoming games. */
+  const [bypass, setBypass] = useState(false);
   const [withinHours, setWithinHours] = useState<number | null>(null);
   const [cards, setCards] = useState(defaultCards);
   const [options, setOptions] = useState<GamesOk['options'] | null>(null);
@@ -113,9 +117,11 @@ export function Builder({ heading }: { heading?: string }) {
     setGames({ status: 'loading' });
     const t = setTimeout(async () => {
       const q = new URLSearchParams({ bookmaker });
-      if (leagues.length) q.set('leagues', leagues.join(','));
-      if (withinHours !== null) { q.set('dateFrom', String(Date.now())); q.set('dateTo', String(Date.now() + withinHours * 3_600_000)); }
-      q.set('rules', rulesKey);
+      if (!bypass) {
+        if (leagues.length) q.set('leagues', leagues.join(','));
+        if (withinHours !== null) { q.set('dateFrom', String(Date.now())); q.set('dateTo', String(Date.now() + withinHours * 3_600_000)); }
+        q.set('rules', rulesKey);
+      }
       try {
         const r = await fetch(`/api/games?${q}`, { signal: ctrl.signal });
         const j = await r.json().catch(() => null);
@@ -128,7 +134,10 @@ export function Builder({ heading }: { heading?: string }) {
       }
     }, 250);
     return () => { clearTimeout(t); ctrl.abort(); };
-  }, [bookmaker, leagues, withinHours, rulesKey]);
+  }, [bookmaker, leagues, withinHours, rulesKey, bypass]);
+
+  // Touching any filter means the user wants their filters back.
+  useEffect(() => { setBypass(false); }, [leagues, withinHours, rulesKey]);
 
   const inSlip = useMemo(() => new Set(slip.legs.map((l) => l.gameId)), [slip.legs]);
   const pool = useMemo(() => (games.status === 'ok' ? games.data.rows.filter((r) => !inSlip.has(r.gameId)) : []), [games, inSlip]);
@@ -145,6 +154,12 @@ export function Builder({ heading }: { heading?: string }) {
     const lines = options?.markets.find((m) => m.kind === 'over_under')?.lines ?? [];
     return lines.length ? lines : GOAL_LINES_FALLBACK;
   }, [options]);
+  const shownGames = useMemo(() => (games.status === 'ok' ? new Set(games.data.rows.map((r) => r.gameId)).size : 0), [games]);
+  const hidden = useMemo(() => {
+    if (games.status !== 'ok' || !games.data.unfiltered) return null;
+    const u = games.data.unfiltered;
+    return { games: Math.max(0, u.games - shownGames), rows: Math.max(0, u.rows - games.data.rows.length), totalGames: u.games, totalRows: u.rows };
+  }, [games, shownGames]);
   const totals = slipTotals(slip);
   const activeLegs = slip.legs.filter((l) => !slip.greyed.includes(l.gameId));
   const slipMarkets = marketsInSlip(slip);
@@ -268,7 +283,7 @@ export function Builder({ heading }: { heading?: string }) {
   const greyedInTool = toolSel ? slip.legs.filter((l) => `${l.marketKind}:${l.line ?? ''}` === toolSel.key).every((l) => slip.greyed.includes(l.gameId)) : false;
 
   return (
-    <section className="mx-auto max-w-6xl px-4">
+    <section className={`mx-auto max-w-6xl px-4 ${showStaging && slip.legs.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
       {heading && <h1 className="font-display text-2xl font-bold text-white">{heading}</h1>}
       <div className="mt-2"><HealthBanner /></div>
 
@@ -322,6 +337,23 @@ export function Builder({ heading }: { heading?: string }) {
               <span className="text-sm text-slate-300" aria-live="polite">{games.status === 'ok' ? `${byGame.length} game${byGame.length === 1 ? '' : 's'}` : '…'}</span>
             </div>
             {games.status === 'ok' && <p className="text-xs text-slate-500">Data as of {new Date(games.data.dataAsOf).toLocaleString()}</p>}
+
+            {games.status === 'ok' && bypass && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100" role="status">
+                <span>Filters bypassed: showing all {shownGames} upcoming game{shownGames === 1 ? '' : 's'} with their full market list. Your filter settings are kept.</span>
+                <button type="button" className="btn-ghost ml-auto h-7 px-2.5 py-0 text-xs" onClick={() => setBypass(false)}>Back to my filters</button>
+              </div>
+            )}
+            {games.status === 'ok' && !bypass && hidden && (hidden.games > 0 || hidden.rows > 0) && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100" role="status">
+                <span>
+                  Your filters are hiding{' '}
+                  {hidden.games > 0 ? `${hidden.games} of ${hidden.totalGames} games and ` : ''}
+                  {hidden.rows} of {hidden.totalRows} odds.
+                </span>
+                <button type="button" className="btn-emerald ml-auto h-7 px-2.5 py-0 text-xs" onClick={() => setBypass(true)}>Show full market list</button>
+              </div>
+            )}
 
             {games.status === 'loading' && <p className="mt-6 text-center text-sm text-slate-400">Loading games…</p>}
             {games.status === 'error' && (
@@ -384,7 +416,7 @@ export function Builder({ heading }: { heading?: string }) {
         )}
 
         {showStaging && (
-          <div className="space-y-4">
+          <div id="slip-panel" className="space-y-4 scroll-mt-20 lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-5.5rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
             {/* Staging Area Container (Collapsible Subcomponent) */}
             <div className="glass p-4 transition-all">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -608,6 +640,16 @@ export function Builder({ heading }: { heading?: string }) {
           </div>
         )}
       </div>
+
+      {/* Small screens stack the columns, so keep the slip one tap away. */}
+      {showStaging && slip.legs.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-3 border-t border-white/10 bg-navy-950/95 px-4 py-2 backdrop-blur lg:hidden">
+          <span className="text-sm text-slate-200">
+            Slip {totals.activeCount}/{MAX_LEGS} legs · <span className="odds">{totals.totalOdds.ok ? totals.totalOdds.total.toFixed(2) : '—'}</span>
+          </span>
+          <a href="#slip-panel" className="btn-emerald ml-auto h-8 px-3 py-0 text-xs">View slip</a>
+        </div>
+      )}
 
       {statsModal && (
         <ConformStatsModal
