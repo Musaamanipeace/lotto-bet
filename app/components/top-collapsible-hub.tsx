@@ -20,6 +20,7 @@ const ROUTES = [
   { label: 'AI Picks', href: '/ai-picks', icon: '✦', desc: 'Verified AI Value' },
   { label: 'My Picks', href: '/my-picks', icon: '🎯', desc: 'Personal Selections' },
   { label: 'Saved Slips', href: '/saved-slips', icon: '📋', desc: 'Archived Slips' },
+  { label: 'Results Tracker', href: '/results', icon: '📊', desc: 'Tracked Outcomes' },
   { label: 'Community', href: '/community', icon: '👥', desc: 'Shared User Slips' },
   { label: 'Leagues', href: '/leagues', icon: '🏆', desc: 'Active Competitions' },
   { label: 'AI Chat', href: '/chat', icon: '💬', desc: 'Odds & Rule Assistant' },

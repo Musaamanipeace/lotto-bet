@@ -9,6 +9,7 @@ const MENU: { label: string; href: string }[] = [
   { label: 'AI Picks', href: '/ai-picks' },
   { label: 'My Picks', href: '/my-picks' },
   { label: 'Saved Slips', href: '/saved-slips' },
+  { label: 'Results Tracker', href: '/results' },
   { label: 'Community', href: '/community' },
   { label: 'AI Chat & Agent', href: '/chat' },
   { label: 'Active Leagues', href: '/leagues' },

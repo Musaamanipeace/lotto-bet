@@ -107,6 +107,12 @@ function SavedSlipItem({
         >
           Load to Active Slip
         </button>
+        <Link
+          href="/results"
+          className="btn-ghost text-xs h-7 px-2.5 text-gold-300 border-gold-500/30 hover:bg-gold-500/10 inline-flex items-center"
+        >
+          📊 Track Results
+        </Link>
         <button
           type="button"
           className="btn-ghost text-xs h-7 px-2.5 text-cyan-300 border-cyan-500/30"
@@ -271,9 +277,14 @@ export default function SavedSlipsPage() {
             Slips saved to your account. Reload into active slip, audit mathematical conformity, or share to Community.
           </p>
         </div>
-        <Link href="/" className="btn-gold">
-          Builder
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/results" className="btn-emerald text-xs h-9 px-3 inline-flex items-center gap-1.5">
+            📊 Results Tracker
+          </Link>
+          <Link href="/" className="btn-gold text-xs h-9 px-3 inline-flex items-center">
+            Builder
+          </Link>
+        </div>
       </div>
 
       {notice && (

@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for Lotto Bet: Filter templateization, proper user authentication with stored account data (saved templates and betslips), collapsible multi-subcomponent sections across all views, a top-page static collapsible navigation card (with betslip summary, filters, and route access), and a Conform Stats engine with clear informative states when no data is fetched.",
-  "updatedAt":  "2026-10-30T13:36:45.356314975Z",
+  "summary":  "Implementation plan for Completed Slips & Results Tracker: Automatic tracking of saved slips once kickoff passes, sports score verification with manual score fallback, leg-by-leg settlement evaluation (1X2, Over/Under, Double Chance, BTTS), and a dedicated Results Tracker view with won and lost slip counts.",
+  "updatedAt":  "2026-10-31T06:44:08.818812849Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
