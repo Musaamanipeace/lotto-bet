@@ -6,6 +6,11 @@ import type { AiPick } from '@/lib/ai-picks.ts';
 import { aiPickToRow } from '@/lib/ai-rows.ts';
 import { MAX_LEGS, addLeg, emptySlip, removeLeg, slipTotals, type Slip as BuilderSlip } from '@/lib/slip.ts';
 import { useStoredSlip } from '../components/use-slips';
+import { AlternativesPanel } from '../components/alternatives-panel';
+import { CoverageStrip, CriteriaList, PickDataLine, type CoverageData } from '../components/data-status';
+import { LeagueChecklist, type LeagueItem } from '../components/league-checklist';
+import { describeReport, planAdd, type Revalidation } from '@/lib/add-picks.ts';
+import { encodeLeagues, parseLeagues } from '@/lib/pick-filter.ts';
 
 type CriterionEval = {
   id: string;
@@ -109,6 +114,7 @@ function PickCard({ pick, slip, onAdd, onRemove }: {
         </span>
       </div>
       <p className="mt-2 text-sm text-slate-300">{pick.rationale}</p>
+      <PickDataLine counts={pick.evaluation.stateCounts} total={pick.evaluation.total} />
       {pick.evaluation.provisionalCriteria.length > 0 && (
         <p className="mt-1 text-[11px] text-amber-400/80">
           Provisional thresholds used
@@ -141,10 +147,13 @@ function PickCard({ pick, slip, onAdd, onRemove }: {
       </div>
       {addError && <p className="mt-1.5 text-right text-xs text-amber-300" role="status">{addError}</p>}
       {open && (
-        <p className="mt-1 text-xs text-slate-500">
-          Exclusion: {pick.exclusionStatus}. Bookmaker: {pick.bookmaker}.
-          {pick.evaluation.reason ? ` Reason: ${pick.evaluation.reason}` : ''}
-        </p>
+        <>
+          <CriteriaList criteria={pick.criteria} />
+          <p className="mt-2 text-xs text-slate-500">
+            Exclusion: {pick.exclusionStatus}. Bookmaker: {pick.bookmaker}.
+            {pick.evaluation.reason ? ` Reason: ${pick.evaluation.reason}` : ''}
+          </p>
+        </>
       )}
     </article>
   );
@@ -210,7 +219,7 @@ const TARGET_TIER_LABEL = {
   higher: 'Higher risk (all tiers)',
 } as const;
 
-type Tab = 'market' | 'n' | 'target' | '25plus';
+type Tab = 'market' | 'n' | 'target' | '25plus' | 'alts';
 
 const parseN = (t: string): number | null => {
   const v = Number(t);
@@ -236,7 +245,13 @@ export default function AiPicksPage() {
   const [inputError, setInputError] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [meta, setMeta] = useState<{ statsNote: string | null; verifiedCount?: number; bestFitCount?: number; generatedAt?: number } | null>(null);
+  const [meta, setMeta] = useState<{ statsNote: string | null; verifiedCount?: number; bestFitCount?: number; generatedAt?: number; coverage?: CoverageData | null } | null>(null);
+  const [leagues, setLeagues] = useState<string[]>([]);
+  const [leagueList, setLeagueList] = useState<LeagueItem[]>([]);
+  const [leaguesReady, setLeaguesReady] = useState(false);
+  const [addTopN, setAddTopN] = useState('10');
+  const [addNote, setAddNote] = useState<string | null>(null);
+  const lq = leagues.length ? `&leagues=${encodeURIComponent(encodeLeagues(leagues))}` : '';
   const [generating, setGenerating] = useState(false);
   const [slip, setSlip] = useStoredSlip();
 
@@ -261,7 +276,7 @@ export default function AiPicksPage() {
     try {
       const q = new URLSearchParams({ limit: '80' });
       if (market) q.set('market', market);
-      const r = await fetch(`/api/ai/picks?${q}`);
+      const r = await fetch(`/api/ai/picks?${q}${lq}`);
       const j = await r.json();
       if (!j.ok) {
         setStatus('error');
@@ -275,13 +290,14 @@ export default function AiPicksPage() {
         verifiedCount: j.verifiedCount,
         bestFitCount: j.bestFitCount,
         generatedAt: j.generatedAt,
+        coverage: j.coverage ?? null,
       });
       setStatus('idle');
     } catch (e) {
       setStatus('error');
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [market]);
+  }, [market, lq]);
 
   const load25 = useCallback(async () => {
     setStatus('loading');
@@ -307,7 +323,7 @@ export default function AiPicksPage() {
     setStatus('loading');
     setError(null);
     try {
-      const r = await fetch(`/api/ai/pick-n?n=${n}`);
+      const r = await fetch(`/api/ai/pick-n?n=${n}${lq}`);
       const j = await r.json();
       if (!j.ok) {
         setStatus('error');
@@ -326,13 +342,13 @@ export default function AiPicksPage() {
       setStatus('error');
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [lq]);
 
   const loadTarget = useCallback(async (target: number) => {
     setStatus('loading');
     setError(null);
     try {
-      const r = await fetch(`/api/ai/target-odds?target=${target}`);
+      const r = await fetch(`/api/ai/target-odds?target=${target}${lq}`);
       const j = await r.json();
       if (!j.ok) {
         setStatus('error');
@@ -345,7 +361,46 @@ export default function AiPicksPage() {
       setStatus('error');
       setError(e instanceof Error ? e.message : String(e));
     }
+  }, [lq]);
+
+  // League filter: read from ?leagues= once, keep the URL in sync, and load the league list.
+  useEffect(() => {
+    setLeagues(parseLeagues(new URLSearchParams(window.location.search).get('leagues')));
+    setLeaguesReady(true);
+    fetch('/api/leagues').then((r) => r.json()).then((j) => { if (j.ok) setLeagueList(j.leagues ?? []); }).catch(() => {});
   }, []);
+  useEffect(() => {
+    if (!leaguesReady) return;
+    const q = new URLSearchParams(window.location.search);
+    if (leagues.length) q.set('leagues', encodeLeagues(leagues)); else q.delete('leagues');
+    const t = q.toString();
+    window.history.replaceState(null, '', t ? `?${t}` : window.location.pathname);
+  }, [leagues, leaguesReady]);
+  // Changing leagues drops stale Pick N / Target results so they reload with the new filter.
+  useEffect(() => {
+    if (!leaguesReady) return;
+    setPickN(null);
+    setTargetResult(null);
+    if (tab === 'n') void loadPickN(parseN(nText) ?? 15);
+    if (tab === 'target') void loadTarget(parseTarget(targetText) ?? 20);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lq, leaguesReady]);
+
+  /** Add the first N picks currently listed to the betslip, after re-checking their odds. */
+  async function addTop() {
+    const n = Math.max(1, Math.floor(Number(addTopN)) || 1);
+    setAddNote('Checking latest odds…');
+    let reval: Map<string, Revalidation> | undefined;
+    try {
+      const r = await fetch('/api/ai/revalidate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pickIds: picks.slice(0, 200).map((p) => p.id) }) });
+      const j = await r.json();
+      if (j.ok) reval = new Map((j.results as { id: string; flag: Revalidation['flag']; odds: number }[]).map((x) => [x.id, { flag: x.flag, odds: x.odds }]));
+    } catch { /* planAdd works without re-validation and says so below */ }
+    const out = planAdd(picks, slip, n, reval);
+    setSlip(out.slip);
+    const why = out.report.skipped.slice(0, 3).map((s) => `${s.label}: ${s.reason}`).join(' · ');
+    setAddNote(`${describeReport(out.report)}${reval ? '' : ' (odds could not be re-checked)'}${why ? ` ${why}` : ''}`);
+  }
 
   // Market chips are single clicks, so they refetch right away.
   useEffect(() => {
@@ -404,6 +459,7 @@ export default function AiPicksPage() {
     { id: 'n', label: 'Pick N games' },
     { id: 'target', label: 'Target odds' },
     { id: '25plus', label: '25+ accumulators' },
+    { id: 'alts', label: 'Alternatives' },
   ];
 
   return (
@@ -438,6 +494,19 @@ export default function AiPicksPage() {
           {meta.generatedAt ? ` · as of ${new Date(meta.generatedAt).toLocaleString()}` : ''}
         </p>
       )}
+
+      <CoverageStrip coverage={meta?.coverage} />
+
+      <details className="mb-4 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2">
+        <summary className="cursor-pointer text-sm text-slate-200">
+          Leagues{leagues.length ? ` (${leagues.length} selected)` : ' (all)'} ▾
+        </summary>
+        <div className="mt-3">
+          {leagueList.length === 0
+            ? <p className="text-xs text-slate-400">No leagues loaded yet. Refresh games first.</p>
+            : <LeagueChecklist leagues={leagueList} selected={leagues} onChange={setLeagues} compact />}
+        </div>
+      </details>
 
       <div className="mb-6 flex flex-wrap gap-1 border-b border-white/10 pb-2">
         {tabs.map((t) => (
@@ -487,6 +556,15 @@ export default function AiPicksPage() {
             <p className="text-sm text-slate-400">
               No picks in this market could be verified today. Try Regenerate AI after refreshing games.
             </p>
+          )}
+          {picks.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-slate-300">
+              <span>Add the top</span>
+              <input className={`${INPUT_CLS} w-14`} inputMode="numeric" aria-label="How many picks to add" value={addTopN} onChange={(e) => setAddTopN(e.target.value.replace(/\D/g, '').slice(0, 2))} />
+              <span>listed picks to the betslip</span>
+              <button type="button" className="btn-emerald h-8 px-3 py-0 text-xs" onClick={() => void addTop()}>Add</button>
+              {addNote && <span className="text-xs text-amber-200" role="status">{addNote}</span>}
+            </div>
           )}
           <div className="grid gap-3 sm:grid-cols-2">
             {picks.map((p) => (
@@ -589,6 +667,8 @@ export default function AiPicksPage() {
           )}
         </div>
       )}
+
+      {tab === 'alts' && <AlternativesPanel leagues={leagues} slip={slip} setSlip={setSlip} />}
 
       {tab === '25plus' && status !== 'loading' && (
         <div className="grid gap-4 lg:grid-cols-2">

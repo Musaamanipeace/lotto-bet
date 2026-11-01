@@ -1,4 +1,5 @@
 'use client';
+import { parseLeagues } from '@/lib/pick-filter.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MarketSelector, PickRow } from '@/lib/filters.ts';
 import { aiPickToRow } from '@/lib/ai-rows.ts';
@@ -58,6 +59,12 @@ export function Builder({ heading }: { heading?: string }) {
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const [codegenCollapsed, setCodegenCollapsed] = useState(false);
   const reqId = useRef(0);
+
+  // Leagues ticked on the Leagues page arrive as ?leagues=
+  useEffect(() => {
+    const fromUrl = parseLeagues(new URLSearchParams(window.location.search).get('leagues'));
+    if (fromUrl.length) setLeagues(fromUrl);
+  }, []);
 
   // Sync when template is applied via Quick Hub or Market Filters
   useEffect(() => {

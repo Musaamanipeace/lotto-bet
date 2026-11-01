@@ -35,6 +35,7 @@ export async function GET() {
           pickCount: snap.picks.length,
           slips25Count: snap.slips25.length,
           statsNote: snap.statsNote,
+          coverage: snap.coverage,
         }
       : null,
     marketsConfigured,

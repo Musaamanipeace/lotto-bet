@@ -3,7 +3,7 @@
  * Separate from the fetch Store so AI generation can run without Postgres.
  */
 import type { AccumulatorSlip, AiPick } from './ai-picks.ts';
-import type { AiEngineResult } from './ai-engine.ts';
+import type { AiEngineResult, DataCoverage } from './ai-engine.ts';
 
 export type AiSnapshot = {
   picks: AiPick[];
@@ -14,6 +14,7 @@ export type AiSnapshot = {
   candidateCount: number;
   verifiedCount: number;
   bestFitCount: number;
+  coverage: DataCoverage | null;
   runId: string | null;
 };
 
@@ -29,6 +30,7 @@ export function saveAiSnapshot(result: AiEngineResult, runId: string | null = nu
     candidateCount: result.candidateCount,
     verifiedCount: result.verifiedCount,
     bestFitCount: result.bestFitCount,
+    coverage: result.coverage,
     runId,
   };
   return snapshot;

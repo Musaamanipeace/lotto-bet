@@ -1,6 +1,7 @@
 import { ensureAiSnapshot } from '@/lib/run-ai.ts';
 import { pickTargetOddsTiers, type AccumulatorSlip, type TargetResult } from '@/lib/ai-picks.ts';
 import { getStore } from '@/lib/server.ts';
+import { filterPicks, parseLeagues } from '@/lib/pick-filter.ts';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,8 +43,7 @@ export async function GET(req: Request) {
   const r = await ensureAiSnapshot(getStore());
   if (!r.ok) return Response.json(r, { status: 400 });
 
-  let ranked = r.picks;
-  if (bookmaker) ranked = ranked.filter((p) => p.bookmaker === bookmaker);
+  const ranked = filterPicks(r.picks, { bookmaker, leagues: parseLeagues(url.searchParams.get('leagues')) });
 
   const t = pickTargetOddsTiers(ranked, target);
   return Response.json({

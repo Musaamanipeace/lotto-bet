@@ -1,6 +1,7 @@
 import { ensureAiSnapshot } from '@/lib/run-ai.ts';
 import { pickNGames } from '@/lib/ai-engine.ts';
 import { getStore } from '@/lib/server.ts';
+import { filterPicks, parseLeagues } from '@/lib/pick-filter.ts';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,8 +17,7 @@ export async function GET(req: Request) {
   const r = await ensureAiSnapshot(getStore());
   if (!r.ok) return Response.json(r, { status: 400 });
 
-  let ranked = r.picks;
-  if (bookmaker) ranked = ranked.filter((p) => p.bookmaker === bookmaker);
+  const ranked = filterPicks(r.picks, { bookmaker, leagues: parseLeagues(url.searchParams.get('leagues')) });
 
   const variants = pickNGames(ranked, n);
   const serialize = (s: ReturnType<typeof pickNGames>['lower']) =>

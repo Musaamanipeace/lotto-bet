@@ -1,11 +1,12 @@
 import { ensureAiSnapshot } from '@/lib/run-ai.ts';
 import { getStore } from '@/lib/server.ts';
 import type { PickMarketKey } from '@/lib/criteria.ts';
+import { filterPicks, parseLeagues } from '@/lib/pick-filter.ts';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/ai/picks?market=home_win&bookmaker=sportybet&limit=50
+ * GET /api/ai/picks?market=home_win&bookmaker=sportybet&leagues=A,B&limit=50
  * Returns ranked AI picks, optionally filtered by market / bookmaker.
  */
 export async function GET(req: Request) {
@@ -17,10 +18,7 @@ export async function GET(req: Request) {
   const r = await ensureAiSnapshot(getStore());
   if (!r.ok) return Response.json(r, { status: 400 });
 
-  let picks = r.picks;
-  if (market) picks = picks.filter((p) => p.marketKey === market);
-  if (bookmaker) picks = picks.filter((p) => p.bookmaker === bookmaker);
-  picks = picks.slice(0, limit);
+  const picks = filterPicks(r.picks, { market, bookmaker, leagues: parseLeagues(url.searchParams.get('leagues')) }).slice(0, limit);
 
   return Response.json({
     ok: true,
@@ -28,6 +26,7 @@ export async function GET(req: Request) {
     statsNote: r.statsNote,
     verifiedCount: r.verifiedCount,
     bestFitCount: r.bestFitCount,
+    coverage: r.coverage,
     total: picks.length,
     picks,
   });

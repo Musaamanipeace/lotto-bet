@@ -107,7 +107,7 @@ This branch implements the deterministic AI layer described in the design doc:
 
 ### Next steps (design §13)
 
-1. Wire real HTTP calls in `FootballDataOrgProvider` and `ApiFootballProvider`.
+1. ~~Wire real HTTP calls in `FootballDataOrgProvider`~~ done (see Update below). `ApiFootballProvider` is intentionally not built: no cards/corners market is generated yet.
 2. Daily pipeline: candidate generation → evaluate → rank → store AI picks & slips.
 3. AI Picks UI (best-by-market, pick N, target odds, 25+).
 4. Re-validation + lineup exclusion cron.
@@ -155,3 +155,41 @@ Set `FOOTBALL_DATA_API_KEY` and/or `API_FOOTBALL_KEY` in `.env.local` when ready
 - Cashout class
 - LLM chat / Exchange / Shuffle (interfaces already present)
 - Settlement + win-rate indicator
+
+
+## Update: data status, league filters, alternatives, add-N
+
+### Data status ("unavailable" now says why)
+Every criterion carries a `dataState`: `ok`, `not_offered` (no free source has it, e.g. xG/PPDA), `not_covered`
+(source has it, not for this league/team), `not_fetched` (never requested: no key, per-run budget, not built),
+`fetch_failed` (request failed: 429, bad key, network), `not_configured`. The AI Picks page shows a coverage strip,
+per-pick badges and a per-criterion list. `GET /api/ai/status` and `/api/ai/picks` return the same `coverage` summary.
+
+Real stats come from **football-data.org** (`FOOTBALL_DATA_API_KEY`, free): season-to-date home/away/overall tables
+(home/away win rate, unbeaten rate, rank, goals for/against) and each team's last finished matches (form, rest days,
+over 1.5 / under 3.5 / under 4.5 / no-draw rates). Free limit is 10 requests/minute: calls are throttled
+(`FOOTBALL_DATA_RATE_PER_MIN`, default 9), cached 6 h, and capped per run (`FOOTBALL_DATA_MAX_CALLS_PER_RUN`, default 60).
+Candidates are evaluated Big Five first so the cap is spent where data is richest. Only the free domestic leagues
+in `src/lib/competitions.ts` map to football-data.org; everything else reports `not_covered`.
+`API_FOOTBALL_KEY` is not used yet (cards/fouls/corners criteria belong to markets the engine does not generate).
+
+Less data means less trust: fit score adds `lowDataProbabilityBoost x (1 - coverage) x implied probability`
+(`FIT_SCORE_WEIGHTS`), so low-coverage picks need a higher bookmaker probability to rank well. It is a weight, not a cutoff.
+
+### League filters
+`/leagues` has checkboxes (per league, per group, search, select all/clear). The selection lives in `?leagues=` and
+hands off to `/ai-picks?leagues=` and the Builder. AI Picks has a league dropdown; `leagues` is accepted by
+`/api/ai/picks`, `/pick-n`, `/target-odds` and `/alternatives`. Nothing ticked = all leagues.
+
+### Alternatives (`/ai-picks` -> Alternatives tab, `GET /api/ai/alternatives`)
+Give a target (+/- tolerance) or a min-max range (e.g. 100 to 1000). The first slip comes from the existing
+`pickTargetOdds`; every other slip is a parent slip with legs swapped for equal-or-better picks (any market by default),
+total odds kept inside the range, every pair differing by at least N legs, one pick per game, Verified never downgraded
+to Best fit. Deterministic per seed, so "Load 50 more" extends the same list. It stops with a plain message when
+the pool is exhausted. Per slip: lock legs, swap weakest N / ticked legs (`POST /api/ai/swap`, never repeats a pick),
+undo, add N legs to the betslip, or load the slip as the betslip.
+
+### Add N to the betslip
+`src/lib/add-picks.ts` + `POST /api/ai/revalidate`: odds are re-checked first; price changes inside the band are applied
+and reported, suspended or dropped picks are skipped with the reason, games already on the slip and other-bookmaker
+picks are refused, the 50-leg cap is respected, and the report says "Added X of N".

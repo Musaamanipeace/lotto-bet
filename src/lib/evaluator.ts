@@ -1,4 +1,5 @@
 import { VERIFICATION } from './criteria.ts';
+import { emptyStateCounts, type DataState, type StateCounts } from './data-state.ts';
 
 export type CriterionStatus = 'pass' | 'fail' | 'unavailable';
 export type CriterionResult = {
@@ -7,6 +8,10 @@ export type CriterionResult = {
   status: CriterionStatus;
   detail?: string;
   provisional?: boolean;
+  /** Why the data is missing (or 'ok'). Absent on legacy results: unavailable then reads as not_fetched. */
+  dataState?: DataState;
+  /** Where the value came from, when there is one. */
+  provider?: string;
 };
 
 export const NO_STATS_PROVIDER_MESSAGE =
@@ -25,6 +30,10 @@ export type Evaluation = {
   verifiedLabel: string;
   reason: string | null;
   provisionalCriteria: string[];
+  /** Share of criteria that had real data (pass + fail) / total. Used to rank low-data picks more cautiously. */
+  dataCoverage?: number;
+  /** How many criteria fall into each data state. */
+  stateCounts?: StateCounts;
 };
 
 /**
@@ -45,12 +54,19 @@ export function evaluateCriteria(
   const verifiedLabel = `${passed} of ${total} criteria verified`;
   const provisionalCriteria = results.filter((r) => r.provisional).map((r) => r.id);
 
+  const stateCounts = emptyStateCounts();
+  for (const r of results) {
+    stateCounts[r.dataState ?? (r.status === 'unavailable' ? 'not_fetched' : 'ok')]++;
+  }
+
   const base = {
     passed,
     verifiable,
     total,
     verifiedLabel,
     provisionalCriteria,
+    dataCoverage: total > 0 ? verifiable / total : 0,
+    stateCounts,
   };
 
   if (total === 0) {

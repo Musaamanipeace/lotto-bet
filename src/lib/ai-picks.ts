@@ -10,7 +10,7 @@ import {
   type PickMarketKey,
   type Tier,
 } from './criteria.ts';
-import type { Evaluation, PickLabel } from './evaluator.ts';
+import type { CriterionResult, Evaluation, PickLabel } from './evaluator.ts';
 
 export type AiPick = {
   id: string;
@@ -28,6 +28,8 @@ export type AiPick = {
   away: string;
   tier: Tier;
   evaluation: Evaluation;
+  /** Each criterion with its data state, so the UI can say why data is missing. */
+  criteria?: CriterionResult[];
   fitScore: number;
   fitBreakdown: FitBreakdown;
   rationale: string;
@@ -43,6 +45,8 @@ export type FitBreakdown = {
   cardsCornersData: number;
   failedCriteriaPenalty: number;
   congestionPenalty: number;
+  /** (1 - data coverage) x implied probability; only set when the evaluation knows its coverage. */
+  lowDataProbability?: number;
 };
 
 /** League priority rank (0 = highest). Unknown leagues get a high index. */
@@ -84,7 +88,14 @@ export function computeFitScore(input: {
     congestionPenalty: input.congestionFlag ? 1 : 0,
   };
 
+  const lowData =
+    input.evaluation.dataCoverage === undefined
+      ? 0
+      : (1 - input.evaluation.dataCoverage) * breakdown.impliedProbability;
+  if (input.evaluation.dataCoverage !== undefined) breakdown.lowDataProbability = lowData;
+
   const score =
+    w.lowDataProbabilityBoost * lowData +
     w.tierPlacement * breakdown.tierPlacement +
     w.impliedProbability * breakdown.impliedProbability +
     w.criteriaPassShare * breakdown.criteriaPassShare +
