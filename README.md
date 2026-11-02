@@ -1,4 +1,4 @@
-# Lotto Bet
+# Lotto Bet bro
 
 AI-powered multi-bookmaker betslip filter and code generator (SportyBet + betPawa).
 
