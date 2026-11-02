@@ -1,41 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import type { AiPick } from '@/lib/ai-picks.ts';
-import { aiPickToRow } from '@/lib/ai-rows.ts';
-import type { PickRow } from '@/lib/filters.ts';
-import { defaultCards } from '@/lib/market-cards.ts';
-import { MAX_LEGS, addLeg, addMany, emptySlip, removeLeg, slipTotals, type Slip as BuilderSlip } from '@/lib/slip.ts';
-import { getLocalTemplates, type FilterTemplate } from '@/lib/template-store.ts';
-import { buildTemplateAiAcca, templateSummary } from '@/lib/template-ai.ts';
+import { removeLeg, type Slip as BuilderSlip } from '@/lib/slip.ts';
 import { useStoredSlip } from '../components/use-slips';
-import { AlternativesPanel } from '../components/alternatives-panel';
 import { CoverageStrip, CriteriaList, PickDataLine, type CoverageData } from '../components/data-status';
-import { LeagueChecklist, type LeagueItem } from '../components/league-checklist';
-import { describeReport, planAdd, type Revalidation } from '@/lib/add-picks.ts';
-import { encodeLeagues, parseLeagues } from '@/lib/pick-filter.ts';
+import type { LeagueItem } from '../components/league-checklist';
+import { planAdd } from '@/lib/add-picks.ts';
 import { SettingsModal } from '../components/settings-modal';
-import { hintForError } from '@/lib/error-hints.ts';
-
-type CriterionEval = {
-  id: string;
-  label: string;
-  status: 'pass' | 'fail' | 'unavailable';
-  detail?: string;
-  provisional?: boolean;
-};
-
-type Slip = {
-  id: string;
-  legCount?: number;
-  totalOdds: number;
-  combinedImpliedProbability: number;
-  riskLabel: string;
-  coreCount: number;
-  boosterCount: number;
-  picks: AiPick[];
-};
 
 const MARKETS: { key: string; label: string }[] = [
   { key: '', label: 'All markets' },
@@ -176,7 +148,7 @@ function PickCard({ pick, slip, onAdd, onRemove }: {
 
       {open && (
         <div className="mt-3 rounded-lg bg-black/20 p-3">
-          <CriteriaList criteria={pick.evaluation.provisionalCriteria.map((c) => ({ id: c, label: c, status: 'pass' as const }))} />
+          <CriteriaList criteria={pick.criteria} />
         </div>
       )}
     </article>
@@ -192,7 +164,7 @@ export default function AiPicksPage() {
   const [minOdds, setMinOdds] = useState('');
   const [maxOdds, setMaxOdds] = useState('');
   const [coverageData, setCoverageData] = useState<CoverageData | null>(null);
-  const [leagues, setLeagues] = useState<LeagueItem[]>([]);
+  const [, setLeagues] = useState<LeagueItem[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [slip, setSlip] = useStoredSlip();
@@ -228,12 +200,13 @@ export default function AiPicksPage() {
 
   const handleAddPick = useCallback(
     (pick: AiPick): string | null => {
-      const row = aiPickToRow(pick);
-      const res = planAdd(slip, row);
-      if (res.status === 'error') {
-        return res.message;
+      // If another outcome for the same game is already in the slip, replace it.
+      const base = slip.legs.some((l) => l.gameId === pick.gameId) ? removeLeg(slip, pick.gameId) : slip;
+      const { slip: nextSlip, report } = planAdd([pick], base, 1);
+      if (report.added === 0) {
+        return report.skipped[0]?.reason ?? "Couldn't add this pick to the slip";
       }
-      setSlip(res.nextSlip);
+      setSlip(nextSlip);
       return null;
     },
     [slip, setSlip]
@@ -241,9 +214,9 @@ export default function AiPicksPage() {
 
   const handleRemovePick = useCallback(
     (pick: AiPick) => {
-      setSlip((prev) => removeLeg(prev, pick.gameId));
+      setSlip(removeLeg(slip, pick.gameId));
     },
-    [setSlip]
+    [slip, setSlip]
   );
 
   return (
@@ -264,7 +237,7 @@ export default function AiPicksPage() {
         </button>
       </header>
 
-      {coverageData && <CoverageStrip data={coverageData} />}
+      {coverageData && <CoverageStrip coverage={coverageData} />}
 
       <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
         <div>
