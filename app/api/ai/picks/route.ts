@@ -14,12 +14,19 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const market = url.searchParams.get('market') as PickMarketKey | null;
   const bookmaker = url.searchParams.get('bookmaker');
+  const rawWithin = url.searchParams.get('withinHours');
+  const withinHours = rawWithin !== null && rawWithin !== '' ? Number(rawWithin) : null;
   const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') || 50)));
 
   const r = await loadAiSnapshot();
   if (!r.ok) return Response.json(r, { status: 400 });
 
-  const picks = filterPicks(r.picks, { market, bookmaker, leagues: parseLeagues(url.searchParams.get('leagues')) }).slice(0, limit);
+  const picks = filterPicks(r.picks, {
+    market,
+    bookmaker,
+    leagues: parseLeagues(url.searchParams.get('leagues')),
+    withinHours,
+  }).slice(0, limit);
 
   return Response.json({
     ok: true,

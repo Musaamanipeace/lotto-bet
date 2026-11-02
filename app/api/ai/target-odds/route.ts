@@ -36,6 +36,8 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const target = Number(url.searchParams.get('target') || 20);
   const bookmaker = url.searchParams.get('bookmaker');
+  const rawWithin = url.searchParams.get('withinHours');
+  const withinHours = rawWithin !== null && rawWithin !== '' ? Number(rawWithin) : null;
 
   if (!Number.isFinite(target) || target <= 1) {
     return Response.json({ ok: false, error: 'target must be a number greater than 1' }, { status: 400 });
@@ -44,7 +46,11 @@ export async function GET(req: Request) {
   const r = await loadAiSnapshot();
   if (!r.ok) return Response.json(r, { status: 400 });
 
-  const ranked = filterPicks(r.picks, { bookmaker, leagues: parseLeagues(url.searchParams.get('leagues')) });
+  const ranked = filterPicks(r.picks, {
+    bookmaker,
+    leagues: parseLeagues(url.searchParams.get('leagues')),
+    withinHours,
+  });
 
   const t = pickTargetOddsTiers(ranked, target);
   return Response.json({

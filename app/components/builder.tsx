@@ -18,8 +18,17 @@ import { useStoredSlip } from './use-slips';
 import { HealthBanner } from './health-banner';
 import { MarketFilters } from './market-filters';
 import { ZeroDataBanner } from './zero-data-banner';
-import { onTemplateApplied } from '@/lib/template-store.ts';
+import { onTemplateApplied, getLocalTemplates, type FilterTemplate } from '@/lib/template-store.ts';
+import {
+  filterAiPicksByTemplate,
+  buildTemplateTargetOdds,
+  buildTemplatePicksN,
+  buildTemplateAiAcca,
+  templateSummary,
+} from '@/lib/template-ai.ts';
+import type { TargetTier } from '@/lib/ai-picks.ts';
 import { getClientSettings, getClientAiHeaders } from '@/lib/client-settings.ts';
+import { LeagueChecklist, type LeagueItem } from './league-checklist';
 
 type GamesOk = {
   ok: true; runId: string; dataAsOf: string; count: number;
@@ -44,6 +53,8 @@ export function Builder({ heading }: { heading?: string }) {
   const { user } = useAuth();
   const [bookmaker, setBookmaker] = useState<Bookmaker>('sportybet');
   const [leagues, setLeagues] = useState<string[]>([]);
+  /** Same grouped list the Active Leagues tab shows (Big Five, Second Tier European, ...). null = not loaded / failed. */
+  const [leagueList, setLeagueList] = useState<LeagueItem[] | null>(null);
   /** true = ignore every filter and show the full market list for all upcoming games. */
   const [bypass, setBypass] = useState(false);
   const [withinHours, setWithinHours] = useState<number | null>(null);
@@ -58,7 +69,19 @@ export function Builder({ heading }: { heading?: string }) {
   const [legsCollapsed, setLegsCollapsed] = useState(false);
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const [codegenCollapsed, setCodegenCollapsed] = useState(false);
+  const [aiTemplateId, setAiTemplateId] = useState<string>('');
+  const [targetOddsInput, setTargetOddsInput] = useState<string>('20');
+  const [targetGamesInput, setTargetGamesInput] = useState<string>('5');
+  const [aiTimeframe, setAiTimeframe] = useState<string>('template');
+  const [targetTier, setTargetTier] = useState<TargetTier>('average');
+  const [isAddingAi, setIsAddingAi] = useState<boolean>(false);
+  const [templates, setTemplates] = useState<FilterTemplate[]>([]);
   const reqId = useRef(0);
+
+  // Load available templates
+  useEffect(() => {
+    setTemplates(getLocalTemplates());
+  }, []);
 
   // Leagues ticked on the Leagues page arrive as ?leagues=
   useEffect(() => {
@@ -75,6 +98,16 @@ export function Builder({ heading }: { heading?: string }) {
       if (tpl.cards) setCards(tpl.cards);
     });
   }, []);
+
+  // Load the grouped league list for the chosen bookmaker (same source as the Active Leagues tab).
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetch(`/api/leagues?bookmaker=${bookmaker}`, { signal: ctrl.signal })
+      .then((r) => r.json())
+      .then((j) => setLeagueList(j?.ok && Array.isArray(j.leagues) && j.leagues.length ? (j.leagues as LeagueItem[]) : null))
+      .catch(() => { if (!ctrl.signal.aborted) setLeagueList(null); });
+    return () => ctrl.abort();
+  }, [bookmaker]);
 
   // The Leagues list is a native <details>: close it on an outside click or Escape.
   const leaguesRef = useRef<HTMLDetailsElement>(null);
@@ -181,11 +214,7 @@ export function Builder({ heading }: { heading?: string }) {
   }
 
   async function addWithAi() {
-    const n = Number(randomCount);
-    if (!Number.isInteger(n) || n < 1 || n > 50) {
-      setNotice({ tone: 'warn', text: 'Count must be a whole number from 1 to 50.' });
-      return;
-    }
+    setIsAddingAi(true);
     setNotice({ tone: 'info', text: 'Loading AI picks…' });
     const clientSettings = getClientSettings();
     const timeoutMs = (clientSettings.timeoutSeconds || 35) * 1000;
@@ -193,8 +222,7 @@ export function Builder({ heading }: { heading?: string }) {
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
 
     try {
-      const q = new URLSearchParams({ limit: String(n + 20) });
-      if (bookmaker) q.set('bookmaker', bookmaker);
+      const q = new URLSearchParams({ limit: '100' });
       const r = await fetch(`/api/ai/picks?${q}`, {
         headers: getClientAiHeaders(clientSettings),
         signal: ctrl.signal,
@@ -203,24 +231,104 @@ export function Builder({ heading }: { heading?: string }) {
       const j = await r.json();
       if (!j.ok) {
         setNotice({ tone: 'warn', text: j.error ?? `AI picks failed (HTTP ${r.status})` });
+        setIsAddingAi(false);
         return;
       }
+
+      // Determine template to use
+      const chosenTemplate: FilterTemplate = aiTemplateId
+        ? (templates.find((t) => t.id === aiTemplateId) ?? {
+            id: 'active',
+            name: 'Active Filters',
+            bookmaker,
+            withinHours,
+            leagues,
+            cards,
+            createdAt: Date.now(),
+          })
+        : {
+            id: 'active',
+            name: 'Active Screen Filters',
+            bookmaker,
+            withinHours,
+            leagues,
+            cards,
+            createdAt: Date.now(),
+          };
+
+      // Check bookmaker compatibility with current slip
+      if (slip.legs.length > 0 && slipBookmaker(slip) !== chosenTemplate.bookmaker) {
+        const proceed = window.confirm(
+          `Picks in "${chosenTemplate.name}" are for ${BOOKMAKER_LABEL[chosenTemplate.bookmaker]}, but your slip has ${BOOKMAKER_LABEL[slipBookmaker(slip)!]} picks. Clear slip and proceed?`,
+        );
+        if (!proceed) {
+          setIsAddingAi(false);
+          setNotice(null);
+          return;
+        }
+        setSlip(emptySlip());
+      }
+
       const inSlipIds = new Set(slip.legs.map((l) => l.gameId));
-      const aiRows = (j.picks as AiPick[])
-        .filter((p) => p.bookmaker === bookmaker && !inSlipIds.has(p.gameId))
-        .map(aiPickToRow)
-        .filter((row): row is PickRow => row !== null)
-        .slice(0, n);
-      if (aiRows.length === 0) {
-        setNotice({ tone: 'warn', text: 'No AI picks match your filters. Try widening filters or configuring your AI key in Settings.' });
+      const allAiPicks = (j.picks as AiPick[]).filter((p) => !inSlipIds.has(p.gameId));
+
+      const parsedOdds = targetOddsInput.trim() ? Number.parseFloat(targetOddsInput) : null;
+      const parsedGames = targetGamesInput.trim() ? Number.parseInt(targetGamesInput, 10) : null;
+
+      if (parsedOdds !== null && (!Number.isFinite(parsedOdds) || parsedOdds <= 1)) {
+        setNotice({ tone: 'warn', text: 'Target odds must be a number greater than 1 (e.g. 10 or 25.5).' });
+        setIsAddingAi(false);
         return;
       }
-      const res = addMany(slip, aiRows);
-      setSlip(res.slip);
-      const short = aiRows.length < n ? ` Only ${aiRows.length} of ${n} AI picks matched the current bookmaker and slip.` : '';
+
+      if (parsedGames !== null && (!Number.isInteger(parsedGames) || parsedGames < 1 || parsedGames > 50)) {
+        setNotice({ tone: 'warn', text: 'Target games count must be an integer between 1 and 50.' });
+        setIsAddingAi(false);
+        return;
+      }
+
+      const parsedTimeframe =
+        aiTimeframe === 'template'
+          ? (chosenTemplate.withinHours ?? null)
+          : aiTimeframe === 'any'
+            ? null
+            : Number(aiTimeframe);
+
+      const res = buildTemplateAiAcca(allAiPicks, chosenTemplate, {
+        targetOdds: parsedOdds,
+        targetGamesCount: parsedGames,
+        withinHours: parsedTimeframe,
+        tier: targetTier,
+        excludedGameIds: inSlipIds,
+      });
+
+      if (!res.picks || res.picks.length === 0) {
+        setNotice({
+          tone: 'warn',
+          text: res.message ?? `No picks in "${chosenTemplate.name}" matched your criteria. Try widening odds, timeframe, or selecting another risk tier.`,
+        });
+        setIsAddingAi(false);
+        return;
+      }
+
+      const rows = res.picks
+        .map(aiPickToRow)
+        .filter((row): row is PickRow => row !== null);
+
+      if (rows.length === 0) {
+        setNotice({ tone: 'warn', text: 'Selected picks could not be added to the slip.' });
+        setIsAddingAi(false);
+        return;
+      }
+
+      const addRes = addMany(slip, rows);
+      setSlip(addRes.slip);
+      const oddsNote = `reaching ${res.totalOdds.toFixed(2)}x total odds`;
+      const targetNote = parsedOdds ? ` (target was ${parsedOdds.toFixed(1)}x)` : '';
+      const timeNote = parsedTimeframe ? ` · <${parsedTimeframe}h` : '';
       setNotice({
-        tone: short ? 'warn' : 'info',
-        text: `Added ${res.added} AI pick${res.added === 1 ? '' : 's'} (${clientSettings.selectedModel || 'AI'}).${short}`,
+        tone: 'info',
+        text: `Added ${addRes.added} AI picks from "${chosenTemplate.name}" ${oddsNote}${targetNote}${timeNote}.`,
       });
     } catch (e: unknown) {
       clearTimeout(timer);
@@ -230,6 +338,8 @@ export function Builder({ heading }: { heading?: string }) {
       } else {
         setNotice({ tone: 'warn', text: err.message || String(e) });
       }
+    } finally {
+      setIsAddingAi(false);
     }
   }
 
@@ -309,8 +419,10 @@ export function Builder({ heading }: { heading?: string }) {
           </label>
           <details ref={leaguesRef} className="relative text-xs text-slate-400">
             <summary className="field mt-5 cursor-pointer list-none text-slate-200">Leagues{leagues.length ? ` (${leagues.length})` : ''} ▾</summary>
-            <div className="glass absolute left-0 top-full z-50 mt-1 max-h-64 w-72 max-w-full overflow-auto bg-navy-900 p-2 shadow-xl backdrop-blur-none">
-              {!options ? <p className="p-2">Loading…</p> : options.leagues.length === 0 ? <p className="p-2">No leagues in the data.</p> : (
+            <div className="glass absolute left-0 top-full z-50 mt-1 max-h-[70vh] w-[min(24rem,90vw)] overflow-auto bg-navy-900 p-2 shadow-xl backdrop-blur-none">
+              {!options ? <p className="p-2">Loading…</p> : options.leagues.length === 0 ? <p className="p-2">No leagues in the data.</p> : leagueList ? (
+                <LeagueChecklist leagues={leagueList} selected={leagues} onChange={setLeagues} compact />
+              ) : (
                 <>
                   <button className="mb-1 text-emerald-400 underline" onClick={() => setLeagues([])}>Clear</button>
                   {options.leagues.map((l) => (
@@ -503,37 +615,250 @@ export function Builder({ heading }: { heading?: string }) {
             </div>
 
             {!toolsCollapsed && (
-              <>
-                <div className="flex flex-wrap items-end gap-2">
-                  <label className="text-xs text-slate-400">
-                    Add N games
-                    <input
-                      className="field mt-1 w-20"
-                      inputMode="numeric"
-                      value={randomCount}
-                      onChange={(e) => setRandomCount(e.target.value.replace(/\D/g, ''))}
-                    />
-                  </label>
-                  {user ? (
-                    <>
-                      <button className="btn-gold" disabled={games.status !== 'ok'} onClick={() => void addWithAi()}>
-                        Add with AI
-                      </button>
-                      <button className="btn-ghost" disabled={games.status !== 'ok' || pool.length === 0} onClick={addRandom}>
-                        Add random
-                      </button>
-                    </>
-                  ) : (
-                    <button className="btn-gold" disabled={games.status !== 'ok' || pool.length === 0} onClick={addRandom}>
-                      Add random picks
+              <div className="space-y-3.5">
+                {/* AI & Filter Template Accumulator Section */}
+                <div className="rounded-xl border border-gold-500/30 bg-gradient-to-br from-gold-500/10 via-navy-900/60 to-navy-950 p-3.5 shadow-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 font-display text-sm font-bold text-gold-300">
+                      ⚡ AI Picks from Template
+                    </span>
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                      Target & Batch
+                    </span>
+                  </div>
+
+                  {/* Template Picker */}
+                  <div className="mt-2.5 space-y-1">
+                    <div className="flex items-center justify-between text-xs text-slate-300">
+                      <span className="font-medium">Filter Template:</span>
+                      <span className="text-[11px] text-slate-500">
+                        {aiTemplateId ? templates.find((t) => t.id === aiTemplateId)?.bookmaker : bookmaker}
+                      </span>
+                    </div>
+                    <select
+                      className="field w-full text-xs py-1.5"
+                      value={aiTemplateId}
+                      onChange={(e) => setAiTemplateId(e.target.value)}
+                    >
+                      <option value="">Current Active Screen Filters</option>
+                      <optgroup label="Default Filter Templates">
+                        {templates.filter((t) => t.isDefault).map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({BOOKMAKER_LABEL[t.bookmaker]})
+                          </option>
+                        ))}
+                      </optgroup>
+                      {templates.some((t) => !t.isDefault) && (
+                        <optgroup label="My Saved Templates">
+                          {templates.filter((t) => !t.isDefault).map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} ({BOOKMAKER_LABEL[t.bookmaker]})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                    {/* Summary pill */}
+                    <p className="truncate text-[11px] text-cyan-400/80">
+                      {templateSummary(
+                        aiTemplateId
+                          ? (templates.find((t) => t.id === aiTemplateId) ?? {
+                              id: 'active',
+                              name: 'Active',
+                              bookmaker,
+                              withinHours,
+                              leagues,
+                              cards,
+                              createdAt: 0,
+                            })
+                          : {
+                              id: 'active',
+                              name: 'Active',
+                              bookmaker,
+                              withinHours,
+                              leagues,
+                              cards,
+                              createdAt: 0,
+                            },
+                        aiTimeframe !== 'template' ? (aiTimeframe === 'any' ? null : Number(aiTimeframe)) : undefined,
+                      )}
+                    </p>
+                  </div>
+
+                  {/* AI Timeframe Selector */}
+                  <div className="mt-3 space-y-1">
+                    <div className="flex items-center justify-between text-xs text-slate-300">
+                      <span className="font-medium">AI Picks Timeframe:</span>
+                      <span className="text-[11px] text-cyan-400 font-mono">
+                        {aiTimeframe === 'template' ? 'From Template' : aiTimeframe === 'any' ? 'Any time' : `<${aiTimeframe}h`}
+                      </span>
+                    </div>
+                    <select
+                      className="field w-full text-xs py-1.5"
+                      value={aiTimeframe}
+                      onChange={(e) => setAiTimeframe(e.target.value)}
+                    >
+                      <option value="template">From Template Default</option>
+                      <option value="2">Next 2 hours (Kickoff soon)</option>
+                      <option value="6">Next 6 hours</option>
+                      <option value="12">Next 12 hours</option>
+                      <option value="24">Next 24 hours (Today)</option>
+                      <option value="48">Next 48 hours (Next 2 days)</option>
+                      <option value="72">Next 3 days (This weekend)</option>
+                      <option value="any">Any time (Next 7 days)</option>
+                    </select>
+                  </div>
+
+                  {/* Target Odds & Target Games (Both Optional) */}
+                  <div className="mt-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-white/10 pt-3">
+                    {/* Target Total Odds (Optional) */}
+                    <div className="space-y-1.5 rounded-lg bg-black/25 p-2.5 border border-white/5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-medium text-slate-300">
+                          Target Odds <span className="text-slate-500 font-normal">(optional)</span>
+                        </label>
+                        {targetOddsInput && (
+                          <button
+                            type="button"
+                            onClick={() => setTargetOddsInput('')}
+                            className="text-[10px] text-slate-400 hover:text-white"
+                            title="Clear target odds"
+                          >
+                            ✕ Clear
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={targetOddsInput}
+                          onChange={(e) => {
+                            const t = e.target.value.replace(/[^\d.]/g, '');
+                            setTargetOddsInput(t.slice(0, 7));
+                          }}
+                          className="field h-7 w-full text-right text-xs font-bold text-gold-400"
+                          placeholder="e.g. 20.0"
+                        />
+                        <span className="text-xs font-bold text-slate-400">x</span>
+                      </div>
+                      {/* Presets */}
+                      <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                        {['5', '10', '20', '50', '100'].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setTargetOddsInput(preset)}
+                            className={`rounded border px-1.5 py-0.5 text-[10px] font-mono transition ${
+                              targetOddsInput === preset
+                                ? 'border-gold-500 bg-gold-500/25 text-gold-300'
+                                : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+                            }`}
+                          >
+                            {preset}x
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Target Games Count (Optional) */}
+                    <div className="space-y-1.5 rounded-lg bg-black/25 p-2.5 border border-white/5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-medium text-slate-300">
+                          Number of Games <span className="text-slate-500 font-normal">(optional)</span>
+                        </label>
+                        {targetGamesInput && (
+                          <button
+                            type="button"
+                            onClick={() => setTargetGamesInput('')}
+                            className="text-[10px] text-slate-400 hover:text-white"
+                            title="Clear game count"
+                          >
+                            ✕ Clear
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={targetGamesInput}
+                          onChange={(e) => setTargetGamesInput(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                          className="field h-7 w-full text-right text-xs font-bold text-cyan-300"
+                          placeholder="e.g. 5"
+                        />
+                        <span className="text-xs text-slate-400">legs</span>
+                      </div>
+                      {/* Presets */}
+                      <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                        {['3', '5', '8', '10', '15'].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setTargetGamesInput(preset)}
+                            className={`rounded border px-1.5 py-0.5 text-[10px] font-mono transition ${
+                              targetGamesInput === preset
+                                ? 'border-cyan-500 bg-cyan-500/25 text-cyan-300'
+                                : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Risk Profile Selection */}
+                  <div className="mt-3 flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Risk Profile:</span>
+                    <div className="flex gap-1">
+                      {(['lower', 'average', 'higher'] as const).map((tier) => (
+                        <button
+                          key={tier}
+                          type="button"
+                          onClick={() => setTargetTier(tier)}
+                          className={`rounded border px-2 py-0.5 text-[10px] font-medium transition ${
+                            targetTier === tier
+                              ? 'border-gold-500 bg-gold-500/20 text-gold-300'
+                              : 'border-white/10 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {tier === 'lower' ? 'Safe' : tier === 'average' ? 'Balanced' : 'Value'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Primary Generation CTA */}
+                  <div className="mt-3.5 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn-gold flex-1 py-2 text-xs font-bold shadow-md hover:brightness-110 transition"
+                      disabled={isAddingAi}
+                      onClick={() => void addWithAi()}
+                    >
+                      {isAddingAi
+                        ? '⚡ Generating…'
+                        : targetOddsInput.trim() && targetGamesInput.trim()
+                          ? `⚡ Add ~${targetOddsInput}x AI Acca (${targetGamesInput} games)`
+                          : targetOddsInput.trim()
+                            ? `⚡ Add ~${targetOddsInput}x AI Acca`
+                            : targetGamesInput.trim()
+                              ? `⚡ Add ${targetGamesInput} AI Picks`
+                              : '⚡ Add Top AI Picks from Template'}
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      className="btn-ghost py-2 text-xs"
+                      disabled={games.status !== 'ok' || pool.length === 0}
+                      onClick={addRandom}
+                      title="Add random picks from current pool without AI"
+                    >
+                      Add Random
+                    </button>
+                  </div>
                 </div>
-                {!user && (
-                  <p className="text-[11px] text-slate-500">
-                    Guests get random picks from the filtered pool. Sign in to enable AI picks.
-                  </p>
-                )}
 
                 <div className="flex flex-wrap items-end gap-2 border-t border-white/10 pt-3">
                   <label className="text-xs text-slate-400">
@@ -588,7 +913,7 @@ export function Builder({ heading }: { heading?: string }) {
                     Clear slip
                   </button>
                 </div>
-              </>
+              </div>
             )}
           </div>
 

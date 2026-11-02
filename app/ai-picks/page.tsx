@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { AiPick } from '@/lib/ai-picks.ts';
 import { aiPickToRow } from '@/lib/ai-rows.ts';
-import { MAX_LEGS, addLeg, emptySlip, removeLeg, slipTotals, type Slip as BuilderSlip } from '@/lib/slip.ts';
+import type { PickRow } from '@/lib/types.ts';
+import { defaultCards } from '@/lib/market-cards.ts';
+import { MAX_LEGS, addLeg, addMany, emptySlip, removeLeg, slipTotals, type Slip as BuilderSlip } from '@/lib/slip.ts';
+import { getLocalTemplates, type FilterTemplate } from '@/lib/template-store.ts';
+import { buildTemplateAiAcca, templateSummary } from '@/lib/template-ai.ts';
 import { useStoredSlip } from '../components/use-slips';
 import { AlternativesPanel } from '../components/alternatives-panel';
 import { CoverageStrip, CriteriaList, PickDataLine, type CoverageData } from '../components/data-status';
@@ -161,52 +165,74 @@ function PickCard({ pick, slip, onAdd, onRemove }: {
   );
 }
 
-function SlipCard({ slip, title }: { slip: Slip; title?: string }) {
+function SlipCard({
+  slip,
+  title,
+  onAddAll,
+}: {
+  slip: Slip;
+  title?: string;
+  onAddAll?: (picks: AiPick[]) => void;
+}) {
   const [legsOpen, setLegsOpen] = useState(true);
   const picksList = slip.picks ?? [];
   return (
-    <article className="glass rounded-xl border border-white/10 p-4 transition-all">
-      {title && <h3 className="mb-2 font-display text-sm font-semibold text-white">{title}</h3>}
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <span className="font-display text-2xl font-bold text-gold-400">{slip.totalOdds.toFixed(2)}</span>
-          <span className="ml-2 text-xs text-slate-400">
-            combined implied {(slip.combinedImpliedProbability * 100).toFixed(4)}%
-          </span>
+    <article className="glass rounded-xl border border-white/10 p-4 transition-all flex flex-col justify-between">
+      <div>
+        {title && <h3 className="mb-2 font-display text-sm font-semibold text-white">{title}</h3>}
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <span className="font-display text-2xl font-bold text-gold-400">{slip.totalOdds.toFixed(2)}</span>
+            <span className="ml-2 text-xs text-slate-400">
+              combined implied {(slip.combinedImpliedProbability * 100).toFixed(4)}%
+            </span>
+          </div>
+          <div className="text-right text-xs text-slate-400">
+            <span className="rounded-full border border-white/10 px-2 py-0.5">{slip.riskLabel}</span>
+            <p className="mt-1">
+              {picksList.length || slip.legCount} legs · {slip.coreCount} core · {slip.boosterCount} boosters
+            </p>
+          </div>
         </div>
-        <div className="text-right text-xs text-slate-400">
-          <span className="rounded-full border border-white/10 px-2 py-0.5">{slip.riskLabel}</span>
-          <p className="mt-1">
-            {picksList.length || slip.legCount} legs · {slip.coreCount} core · {slip.boosterCount} boosters
-          </p>
+
+        <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2 text-xs">
+          <span className="text-slate-400">Picks Breakdown ({picksList.length || slip.legCount})</span>
+          <button
+            type="button"
+            onClick={() => setLegsOpen((o) => !o)}
+            className="text-cyan-400 hover:text-cyan-300"
+          >
+            {legsOpen ? '▲ Collapse legs' : '▼ Show legs'}
+          </button>
         </div>
+
+        {legsOpen && (
+          <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-slate-300">
+            {picksList.slice(0, 30).map((p) => (
+              <li key={p.id} className="flex justify-between gap-2 border-b border-white/5 py-1">
+                <span>
+                  {p.home} vs {p.away} · {p.marketKey.replace(/_/g, ' ')}
+                </span>
+                <span className="text-gold-400">{p.odds.toFixed(2)}</span>
+              </li>
+            ))}
+            {picksList.length > 30 && (
+              <li className="text-slate-500">… and {picksList.length - 30} more</li>
+            )}
+          </ul>
+        )}
       </div>
 
-      <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2 text-xs">
-        <span className="text-slate-400">Picks Breakdown ({picksList.length || slip.legCount})</span>
-        <button
-          type="button"
-          onClick={() => setLegsOpen((o) => !o)}
-          className="text-cyan-400 hover:text-cyan-300"
-        >
-          {legsOpen ? '▲ Collapse legs' : '▼ Show legs'}
-        </button>
-      </div>
-
-      {legsOpen && (
-        <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-slate-300">
-          {picksList.slice(0, 30).map((p) => (
-            <li key={p.id} className="flex justify-between gap-2 border-b border-white/5 py-1">
-              <span>
-                {p.home} vs {p.away} · {p.marketKey.replace(/_/g, ' ')}
-              </span>
-              <span className="text-gold-400">{p.odds.toFixed(2)}</span>
-            </li>
-          ))}
-          {picksList.length > 30 && (
-            <li className="text-slate-500">… and {picksList.length - 30} more</li>
-          )}
-        </ul>
+      {onAddAll && picksList.length > 0 && (
+        <div className="mt-3.5 border-t border-white/10 pt-3">
+          <button
+            type="button"
+            className="btn-emerald w-full py-1.5 text-xs font-semibold shadow hover:brightness-110 transition"
+            onClick={() => onAddAll(picksList)}
+          >
+            + Add all {picksList.length} picks to slip
+          </button>
+        </div>
       )}
     </article>
   );
@@ -244,6 +270,10 @@ export default function AiPicksPage() {
   // Inputs are free-typed text; nothing is fetched until the action button (or Enter) is used.
   const [nText, setNText] = useState('15');
   const [targetText, setTargetText] = useState('20');
+  const [targetGamesText, setTargetGamesText] = useState('');
+  const [targetTimeframe, setTargetTimeframe] = useState('any');
+  const [targetTemplateId, setTargetTemplateId] = useState('');
+  const [templates, setTemplates] = useState<FilterTemplate[]>([]);
   const [inputError, setInputError] = useState<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -257,6 +287,19 @@ export default function AiPicksPage() {
   const [generating, setGenerating] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [slip, setSlip] = useStoredSlip();
+
+  useEffect(() => {
+    setTemplates(getLocalTemplates());
+  }, []);
+
+  function handleAddAll(picksToAdd: AiPick[]) {
+    const rows = picksToAdd.map(aiPickToRow).filter((r): r is PickRow => r !== null);
+    if (rows.length === 0) return;
+    const out = addMany(slip, rows);
+    setSlip(out.slip);
+    const refused = out.refused.length ? ` (${out.refused.length} refused: already in slip or conflicting)` : '';
+    setAddNote(`Added ${out.added} pick${out.added === 1 ? '' : 's'} to slip${refused}.`);
+  }
 
   /** Returns an error message, or null when the pick was added. */
   function addPick(p: AiPick): string | null {
@@ -347,11 +390,87 @@ export default function AiPicksPage() {
     }
   }, [lq]);
 
-  const loadTarget = useCallback(async (target: number) => {
+  const loadTarget = useCallback(async (
+    targetVal?: number | null,
+    gamesVal?: number | null,
+    templateId?: string,
+    timeframeVal?: string,
+  ) => {
     setStatus('loading');
     setError(null);
     try {
-      const r = await fetch(`/api/ai/target-odds?target=${target}${lq}`);
+      const activeTarget = targetVal !== undefined ? targetVal : parseTarget(targetText);
+      const activeGames = gamesVal !== undefined ? gamesVal : (targetGamesText.trim() ? Number(targetGamesText) : null);
+      const activeTimeframe = timeframeVal !== undefined ? timeframeVal : targetTimeframe;
+      const withinHours = activeTimeframe && activeTimeframe !== 'any' ? Number(activeTimeframe) : null;
+      const activeTemplateId = templateId !== undefined ? templateId : targetTemplateId;
+      const activeTpl = activeTemplateId ? templates.find((t) => t.id === activeTemplateId) : null;
+
+      if (activeTpl || activeGames) {
+        const q = new URLSearchParams({ limit: '120' });
+        if (withinHours) q.set('withinHours', String(withinHours));
+        const r = await fetch(`/api/ai/picks?${q}${lq}`);
+        const j = await r.json();
+        if (!j.ok) {
+          setStatus('error');
+          setError(j.error ?? `HTTP ${r.status}`);
+          return;
+        }
+        const rawPicks = (j.picks ?? []) as AiPick[];
+        const tplToUse: FilterTemplate = activeTpl ?? {
+          id: 'default',
+          name: 'All Qualified Markets',
+          bookmaker: 'sportybet',
+          withinHours,
+          leagues,
+          cards: defaultCards,
+          createdAt: 0,
+        };
+
+        const buildTier = (tier: 'lower' | 'average' | 'higher'): TierResult => {
+          const res = buildTemplateAiAcca(rawPicks, tplToUse, {
+            targetOdds: activeTarget,
+            targetGamesCount: activeGames,
+            withinHours,
+            tier,
+          });
+          if (!res.picks || res.picks.length === 0) {
+            return { slip: null, achieved: 0, gap: activeTarget ?? 0, message: res.message ?? 'No slip available for this tier.' };
+          }
+          const totalOdds = res.totalOdds;
+          const combinedImplied = res.picks.reduce((acc, p) => acc * p.impliedProbability, 1);
+          const slipObj: Slip = {
+            id: `tpl-${tier}-${Date.now()}`,
+            legCount: res.picks.length,
+            totalOdds,
+            combinedImpliedProbability: combinedImplied,
+            riskLabel: tier === 'lower' ? 'Safe picks only' : tier === 'average' ? 'Balanced' : 'Value',
+            coreCount: res.picks.filter((p) => p.tier === 'safe').length,
+            boosterCount: res.picks.filter((p) => p.tier !== 'safe').length,
+            picks: res.picks,
+          };
+          return {
+            slip: slipObj,
+            achieved: totalOdds,
+            gap: activeTarget ? Math.abs(totalOdds - activeTarget) : 0,
+            message: res.message ?? null,
+          };
+        };
+
+        setTargetResult({
+          target: activeTarget ?? (activeGames ? activeGames : 20),
+          lower: buildTier('lower'),
+          average: buildTier('average'),
+          higher: buildTier('higher'),
+        });
+        setStatus('idle');
+        return;
+      }
+
+      const targetNum = activeTarget ?? 20;
+      const q = new URLSearchParams({ target: String(targetNum) });
+      if (withinHours) q.set('withinHours', String(withinHours));
+      const r = await fetch(`/api/ai/target-odds?${q}${lq}`);
       const j = await r.json();
       if (!j.ok) {
         setStatus('error');
@@ -364,7 +483,7 @@ export default function AiPicksPage() {
       setStatus('error');
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [lq]);
+  }, [lq, targetText, targetGamesText, targetTimeframe, targetTemplateId, templates, leagues]);
 
   // League filter: read from ?leagues= once, keep the URL in sync, and load the league list.
   useEffect(() => {
@@ -430,9 +549,17 @@ export default function AiPicksPage() {
   function submitTarget(e?: React.FormEvent) {
     e?.preventDefault();
     const v = parseTarget(targetText);
-    if (v === null) { setInputError('Target odds must be a number greater than 1.'); return; }
+    const g = targetGamesText.trim() ? Number(targetGamesText) : null;
+    if (v === null && g === null && !targetTemplateId) {
+      setInputError('Please specify target odds, target number of games, or choose a template.');
+      return;
+    }
+    if (g !== null && (!Number.isInteger(g) || g < 1 || g > 50)) {
+      setInputError('Number of games must be a whole number between 1 and 50.');
+      return;
+    }
     setInputError(null);
-    void loadTarget(v);
+    void loadTarget(v, g);
   }
 
   async function regenerate() {
@@ -608,9 +735,9 @@ export default function AiPicksPage() {
             <>
               {pickN?.message && <p className="mb-3 text-sm text-amber-300">{pickN.message}</p>}
               <div className="grid gap-4 lg:grid-cols-3">
-                {pickN?.lower && <SlipCard slip={pickN.lower} title="Lower risk (~90% core)" />}
-                {pickN?.average && <SlipCard slip={pickN.average} title="Average (~75% core)" />}
-                {pickN?.higher && <SlipCard slip={pickN.higher} title="Higher risk (~60% core)" />}
+                {pickN?.lower && <SlipCard slip={pickN.lower} title="Lower risk (~90% core)" onAddAll={handleAddAll} />}
+                {pickN?.average && <SlipCard slip={pickN.average} title="Average (~75% core)" onAddAll={handleAddAll} />}
+                {pickN?.higher && <SlipCard slip={pickN.higher} title="Higher risk (~60% core)" onAddAll={handleAddAll} />}
               </div>
               {!pickN?.lower && !pickN?.average && !pickN?.higher && !error && (
                 <p className="text-sm text-slate-400">No slips could be built from qualifying picks.</p>
@@ -622,32 +749,179 @@ export default function AiPicksPage() {
 
       {tab === 'target' && (
         <div>
-          <form onSubmit={submitTarget} className="mb-4 flex flex-wrap items-center gap-3">
-            <label className="text-sm text-slate-300">
-              Target odds
-              <input
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                value={targetText}
-                onChange={(e) => {
-                  // digits and a single dot only
-                  const t = e.target.value.replace(/[^\d.]/g, '');
-                  const dot = t.indexOf('.');
-                  setTargetText(dot === -1 ? t.slice(0, 7) : (t.slice(0, dot + 1) + t.slice(dot + 1).replace(/\./g, '')).slice(0, 9));
-                }}
-                className={`${INPUT_CLS} w-24`}
-                aria-label="Target odds"
-              />
-            </label>
-            <button type="submit" className="btn-emerald" disabled={status === 'loading'}>
-              {status === 'loading' ? 'Finding…' : 'Find closest'}
-            </button>
+          {/* Controls Form: Template, Timeframe, Optional Target Odds, Optional Target Games */}
+          <form onSubmit={submitTarget} className="mb-5 space-y-3.5 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Filter Template Selector */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Filter by Template <span className="text-slate-500 font-normal">(optional)</span>
+                </label>
+                <select
+                  className="field w-full text-xs py-1.5"
+                  value={targetTemplateId}
+                  onChange={(e) => setTargetTemplateId(e.target.value)}
+                >
+                  <option value="">All Qualified Markets (Default)</option>
+                  <optgroup label="Default Filter Templates">
+                    {templates.filter((t) => t.isDefault).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {templates.some((t) => !t.isDefault) && (
+                    <optgroup label="My Saved Templates">
+                      {templates.filter((t) => !t.isDefault).map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                {targetTemplateId && (
+                  <p className="mt-1 text-[11px] text-cyan-400/80 truncate">
+                    {templateSummary(templates.find((t) => t.id === targetTemplateId)!)}
+                  </p>
+                )}
+              </div>
+
+              {/* Timeframe Selector */}
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  AI Picks Timeframe <span className="text-slate-500 font-normal">(kickoff window)</span>
+                </label>
+                <select
+                  className="field w-full text-xs py-1.5"
+                  value={targetTimeframe}
+                  onChange={(e) => setTargetTimeframe(e.target.value)}
+                >
+                  <option value="any">Any time (Next 7 days)</option>
+                  <option value="2">Next 2 hours (Kickoff soon)</option>
+                  <option value="6">Next 6 hours</option>
+                  <option value="12">Next 12 hours</option>
+                  <option value="24">Next 24 hours (Today)</option>
+                  <option value="48">Next 48 hours (Next 2 days)</option>
+                  <option value="72">Next 3 days (This weekend)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-white/5 pt-3">
+              {/* Target Odds (Optional) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-slate-300">
+                  <label className="font-medium">
+                    Target Odds <span className="text-slate-500 font-normal">(optional)</span>
+                  </label>
+                  {targetText && (
+                    <button
+                      type="button"
+                      onClick={() => setTargetText('')}
+                      className="text-[10px] text-slate-400 hover:text-white"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={targetText}
+                    onChange={(e) => {
+                      const t = e.target.value.replace(/[^\d.]/g, '');
+                      const dot = t.indexOf('.');
+                      setTargetText(dot === -1 ? t.slice(0, 7) : (t.slice(0, dot + 1) + t.slice(dot + 1).replace(/\./g, '')).slice(0, 9));
+                    }}
+                    className="field h-8 w-full text-right text-xs font-bold text-gold-400"
+                    placeholder="e.g. 20.0"
+                    aria-label="Target odds"
+                  />
+                  <span className="text-xs font-bold text-slate-400">x</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {['5', '10', '20', '50', '100'].map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setTargetText(p)}
+                      className={`rounded border px-1.5 py-0.5 text-[10px] font-mono transition ${
+                        targetText === p
+                          ? 'border-gold-500 bg-gold-500/25 text-gold-300'
+                          : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {p}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Number of Games (Optional) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-slate-300">
+                  <label className="font-medium">
+                    Number of Games <span className="text-slate-500 font-normal">(optional)</span>
+                  </label>
+                  {targetGamesText && (
+                    <button
+                      type="button"
+                      onClick={() => setTargetGamesText('')}
+                      className="text-[10px] text-slate-400 hover:text-white"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={targetGamesText}
+                    onChange={(e) => setTargetGamesText(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                    className="field h-8 w-full text-right text-xs font-bold text-cyan-300"
+                    placeholder="e.g. 5"
+                    aria-label="Target number of games"
+                  />
+                  <span className="text-xs text-slate-400">legs</span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {['3', '5', '8', '10', '15'].map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setTargetGamesText(g)}
+                      className={`rounded border px-1.5 py-0.5 text-[10px] font-mono transition ${
+                        targetGamesText === g
+                          ? 'border-cyan-500 bg-cyan-500/25 text-cyan-300'
+                          : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <button type="submit" className="btn-emerald py-2 px-5 text-xs font-bold" disabled={status === 'loading'}>
+                {status === 'loading' ? 'Building AI Slips…' : '⚡ Find / Build Slips'}
+              </button>
+              <span className="text-[11px] text-slate-400">Both odds & game count are optional</span>
+            </div>
           </form>
+
           {inputError && <p className="mb-3 text-sm text-red-300" role="alert">{inputError}</p>}
           {status !== 'loading' && targetResult && (
             <>
-              <p className="mb-3 text-sm text-slate-400">Requested {targetResult.target.toFixed(2)}, closest slip for each risk tier:</p>
+              <p className="mb-3 text-sm text-slate-400">
+                Generated closest accumulator for each risk tier:
+              </p>
               <div className="grid gap-4 lg:grid-cols-3">
                 {(['lower', 'average', 'higher'] as const).map((tier) => {
                   const t = targetResult[tier];
@@ -658,7 +932,7 @@ export default function AiPicksPage() {
                           <p className="mb-2 text-xs text-slate-400">
                             achieved {t.achieved.toFixed(2)} · gap {t.gap.toFixed(2)}
                           </p>
-                          <SlipCard slip={t.slip} title={TARGET_TIER_LABEL[tier]} />
+                          <SlipCard slip={t.slip} title={TARGET_TIER_LABEL[tier]} onAddAll={handleAddAll} />
                         </>
                       ) : (
                         <article className="glass rounded-xl border border-white/10 p-4">
@@ -686,7 +960,7 @@ export default function AiPicksPage() {
             </p>
           )}
           {slips25.map((s, i) => (
-            <SlipCard key={s.id} slip={s} title={`Accumulator ${i + 1}`} />
+            <SlipCard key={s.id} slip={s} title={`Accumulator ${i + 1}`} onAddAll={handleAddAll} />
           ))}
         </div>
       )}
