@@ -177,7 +177,7 @@ function PickCard({ pick, slip, onAdd, onRemove }: {
 
       {open && (
         <div className="mt-3 rounded-lg bg-black/20 p-3">
-          <CriteriaList criteria={pick.evaluation.criteria} />
+          <CriteriaList criteria={pick.evaluation.provisionalCriteria.map((c) => ({ id: c, label: c, status: 'pass' as const }))} />
         </div>
       )}
     </article>
