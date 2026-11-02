@@ -76,7 +76,6 @@ function PickCard({ pick, slip, onAdd, onRemove }: {
   const [open, setOpen] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  // 'this': this exact pick is in the slip. 'other': the game is in the slip with a different market.
   const leg = slip.legs.find((l) => l.gameId === pick.gameId);
   const slipState: 'none' | 'this' | 'other' = !leg
     ? 'none'
@@ -196,7 +195,7 @@ export default function AiPicksPage() {
   const [leagues, setLeagues] = useState<LeagueItem[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const { slip, setSlip } = useStoredSlip();
+  const [slip, setSlip] = useStoredSlip();
 
   useEffect(() => {
     async function loadPicks() {
