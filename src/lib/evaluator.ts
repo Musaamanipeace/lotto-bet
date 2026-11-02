@@ -1,4 +1,6 @@
 import { VERIFICATION } from './criteria.ts';
+import type { DataState, StateCounts } from './data-state.ts';
+import { emptyStateCounts } from './data-state.ts';
 
 export type CriterionStatus = 'pass' | 'fail' | 'unavailable';
 export type CriterionResult = {
@@ -7,6 +9,7 @@ export type CriterionResult = {
   status: CriterionStatus;
   detail?: string;
   provisional?: boolean;
+  dataState?: DataState;
 };
 
 export const NO_STATS_PROVIDER_MESSAGE =
@@ -25,6 +28,8 @@ export type Evaluation = {
   verifiedLabel: string;
   reason: string | null;
   provisionalCriteria: string[];
+  dataCoverage?: number;
+  stateCounts?: StateCounts;
 };
 
 /**
@@ -45,12 +50,21 @@ export function evaluateCriteria(
   const verifiedLabel = `${passed} of ${total} criteria verified`;
   const provisionalCriteria = results.filter((r) => r.provisional).map((r) => r.id);
 
+  const stateCounts = emptyStateCounts();
+  for (const r of results) {
+    const s: DataState = r.dataState ?? (r.status === 'pass' || r.status === 'fail' ? 'ok' : 'not_fetched');
+    stateCounts[s] = (stateCounts[s] ?? 0) + 1;
+  }
+  const dataCoverage = total === 0 ? 0 : stateCounts.ok / total;
+
   const base = {
     passed,
     verifiable,
     total,
     verifiedLabel,
     provisionalCriteria,
+    dataCoverage,
+    stateCounts,
   };
 
   if (total === 0) {

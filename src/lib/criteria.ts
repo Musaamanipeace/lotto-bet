@@ -316,6 +316,7 @@ export const FIT_SCORE_WEIGHTS = {
   cardsCornersData: 0.05,
   failedCriteriaPenalty: -0.10,
   congestionPenalty: -0.10,
+  lowDataProbabilityBoost: 0.15,
 } as const;
 
 /** Accumulator composition (design §4). */

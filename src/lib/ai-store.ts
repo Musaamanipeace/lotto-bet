@@ -4,6 +4,7 @@
  */
 import type { AccumulatorSlip, AiPick } from './ai-picks.ts';
 import type { AiEngineResult } from './ai-engine.ts';
+import type { CoverageData } from './data-state.ts';
 
 export type AiSnapshot = {
   picks: AiPick[];
@@ -14,6 +15,7 @@ export type AiSnapshot = {
   candidateCount: number;
   verifiedCount: number;
   bestFitCount: number;
+  coverage: CoverageData;
   runId: string | null;
 };
 
@@ -29,6 +31,7 @@ export function saveAiSnapshot(result: AiEngineResult, runId: string | null = nu
     candidateCount: result.candidateCount,
     verifiedCount: result.verifiedCount,
     bestFitCount: result.bestFitCount,
+    coverage: result.coverage,
     runId,
   };
   return snapshot;
