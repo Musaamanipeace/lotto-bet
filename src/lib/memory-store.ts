@@ -44,8 +44,11 @@ export class MemoryStore implements Store {
   }
 }
 
-/** Singleton used across requests in the same process. */
-let shared: MemoryStore | null = null;
+/**
+ * Singleton used across requests in the same process. Kept on globalThis because Next.js (dev and
+ * some builds) can load a module once per route, which would give each route its own empty store.
+ */
+const g = globalThis as unknown as { __lottoMemoryStore?: MemoryStore };
 export function getMemoryStore(): MemoryStore {
-  return (shared ??= new MemoryStore());
+  return (g.__lottoMemoryStore ??= new MemoryStore());
 }
