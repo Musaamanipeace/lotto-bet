@@ -267,14 +267,43 @@ export function pickTargetOdds(ranked: AiPick[], targetOdds: number, tier: Targe
   const selected: AiPick[] = [];
   let odds = 1;
 
-  for (const p of pool) {
-    if (selected.length >= ACCUMULATOR.maxLegs || (selected.length > 0 && odds >= targetOdds)) break;
-    if (used.has(p.gameId)) continue;
-    const next = odds * p.odds;
-    if (selected.length > 0 && Math.abs(Math.log(next / targetOdds)) > Math.abs(Math.log(odds / targetOdds))) continue;
-    selected.push(p);
-    used.add(p.gameId);
-    odds = next;
+  while (selected.length < ACCUMULATOR.maxLegs && odds < targetOdds) {
+    let bestPick: AiPick | null = null;
+    let bestLogDistance = Infinity;
+
+    for (const p of pool) {
+      if (used.has(p.gameId)) continue;
+      const nextOdds = odds * p.odds;
+      const dist = Math.abs(Math.log(nextOdds / targetOdds));
+      if (dist < bestLogDistance) {
+        bestLogDistance = dist;
+        bestPick = p;
+      }
+    }
+
+    if (!bestPick) break;
+
+    // If we already have legs and adding bestPick makes our distance worse than current odds, stop
+    if (selected.length > 0 && bestLogDistance >= Math.abs(Math.log(odds / targetOdds))) {
+      break;
+    }
+
+    selected.push(bestPick);
+    used.add(bestPick.gameId);
+    odds *= bestPick.odds;
+  }
+
+  if (selected.length === 0 && pool.length > 0) {
+    let best = pool[0];
+    let bestDist = Math.abs(Math.log(best.odds / targetOdds));
+    for (const p of pool) {
+      const d = Math.abs(Math.log(p.odds / targetOdds));
+      if (d < bestDist) {
+        bestDist = d;
+        best = p;
+      }
+    }
+    selected.push(best);
   }
 
   const slip = composeAccumulator(selected, selected.length, { core: 1, booster: 0 })!;

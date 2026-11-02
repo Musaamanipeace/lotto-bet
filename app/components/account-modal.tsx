@@ -16,7 +16,15 @@ type SavedSlip = {
   shared: boolean;
 };
 
-export function AccountModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AccountModal({
+  open,
+  onClose,
+  onOpenSettings,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onOpenSettings?: () => void;
+}) {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'slips' | 'templates' | 'profile'>('slips');
   const [slips, setSlips] = useState<SavedSlip[]>([]);
@@ -308,6 +316,18 @@ export function AccountModal({ open, onClose }: { open: boolean; onClose: () => 
                   <span className="odds">{slips.length}</span>
                 </div>
               </div>
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenSettings();
+                  }}
+                  className="btn-gold w-full text-xs flex items-center justify-center gap-1.5"
+                >
+                  ⚙️ Configure AI Models & API Keys
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {

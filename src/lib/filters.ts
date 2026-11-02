@@ -75,6 +75,7 @@ export function parseRules(json: string): PickRule[] | null {
 }
 
 export type Filter = {
+  gameId?: string;
   leagues?: string[];
   dateFrom?: number; dateTo?: number; // kickoff, epoch ms, inclusive
   oddsMin?: number; oddsMax?: number; // inclusive
@@ -128,6 +129,7 @@ export function candidateRows(games: Game[], f: Filter = {}): PickRow[] {
   const leagues = f.leagues?.length ? new Set(f.leagues) : null;
   const out: PickRow[] = [];
   for (const g of games) {
+    if (f.gameId && g.id !== f.gameId) continue;
     if (f.bookmaker && g.bookmaker !== f.bookmaker) continue;
     if (leagues && (g.league === null || !leagues.has(g.league))) continue;
     if (f.dateFrom !== undefined && g.kickoff < f.dateFrom) continue;

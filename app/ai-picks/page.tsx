@@ -11,6 +11,7 @@ import { CoverageStrip, CriteriaList, PickDataLine, type CoverageData } from '..
 import { LeagueChecklist, type LeagueItem } from '../components/league-checklist';
 import { describeReport, planAdd, type Revalidation } from '@/lib/add-picks.ts';
 import { encodeLeagues, parseLeagues } from '@/lib/pick-filter.ts';
+import { SettingsModal } from '../components/settings-modal';
 
 type CriterionEval = {
   id: string;
@@ -253,6 +254,7 @@ export default function AiPicksPage() {
   const [addNote, setAddNote] = useState<string | null>(null);
   const lq = leagues.length ? `&leagues=${encodeURIComponent(encodeLeagues(leagues))}` : '';
   const [generating, setGenerating] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [slip, setSlip] = useStoredSlip();
 
   /** Returns an error message, or null when the pick was added. */
@@ -474,6 +476,13 @@ export default function AiPicksPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button
+            type="button"
+            className="btn-ghost text-xs text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/10"
+            onClick={() => setSettingsOpen(true)}
+          >
+            ⚙️ AI Settings
+          </button>
           <button type="button" className="btn-ghost" onClick={() => void regenerate()} disabled={generating}>
             {generating ? 'Generating…' : 'Regenerate AI'}
           </button>
@@ -692,6 +701,7 @@ export default function AiPicksPage() {
           <Link href="/" className="btn-gold h-8 px-3 py-0 text-xs">Open slip →</Link>
         </div>
       )}
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

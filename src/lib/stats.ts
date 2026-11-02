@@ -1,107 +1,172 @@
 import { ok, fail, type Result } from './result.ts';
-import type { MissingState } from './data-state.ts';
-import { FootballDataProvider } from './fd-provider.ts';
-import { miss, type MetricOutcome, type MetricRequest, type StatsProvider } from './stats-types.ts';
-
-export { hit, miss } from './stats-types.ts';
-export type { MetricOutcome, MetricRequest, Side, StatsProvider } from './stats-types.ts';
 
 /**
- * Stats providers plug in here. A metric a provider cannot supply comes back as a
- * `missing` outcome with a state and a reason, never an estimate.
+ * Stats providers plug in here.
+ * A metric the provider cannot supply must come back as
+ * { ok: true, value: null } (unavailable) or a failure — never an estimate.
  *
- * Free sources:
- * - football-data.org: standings (overall/home/away) and a team's recent finished matches
- *   -> win rates, form, rank, goals, over/under rates, rest days. Implemented in fd-provider.ts.
- * - API-Football free (~100 req/day): cards/fouls/corners. NOT implemented: no cards or corners
- *   market is generated yet, so nothing would use it. Those metrics report `not_fetched`.
- * - xG / PPDA / field tilt / box touches: not offered by any free source.
+ * Free sources (design §3):
+ * - football-data.org: fixtures, results, standings, H2H (rate-limited)
+ * - API-Football free: shots, fouls, cards, corners, lineups (≈100 req/day)
+ * - xG / PPDA / field tilt / box touches: always unavailable
  */
+
+export type MetricRequest = {
+  metric: string;
+  teamIds?: string[];
+  window?: number;
+  fixtureId?: string;
+  league?: string;
+};
+
+export interface StatsProvider {
+  readonly name: string;
+  supports(metric: string): boolean;
+  fetchMetric(req: MetricRequest): Promise<Result<{ value: number | null }>>;
+}
 
 /** Metrics that free tiers can realistically supply. */
 export const FREE_METRICS = new Set([
-  'home_win_rate', 'away_win_rate', 'unbeaten_home_rate', 'no_draw_rate', 'form_points', 'rest_days', 'league_rank',
-  'goals_scored_avg', 'goals_conceded_avg', 'over_1_5_rate', 'under_3_5_rate', 'under_4_5_rate',
-  'fouls_avg', 'cards_avg', 'corners_won_avg', 'corners_conceded_avg', 'corners_combined_avg',
+  'home_win_rate',
+  'away_win_rate',
+  'unbeaten_home_rate',
+  'no_draw_rate',
+  'form_points',
+  'rest_days',
+  'league_rank',
+  'goals_scored_avg',
+  'goals_conceded_avg',
+  'over_1_5_rate',
+  'under_3_5_rate',
+  'under_4_5_rate',
+  'fouls_avg',
+  'cards_avg',
+  'corners_won_avg',
+  'corners_conceded_avg',
+  'corners_combined_avg',
 ]);
 
 /** Always unavailable on free data – listed so cards can show the reason. */
 export const UNAVAILABLE_ON_FREE = new Set([
-  'xg_home', 'xg_away', 'ppda', 'field_tilt', 'box_touches', 'shot_creating_actions', 'fast_break_shots',
+  'xg_home',
+  'xg_away',
+  'ppda',
+  'field_tilt',
+  'box_touches',
+  'shot_creating_actions',
+  'fast_break_shots',
 ]);
 
-/** Metrics that need API-Football (per-fixture statistics). */
-export const API_FOOTBALL_METRICS = new Set(['fouls_avg', 'cards_avg', 'corners_won_avg', 'corners_conceded_avg', 'corners_combined_avg']);
-
-export const NOT_OFFERED_REASON =
-  'No free data source offers this stat (xG, PPDA and similar are paid-only).';
-
-/** Used when no API key is set: every metric is "not fetched", with the fix spelled out. */
+/**
+ * Stub provider used when no API keys are configured.
+ * Returns unavailable for every metric so the pipeline still runs and
+ * picks are labeled Best fit with clear "N of M criteria verified".
+ */
 class NullStatsProvider implements StatsProvider {
   readonly name = 'null';
-  supports(_metric: string): boolean { return true; }
-  async fetch(req: MetricRequest): Promise<MetricOutcome> {
-    if (UNAVAILABLE_ON_FREE.has(req.metric)) return miss('not_offered', NOT_OFFERED_REASON, this.name);
-    return miss('not_fetched', 'No stats provider configured. Set FOOTBALL_DATA_API_KEY to fetch real stats.', this.name);
+  supports(_metric: string): boolean {
+    return true;
+  }
+  async fetchMetric(req: MetricRequest): Promise<Result<{ value: number | null }>> {
+    if (UNAVAILABLE_ON_FREE.has(req.metric)) {
+      return ok({ value: null }); // explicitly unavailable
+    }
+    // No real source configured
+    return ok({ value: null });
   }
 }
 
-let fdSingleton: { key: string; provider: FootballDataProvider } | null = null;
+/**
+ * football-data.org free-tier skeleton.
+ * Wire FOOTBALL_DATA_API_KEY and implement the real HTTP calls when ready.
+ * Until then it behaves like the null provider for unimplemented metrics.
+ */
+class FootballDataOrgProvider implements StatsProvider {
+  readonly name = 'football-data.org';
+  private key: string | undefined;
 
-/** Providers that are configured (have a key) or the null fallback. Instances are reused so caches persist. */
+  constructor(env: NodeJS.ProcessEnv = process.env) {
+    this.key = env.FOOTBALL_DATA_API_KEY;
+  }
+
+  supports(metric: string): boolean {
+    return (
+      FREE_METRICS.has(metric) &&
+      !['fouls_avg', 'cards_avg', 'corners_won_avg', 'corners_conceded_avg', 'corners_combined_avg'].includes(metric)
+    );
+  }
+
+  async fetchMetric(req: MetricRequest): Promise<Result<{ value: number | null }>> {
+    if (!this.key) {
+      return ok({ value: null });
+    }
+    if (UNAVAILABLE_ON_FREE.has(req.metric)) {
+      return ok({ value: null });
+    }
+    // TODO: implement real calls against https://api.football-data.org/v4
+    // Rate limit: 10 req/min on free tier. Cache per team/run.
+    return ok({ value: null });
+  }
+}
+
+/**
+ * API-Football free-tier skeleton (≈100 requests/day).
+ * Prefer for cards, corners, fouls, lineups close to kickoff.
+ */
+class ApiFootballProvider implements StatsProvider {
+  readonly name = 'api-football';
+  private key: string | undefined;
+  private budgetRemaining: number;
+
+  constructor(env: NodeJS.ProcessEnv = process.env) {
+    this.key = env.API_FOOTBALL_KEY;
+    this.budgetRemaining = Number(env.API_FOOTBALL_DAILY_BUDGET || 80);
+  }
+
+  supports(metric: string): boolean {
+    return [
+      'fouls_avg',
+      'cards_avg',
+      'corners_won_avg',
+      'corners_conceded_avg',
+      'corners_combined_avg',
+      'rest_days',
+    ].includes(metric);
+  }
+
+  async fetchMetric(req: MetricRequest): Promise<Result<{ value: number | null }>> {
+    if (!this.key) return ok({ value: null });
+    if (this.budgetRemaining <= 0) {
+      return fail('API-Football daily request budget exhausted');
+    }
+    if (UNAVAILABLE_ON_FREE.has(req.metric)) return ok({ value: null });
+    // TODO: implement real calls; decrement budgetRemaining on success.
+    return ok({ value: null });
+  }
+}
+
+/** Providers that are configured (have a key) or the null fallback. */
 export function configuredProviders(env: NodeJS.ProcessEnv = process.env): StatsProvider[] {
   const providers: StatsProvider[] = [];
-  if (env.FOOTBALL_DATA_API_KEY) {
-    if (!fdSingleton || fdSingleton.key !== env.FOOTBALL_DATA_API_KEY) {
-      fdSingleton = { key: env.FOOTBALL_DATA_API_KEY, provider: new FootballDataProvider(env) };
-    }
-    providers.push(fdSingleton.provider);
-  }
+  if (env.FOOTBALL_DATA_API_KEY) providers.push(new FootballDataOrgProvider(env));
+  if (env.API_FOOTBALL_KEY) providers.push(new ApiFootballProvider(env));
   if (providers.length === 0) providers.push(new NullStatsProvider());
   return providers;
 }
 
-/** Resolve one metric with a precise reason whenever it is missing. */
-export async function fetchMetricDetailed(
-  req: MetricRequest,
-  providers: StatsProvider[] = configuredProviders(),
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<MetricOutcome> {
-  if (UNAVAILABLE_ON_FREE.has(req.metric)) return miss('not_offered', NOT_OFFERED_REASON);
-
-  const supporting = providers.filter((p) => p.supports(req.metric));
-  if (supporting.length === 0) {
-    if (API_FOOTBALL_METRICS.has(req.metric)) {
-      return miss(
-        'not_fetched',
-        env.API_FOOTBALL_KEY
-          ? 'API-Football integration is not built yet (no cards/corners markets are generated), so this stat is never requested.'
-          : 'Needs API-Football (API_FOOTBALL_KEY), which is not set and not built yet.',
-      );
-    }
-    return miss('not_fetched', 'No configured provider supplies this stat.');
-  }
-
-  let firstMiss: MetricOutcome | null = null;
-  for (const p of supporting) {
-    const r = await p.fetch(req);
-    if (r.ok) return r;
-    firstMiss ??= r;
-  }
-  return firstMiss!;
-}
-
-/** Legacy shape kept for callers that only need a value or null. */
+/**
+ * Fetch a single metric from the first provider that supports it.
+ * Returns { value: null } when every provider reports unavailable.
+ */
 export async function fetchMetric(
   req: MetricRequest,
   providers: StatsProvider[] = configuredProviders(),
 ): Promise<Result<{ value: number | null; provider?: string }>> {
-  const r = await fetchMetricDetailed(req, providers);
-  if (r.ok) return ok({ value: r.value, provider: r.provider });
-  if (r.state === 'fetch_failed') return fail(r.reason);
+  for (const p of providers) {
+    if (!p.supports(req.metric)) continue;
+    const r = await p.fetchMetric(req);
+    if (!r.ok) return r;
+    if (r.value !== null) return ok({ value: r.value, provider: p.name });
+  }
   return ok({ value: null });
-}
-
-export function beginStatsRun(providers: StatsProvider[] = configuredProviders()): void {
-  for (const p of providers) p.beginRun?.();
 }

@@ -57,16 +57,31 @@ export function CodegenPanel({ legs, sourceBookmaker }: { legs: PickRow[]; sourc
       <div className="flex gap-2" role="radiogroup" aria-label="Destination">
         {(['sportybet', 'betpawa'] as Destination[]).map((d) => (
           <button key={d} role="radio" aria-checked={destination === d} onClick={() => { setDestination(d); setOutcome(null); }}
-            className={destination === d ? 'btn-emerald' : 'btn-ghost'}>{NAME[d]}</button>
+            className={destination === d ? 'btn-emerald' : 'btn-ghost'}>
+            {NAME[d]}
+            {d === 'betpawa' && (
+              <span className="ml-1 rounded bg-amber-500/20 px-1 py-0.2 text-[10px] text-amber-300">
+                Code: Coming soon
+              </span>
+            )}
+          </button>
         ))}
       </div>
+      {destination === 'betpawa' && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-200">
+          <p className="font-semibold text-amber-300">ℹ️ betPawa Slip Generation is Active</p>
+          <p className="mt-0.5 text-slate-300">
+            Slip generation for betPawa is available via an automated browser script that populates your slip on betPawa. Direct booking-code generation is <strong>Coming soon</strong>.
+          </p>
+        </div>
+      )}
       <p className="text-xs text-slate-400">
         {legs.length} active leg{legs.length === 1 ? '' : 's'}{sourceBookmaker ? ` from ${sourceBookmaker}` : ''}. Greyed legs are not included.
         {destination === 'sportybet' && ' SportyBet codes accept SportyBet picks only.'}
         {destination === 'betpawa' && ' betPawa legs are matched to fresh betPawa events when you press Generate.'}
       </p>
       <button className="btn-gold w-full" disabled={busy || legs.length === 0} onClick={() => void generate(destination)}>
-        {busy ? 'Generating…' : `Generate ${NAME[destination]} ${destination === 'betpawa' ? 'script' : 'code'}`}
+        {busy ? 'Generating…' : destination === 'betpawa' ? 'Generate betPawa slip script (Booking code: Coming soon)' : `Generate ${NAME[destination]} code`}
       </button>
 
       {outcome && 'transportError' in outcome && <ErrorBox error={outcome.transportError} />}

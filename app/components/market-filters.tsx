@@ -89,6 +89,39 @@ function OddsRange({ def, low, high, accent, onCommit }: {
   }
 
   const openTop = live.high >= max;
+  const [textLow, setTextLow] = useState(low.toFixed(2));
+  const [textHigh, setTextHigh] = useState(high.toFixed(2));
+
+  // Sync text inputs when drag or external props change
+  useEffect(() => {
+    setTextLow(live.low.toFixed(2));
+    setTextHigh(live.high.toFixed(2));
+  }, [live.low, live.high]);
+
+  const commitTextLow = (val: string) => {
+    const parsed = Number.parseFloat(val);
+    if (!Number.isNaN(parsed)) {
+      const clamped = clamp(parsed, min, live.high - step);
+      const snapped = snap(clamped);
+      setTextLow(snapped.toFixed(2));
+      onCommit(snapped, live.high);
+    } else {
+      setTextLow(live.low.toFixed(2));
+    }
+  };
+
+  const commitTextHigh = (val: string) => {
+    const parsed = Number.parseFloat(val);
+    if (!Number.isNaN(parsed)) {
+      const clamped = clamp(parsed, live.low + step, max);
+      const snapped = snap(clamped);
+      setTextHigh(snapped.toFixed(2));
+      onCommit(live.low, snapped);
+    } else {
+      setTextHigh(live.high.toFixed(2));
+    }
+  };
+
   const handle = (which: 'low' | 'high', label: string) => (
     <button
       type="button" role="slider" aria-label={label} aria-valuemin={min} aria-valuemax={max} aria-valuenow={live[which]}
@@ -107,10 +140,42 @@ function OddsRange({ def, low, high, accent, onCommit }: {
         {handle('low', `${def.title} minimum odds`)}
         {handle('high', `${def.title} maximum odds`)}
       </div>
-      <div className="mt-1 flex items-center justify-between text-xs">
-        <span className="odds rounded-md bg-white/5 px-1.5 py-0.5">{live.low.toFixed(2)}</span>
+      <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-slate-400">Min:</span>
+          <input
+            type="number"
+            step={step}
+            min={min}
+            max={max}
+            value={textLow}
+            onChange={(e) => setTextLow(e.target.value)}
+            onBlur={(e) => commitTextLow(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitTextLow((e.target as HTMLInputElement).value);
+            }}
+            aria-label={`${def.title} minimum odds text input`}
+            className="field h-6 w-16 px-1 text-center font-mono text-xs font-semibold text-gold-400"
+          />
+        </div>
         <span className="text-[10px] uppercase tracking-wide text-slate-500">odds range</span>
-        <span className="odds rounded-md bg-white/5 px-1.5 py-0.5">{live.high.toFixed(2)}{openTop ? '+' : ''}</span>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-slate-400">Max:</span>
+          <input
+            type="number"
+            step={step}
+            min={min}
+            max={max}
+            value={textHigh}
+            onChange={(e) => setTextHigh(e.target.value)}
+            onBlur={(e) => commitTextHigh(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitTextHigh((e.target as HTMLInputElement).value);
+            }}
+            aria-label={`${def.title} maximum odds text input`}
+            className="field h-6 w-16 px-1 text-center font-mono text-xs font-semibold text-gold-400"
+          />
+        </div>
       </div>
     </div>
   );
@@ -277,8 +342,9 @@ export function MarketFilters({ cards, onChange, goalLines, qualifying }: {
             className="btn-ghost px-3 py-1.5 text-xs"
             onClick={() => setFiltersOpen((o) => !o)}
             aria-expanded={filtersOpen}
+            aria-label={filtersOpen ? 'Hide filters' : 'Show filters'}
           >
-            {filtersOpen ? '▲ Collapse Section' : '▼ Expand Section'}
+            {filtersOpen ? '▲ Hide filters' : '▼ Show filters'}
           </button>
         </div>
       </div>

@@ -7,7 +7,7 @@ import type { AiPick } from '@/lib/ai-picks.ts';
 import { GOAL_LINES_FALLBACK, cardsToRules, defaultCards } from '@/lib/market-cards.ts';
 import { randomPicks } from '@/lib/random-picks.ts';
 import {
-  MAX_LEGS, addLeg, addMany, emptySlip, greyMarket, marketsInSlip, removeFromMarket, removeLeg, slipBookmaker, slipTotals, toggleGrey, type Slip,
+  MAX_LEGS, addLeg, addMany, emptySlip, greyMarket, marketsInSlip, removeFromMarket, removeLeg, slipBookmaker, slipTotals, toggleGrey,
 } from '@/lib/slip.ts';
 import type { ErrorDetails } from '@/lib/result.ts';
 import { BOOKMAKER_LABEL, type Bookmaker, type MarketKind } from '@/lib/types.ts';
@@ -17,13 +17,12 @@ import { GameCard } from './game-card';
 import { useStoredSlip } from './use-slips';
 import { HealthBanner } from './health-banner';
 import { MarketFilters } from './market-filters';
-import { ConformStatsModal } from './conform-stats-modal';
 import { ZeroDataBanner } from './zero-data-banner';
 import { onTemplateApplied } from '@/lib/template-store.ts';
+import { getClientSettings, getClientAiHeaders } from '@/lib/client-settings.ts';
 
 type GamesOk = {
   ok: true; runId: string; dataAsOf: string; count: number;
-  /** Games / odds that exist with no filters applied (absent from older API responses). */
   unfiltered?: { games: number; rows: number };
   options: { leagues: string[]; bookmakers: Bookmaker[]; markets: { kind: MarketKind; lines: number[] }[] };
   errors: { bookmaker: Bookmaker; error: string; httpStatus?: number }[];
@@ -52,13 +51,10 @@ export function Builder({ heading }: { heading?: string }) {
   const [options, setOptions] = useState<GamesOk['options'] | null>(null);
   const [games, setGames] = useState<GamesState>({ status: 'loading' });
   const [slip, setSlip, slipReady] = useStoredSlip();
-  const [showAvailable, setShowAvailable] = useState(true);
-  const [showStaging, setShowStaging] = useState(true);
   const [notice, setNotice] = useState<{ tone: 'info' | 'warn'; text: string } | null>(null);
   const [randomCount, setRandomCount] = useState('5');
   const [removeCount, setRemoveCount] = useState('1');
   const [toolMarket, setToolMarket] = useState('');
-  const [statsModal, setStatsModal] = useState<{ open: boolean; legs: PickRow[]; title?: string } | null>(null);
   const [legsCollapsed, setLegsCollapsed] = useState(false);
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const [codegenCollapsed, setCodegenCollapsed] = useState(false);
@@ -70,7 +66,7 @@ export function Builder({ heading }: { heading?: string }) {
     if (fromUrl.length) setLeagues(fromUrl);
   }, []);
 
-  // Sync when template is applied via Quick Hub or Market Filters
+  // Sync when template is applied via Navigation or Market Filters
   useEffect(() => {
     return onTemplateApplied((tpl) => {
       if (tpl.bookmaker) setBookmaker(tpl.bookmaker);
@@ -107,7 +103,7 @@ export function Builder({ heading }: { heading?: string }) {
     if (b) setBookmaker(b);
   }, [slipReady, slip]);
 
-  // The market cards become the rules the API filters by. Serialised once so the effect below only reruns on a real change.
+  // The market cards become the rules the API filters by.
   const rulesKey = useMemo(() => JSON.stringify(cardsToRules(cards)), [cards]);
 
   // Live-updating pool: refetch (debounced) whenever a filter changes.
@@ -150,16 +146,13 @@ export function Builder({ heading }: { heading?: string }) {
     }
     return [...map.values()].sort((a, b) => a[0].kickoff - b[0].kickoff);
   }, [pool]);
+
   const goalLines = useMemo(() => {
     const lines = options?.markets.find((m) => m.kind === 'over_under')?.lines ?? [];
     return lines.length ? lines : GOAL_LINES_FALLBACK;
   }, [options]);
+
   const shownGames = useMemo(() => (games.status === 'ok' ? new Set(games.data.rows.map((r) => r.gameId)).size : 0), [games]);
-  const hidden = useMemo(() => {
-    if (games.status !== 'ok' || !games.data.unfiltered) return null;
-    const u = games.data.unfiltered;
-    return { games: Math.max(0, u.games - shownGames), rows: Math.max(0, u.rows - games.data.rows.length), totalGames: u.games, totalRows: u.rows };
-  }, [games, shownGames]);
   const totals = slipTotals(slip);
   const activeLegs = slip.legs.filter((l) => !slip.greyed.includes(l.gameId));
   const slipMarkets = marketsInSlip(slip);
@@ -194,10 +187,19 @@ export function Builder({ heading }: { heading?: string }) {
       return;
     }
     setNotice({ tone: 'info', text: 'Loading AI picks…' });
+    const clientSettings = getClientSettings();
+    const timeoutMs = (clientSettings.timeoutSeconds || 35) * 1000;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+
     try {
       const q = new URLSearchParams({ limit: String(n + 20) });
       if (bookmaker) q.set('bookmaker', bookmaker);
-      const r = await fetch(`/api/ai/picks?${q}`);
+      const r = await fetch(`/api/ai/picks?${q}`, {
+        headers: getClientAiHeaders(clientSettings),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
       const j = await r.json();
       if (!j.ok) {
         setNotice({ tone: 'warn', text: j.error ?? `AI picks failed (HTTP ${r.status})` });
@@ -210,7 +212,7 @@ export function Builder({ heading }: { heading?: string }) {
         .filter((row): row is PickRow => row !== null)
         .slice(0, n);
       if (aiRows.length === 0) {
-        setNotice({ tone: 'warn', text: 'No AI picks match your filters. Try widening filters or regenerating AI after a games refresh.' });
+        setNotice({ tone: 'warn', text: 'No AI picks match your filters. Try widening filters or configuring your AI key in Settings.' });
         return;
       }
       const res = addMany(slip, aiRows);
@@ -218,13 +220,18 @@ export function Builder({ heading }: { heading?: string }) {
       const short = aiRows.length < n ? ` Only ${aiRows.length} of ${n} AI picks matched the current bookmaker and slip.` : '';
       setNotice({
         tone: short ? 'warn' : 'info',
-        text: `Added ${res.added} AI pick${res.added === 1 ? '' : 's'} (Verified / Best fit from stored pool).${short}`,
+        text: `Added ${res.added} AI pick${res.added === 1 ? '' : 's'} (${clientSettings.selectedModel || 'AI'}).${short}`,
       });
-    } catch (e) {
-      setNotice({ tone: 'warn', text: e instanceof Error ? e.message : String(e) });
+    } catch (e: unknown) {
+      clearTimeout(timer);
+      const err = e as Error;
+      if (err.name === 'AbortError') {
+        setNotice({ tone: 'warn', text: `AI request timed out after ${clientSettings.timeoutSeconds || 35}s. Verify upstream keys in Settings.` });
+      } else {
+        setNotice({ tone: 'warn', text: err.message || String(e) });
+      }
     }
   }
-
 
   async function saveCurrentSlip() {
     if (slip.legs.length === 0) {
@@ -272,7 +279,6 @@ export function Builder({ heading }: { heading?: string }) {
   }
 
   function removeN() {
-
     if (!toolSel) return;
     const r = removeFromMarket(slip, toolSel.selector, Number(removeCount));
     if (!r.ok) { setNotice({ tone: 'warn', text: r.error }); return; }
@@ -283,7 +289,7 @@ export function Builder({ heading }: { heading?: string }) {
   const greyedInTool = toolSel ? slip.legs.filter((l) => `${l.marketKind}:${l.line ?? ''}` === toolSel.key).every((l) => slip.greyed.includes(l.gameId)) : false;
 
   return (
-    <section className={`mx-auto max-w-6xl px-4 ${showStaging && slip.legs.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
+    <section className="mx-auto max-w-6xl px-4">
       {heading && <h1 className="font-display text-2xl font-bold text-white">{heading}</h1>}
       <div className="mt-2"><HealthBanner /></div>
 
@@ -293,10 +299,6 @@ export function Builder({ heading }: { heading?: string }) {
           {(['sportybet', 'betpawa'] as Bookmaker[]).map((b) => (
             <button key={b} className={bookmaker === b ? 'btn-emerald' : 'btn-ghost'} aria-pressed={bookmaker === b} onClick={() => chooseBookmaker(b)}>{BOOKMAKER_LABEL[b]}</button>
           ))}
-          <span className="ml-auto flex gap-2">
-            <button className={showAvailable ? 'btn-emerald' : 'btn-ghost'} aria-pressed={showAvailable} onClick={() => setShowAvailable((v) => !v)}>Available Games</button>
-            <button className={showStaging ? 'btn-emerald' : 'btn-ghost'} aria-pressed={showStaging} onClick={() => setShowStaging((v) => !v)}>Staging Area</button>
-          </span>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -329,336 +331,291 @@ export function Builder({ heading }: { heading?: string }) {
         <p className={`mt-3 rounded-lg border px-3 py-2 text-sm ${notice.tone === 'warn' ? 'border-amber-500/30 bg-amber-500/10 text-amber-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`} role="status">{notice.text}</p>
       )}
 
-      <div className={`mt-4 grid gap-4 ${showAvailable && showStaging ? 'lg:grid-cols-2' : ''}`}>
-        {showAvailable && (
-          <div className="glass p-4">
-            <div className="flex items-baseline justify-between">
-              <h2 className="font-display text-lg font-bold text-white">Available Games</h2>
-              <span className="text-sm text-slate-300" aria-live="polite">{games.status === 'ok' ? `${byGame.length} game${byGame.length === 1 ? '' : 's'}` : '…'}</span>
+      {/* Main Content: Available Games & Static Active Betslip */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2 items-start">
+        {/* Available Games Column with anchor target */}
+        <div id="available-games" className="glass p-4 scroll-mt-20">
+          <div className="flex items-baseline justify-between">
+            <h2 className="font-display text-lg font-bold text-white">Available Games</h2>
+            <span className="text-sm text-slate-300" aria-live="polite">{games.status === 'ok' ? `${byGame.length} game${byGame.length === 1 ? '' : 's'}` : '…'}</span>
+          </div>
+          {games.status === 'ok' && <p className="text-xs text-slate-500">Data as of {new Date(games.data.dataAsOf).toLocaleString()}</p>}
+
+          {games.status === 'ok' && bypass && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100" role="status">
+              <span>Filters bypassed: showing all {shownGames} upcoming game{shownGames === 1 ? '' : 's'} with their full market list. Your filter settings are kept.</span>
+              <button type="button" className="btn-ghost ml-auto h-7 px-2.5 py-0 text-xs" onClick={() => setBypass(false)}>Back to my filters</button>
             </div>
-            {games.status === 'ok' && <p className="text-xs text-slate-500">Data as of {new Date(games.data.dataAsOf).toLocaleString()}</p>}
+          )}
 
-            {games.status === 'ok' && bypass && (
-              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100" role="status">
-                <span>Filters bypassed: showing all {shownGames} upcoming game{shownGames === 1 ? '' : 's'} with their full market list. Your filter settings are kept.</span>
-                <button type="button" className="btn-ghost ml-auto h-7 px-2.5 py-0 text-xs" onClick={() => setBypass(false)}>Back to my filters</button>
+          {games.status === 'loading' && <p className="mt-6 text-center text-sm text-slate-400">Loading games…</p>}
+          {games.status === 'error' && (
+            <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200" role="alert">
+              <p className="font-semibold">{games.error}</p>
+              {games.httpStatus > 0 && <p className="mt-1 text-xs text-red-300">HTTP {games.httpStatus}{games.details.upstream ? ` · ${games.details.upstream}` : ''}</p>}
+              {games.details.bodySnippet && <p className="mt-1 break-all font-mono text-[11px] text-red-300/80">{games.details.bodySnippet}</p>}
+            </div>
+          )}
+          {games.status === 'ok' && pool.length === 0 && (
+            games.data.count === 0 ? (
+              <div className="mt-4">
+                <ZeroDataBanner
+                  bookmaker={bookmaker}
+                  leaguesCount={leagues.length}
+                  withinHours={withinHours}
+                  activeCardsCount={Object.values(cards).filter((c) => c.on).length}
+                  onResetFilters={() => {
+                    setWithinHours(null);
+                    setLeagues([]);
+                    setCards(defaultCards);
+                  }}
+                  onSwitchBookmaker={(b) => chooseBookmaker(b)}
+                  onRefreshCompleted={() => {
+                    setBookmaker((b) => b);
+                  }}
+                />
               </div>
-            )}
-            {games.status === 'ok' && !bypass && hidden && (hidden.games > 0 || hidden.rows > 0) && (
-              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100" role="status">
-                <span>
-                  Your filters are hiding{' '}
-                  {hidden.games > 0 ? `${hidden.games} of ${hidden.totalGames} games and ` : ''}
-                  {hidden.rows} of {hidden.totalRows} odds.
+            ) : (
+              <p className="mt-6 text-center text-sm text-slate-400">Every matching game is already in your slip.</p>
+            )
+          )}
+          {games.status === 'ok' && pool.length > 0 && (
+            <>
+              <ul className="mt-3 space-y-3 max-h-[36rem] overflow-auto">
+                {byGame.slice(0, GAME_RENDER_CAP).map((rows) => {
+                  const g = rows[0];
+                  return (
+                    <li key={g.gameId}>
+                      <GameCard
+                        rows={rows}
+                        onAdd={add}
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+              {byGame.length > GAME_RENDER_CAP && (
+                <p className="mt-2 text-xs text-amber-300">
+                  Showing the first {GAME_RENDER_CAP} of {byGame.length} games. Narrow the filters to see the rest.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Static Active Betslip Column (Normal document flow, no sticky/floating) */}
+        <div id="slip-panel" className="space-y-4">
+          <div className="glass p-4 transition-all">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h2 className="font-display text-lg font-bold text-white">Active Betslip</h2>
+                <span className="text-sm text-slate-300">
+                  {slip.legs.length}/{MAX_LEGS} legs
                 </span>
-                <button type="button" className="btn-emerald ml-auto h-7 px-2.5 py-0 text-xs" onClick={() => setBypass(true)}>Show full market list</button>
               </div>
-            )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLegsCollapsed((c) => !c)}
+                  className="text-xs text-slate-400 hover:text-white"
+                >
+                  {legsCollapsed ? '▼ Expand Legs' : '▲ Collapse Legs'}
+                </button>
+              </div>
+            </div>
 
-            {games.status === 'loading' && <p className="mt-6 text-center text-sm text-slate-400">Loading games…</p>}
-            {games.status === 'error' && (
-              <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200" role="alert">
-                <p className="font-semibold">{games.error}</p>
-                {games.httpStatus > 0 && <p className="mt-1 text-xs text-red-300">HTTP {games.httpStatus}{games.details.upstream ? ` · ${games.details.upstream}` : ''}</p>}
-                {games.details.bodySnippet && <p className="mt-1 break-all font-mono text-[11px] text-red-300/80">{games.details.bodySnippet}</p>}
-              </div>
-            )}
-            {games.status === 'ok' && pool.length === 0 && (
-              games.data.count === 0 ? (
-                <div className="mt-4">
-                  <ZeroDataBanner
-                    bookmaker={bookmaker}
-                    leaguesCount={leagues.length}
-                    withinHours={withinHours}
-                    activeCardsCount={Object.values(cards).filter((c) => c.on).length}
-                    onResetFilters={() => {
-                      setWithinHours(null);
-                      setLeagues([]);
-                      setCards(defaultCards);
-                    }}
-                    onSwitchBookmaker={(b) => chooseBookmaker(b)}
-                    onRefreshCompleted={() => {
-                      setBookmaker((b) => b);
-                    }}
-                  />
-                </div>
-              ) : (
-                <p className="mt-6 text-center text-sm text-slate-400">Every matching game is already in your slip.</p>
-              )
-            )}
-            {games.status === 'ok' && pool.length > 0 && (
-              <>
-                <ul className="mt-3 space-y-3 max-h-[36rem] overflow-auto">
-                  {byGame.slice(0, GAME_RENDER_CAP).map((rows) => {
-                    const g = rows[0];
+            {slip.legs.length === 0 ? (
+              <p className="mt-6 text-center text-sm text-slate-400">
+                Your slip is empty. Tap + on any game or outcome to add it.
+              </p>
+            ) : (
+              !legsCollapsed && (
+                <ul className="mt-3 max-h-80 divide-y divide-white/5 overflow-auto">
+                  {slip.legs.map((l) => {
+                    const grey = slip.greyed.includes(l.gameId);
                     return (
-                      <li key={g.gameId}>
-                        <GameCard
-                          rows={rows}
-                          onAdd={add}
-                          onStats={(row) => {
-                            const matchRows = byGame.find((bg) => bg[0].gameId === row.gameId) || [row];
-                            setStatsModal({ open: true, legs: matchRows, title: `${row.home} vs ${row.away}` });
-                          }}
-                        />
+                      <li key={l.gameId} className={`flex items-center gap-2 py-2 ${grey ? 'opacity-40' : ''}`}>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm text-white">{l.home} v {l.away}</span>
+                          <span className="block text-xs text-slate-400">
+                            {l.pick} · {fmtKickoff(l.kickoff)}
+                            {l.implied !== null ? ` · implied ${(l.implied * 100).toFixed(1)}%` : ''}
+                          </span>
+                        </span>
+                        <span className="odds">{l.odds.toFixed(2)}</span>
+                        <button
+                          className="btn-ghost px-2 py-1 text-xs"
+                          aria-pressed={grey}
+                          onClick={() => setSlip(toggleGrey(slip, l.gameId))}
+                        >
+                          {grey ? 'Restore' : 'Grey'}
+                        </button>
+                        <button
+                          className="btn-ghost px-2 py-1 text-xs"
+                          aria-label={`Remove ${l.home} v ${l.away}`}
+                          onClick={() => setSlip(removeLeg(slip, l.gameId))}
+                        >
+                          ✕
+                        </button>
                       </li>
                     );
                   })}
                 </ul>
-                {byGame.length > GAME_RENDER_CAP && (
-                  <p className="mt-2 text-xs text-amber-300">
-                    Showing the first {GAME_RENDER_CAP} of {byGame.length} games. Narrow the filters to see the rest.
+              )
+            )}
+
+            {slip.legs.length > 0 && (
+              <dl className="mt-3 space-y-1 border-t border-white/10 pt-3 text-sm">
+                <div className="flex justify-between items-center">
+                  <dt className="text-slate-400">
+                    Total odds ({totals.activeCount} active{totals.greyedCount ? `, ${totals.greyedCount} greyed` : ''})
+                  </dt>
+                  <dd className="odds text-lg">
+                    {totals.totalOdds.ok ? totals.totalOdds.total.toFixed(2) : '—'}
+                  </dd>
+                </div>
+                <div className="flex justify-between items-center">
+                  <dt className="text-slate-400">Combined implied probability</dt>
+                  <dd className="text-slate-200">
+                    {totals.combined.ok ? `${(totals.combined.probability * 100).toFixed(2)}%` : 'unavailable'}
+                  </dd>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  {totals.combined.ok
+                    ? "Product of each leg's margin-free implied probability. It describes the bookmaker's pricing, not a prediction."
+                    : totals.combined.reason}
+                </p>
+              </dl>
+            )}
+          </div>
+
+          {/* Slip Tools Subcomponent (Collapsible) */}
+          <div className="glass space-y-3 p-4 text-sm transition-all">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold text-white">Slip Tools & Batch Actions</p>
+              <button
+                type="button"
+                onClick={() => setToolsCollapsed((c) => !c)}
+                className="text-xs text-slate-400 hover:text-white"
+              >
+                {toolsCollapsed ? '▼ Expand Tools' : '▲ Collapse Tools'}
+              </button>
+            </div>
+
+            {!toolsCollapsed && (
+              <>
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="text-xs text-slate-400">
+                    Add N games
+                    <input
+                      className="field mt-1 w-20"
+                      inputMode="numeric"
+                      value={randomCount}
+                      onChange={(e) => setRandomCount(e.target.value.replace(/\D/g, ''))}
+                    />
+                  </label>
+                  {user ? (
+                    <>
+                      <button className="btn-gold" disabled={games.status !== 'ok'} onClick={() => void addWithAi()}>
+                        Add with AI
+                      </button>
+                      <button className="btn-ghost" disabled={games.status !== 'ok' || pool.length === 0} onClick={addRandom}>
+                        Add random
+                      </button>
+                    </>
+                  ) : (
+                    <button className="btn-gold" disabled={games.status !== 'ok' || pool.length === 0} onClick={addRandom}>
+                      Add random picks
+                    </button>
+                  )}
+                </div>
+                {!user && (
+                  <p className="text-[11px] text-slate-500">
+                    Guests get random picks from the filtered pool. Sign in to enable AI picks.
                   </p>
                 )}
+
+                <div className="flex flex-wrap items-end gap-2 border-t border-white/10 pt-3">
+                  <label className="text-xs text-slate-400">
+                    Market in slip
+                    <select
+                      className="field mt-1"
+                      disabled={slipMarkets.length === 0}
+                      value={toolSel?.key ?? ''}
+                      onChange={(e) => setToolMarket(e.target.value)}
+                    >
+                      {slipMarkets.length === 0 ? (
+                        <option value="">No legs yet</option>
+                      ) : (
+                        slipMarkets.map((m) => (
+                          <option key={m.key} value={m.key}>
+                            {marketLabel(m.selector)} ({m.count})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
+                  <label className="text-xs text-slate-400">
+                    Remove N
+                    <input
+                      className="field mt-1 w-20"
+                      inputMode="numeric"
+                      value={removeCount}
+                      onChange={(e) => setRemoveCount(e.target.value.replace(/\D/g, ''))}
+                    />
+                  </label>
+                  <button className="btn-ghost" disabled={!toolSel} onClick={removeN}>
+                    Remove N games
+                  </button>
+                  <button
+                    className="btn-ghost"
+                    disabled={!toolSel}
+                    onClick={() => toolSel && setSlip(greyMarket(slip, toolSel.selector, !greyedInTool))}
+                  >
+                    {greyedInTool ? 'Restore market' : 'Grey out market'}
+                  </button>
+                  <button className="btn-gold" disabled={slip.legs.length === 0} onClick={() => void saveCurrentSlip()}>
+                    Save slip
+                  </button>
+                  <button
+                    className="btn-ghost"
+                    disabled={slip.legs.length === 0}
+                    onClick={() => {
+                      setSlip(emptySlip());
+                      setNotice(null);
+                    }}
+                  >
+                    Clear slip
+                  </button>
+                </div>
               </>
             )}
           </div>
-        )}
 
-        {showStaging && (
-          <div id="slip-panel" className="space-y-4 scroll-mt-20 lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-5.5rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
-            {/* Staging Area Container (Collapsible Subcomponent) */}
-            <div className="glass p-4 transition-all">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <h2 className="font-display text-lg font-bold text-white">Staging Area</h2>
-                  <span className="text-sm text-slate-300">
-                    {slip.legs.length}/{MAX_LEGS} legs
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {slip.legs.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setStatsModal({ open: true, legs: slip.legs, title: 'Active Staged Betslip' })}
-                      className="btn-ghost h-7 px-2.5 text-xs text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/10"
-                      title="Conform and audit mathematical statistics for active slip"
-                    >
-                      ∿ Conform Stats
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setLegsCollapsed((c) => !c)}
-                    className="text-xs text-slate-400 hover:text-white"
-                  >
-                    {legsCollapsed ? '▼ Expand Legs' : '▲ Collapse Legs'}
-                  </button>
-                </div>
-              </div>
-
-              {slip.legs.length === 0 ? (
-                <p className="mt-6 text-center text-sm text-slate-400">
-                  Your slip is empty. Tap a game on the left to add it.
-                </p>
-              ) : (
-                !legsCollapsed && (
-                  <ul className="mt-3 max-h-80 divide-y divide-white/5 overflow-auto">
-                    {slip.legs.map((l) => {
-                      const grey = slip.greyed.includes(l.gameId);
-                      return (
-                        <li key={l.gameId} className={`flex items-center gap-2 py-2 ${grey ? 'opacity-40' : ''}`}>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm text-white">{l.home} v {l.away}</span>
-                            <span className="block text-xs text-slate-400">
-                              {l.pick} · {fmtKickoff(l.kickoff)}
-                              {l.implied !== null ? ` · implied ${(l.implied * 100).toFixed(1)}%` : ''}
-                            </span>
-                          </span>
-                          <span className="odds">{l.odds.toFixed(2)}</span>
-                          <button
-                            className="btn-ghost px-2 py-1 text-xs"
-                            aria-pressed={grey}
-                            onClick={() => setSlip(toggleGrey(slip, l.gameId))}
-                          >
-                            {grey ? 'Restore' : 'Grey'}
-                          </button>
-                          <button
-                            className="btn-ghost px-2 py-1 text-xs"
-                            aria-label={`Remove ${l.home} v ${l.away}`}
-                            onClick={() => setSlip(removeLeg(slip, l.gameId))}
-                          >
-                            ✕
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )
-              )}
-
-              {slip.legs.length > 0 && (
-                <dl className="mt-3 space-y-1 border-t border-white/10 pt-3 text-sm">
-                  <div className="flex justify-between items-center">
-                    <dt className="text-slate-400">
-                      Total odds ({totals.activeCount} active{totals.greyedCount ? `, ${totals.greyedCount} greyed` : ''})
-                    </dt>
-                    <dd className="odds text-lg">
-                      {totals.totalOdds.ok ? totals.totalOdds.total.toFixed(2) : '—'}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <dt className="text-slate-400">Combined implied probability</dt>
-                    <dd className="text-slate-200">
-                      {totals.combined.ok ? `${(totals.combined.probability * 100).toFixed(2)}%` : 'unavailable'}
-                    </dd>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    {totals.combined.ok
-                      ? "Product of each leg's margin-free implied probability. It describes the bookmaker's pricing, not a prediction."
-                      : totals.combined.reason}
-                  </p>
-                </dl>
-              )}
+          {/* Booking Code Generation (Collapsible) */}
+          <div className="glass p-4 transition-all">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-slate-300">Bookmaker Code Generator</p>
+              <button
+                type="button"
+                onClick={() => setCodegenCollapsed((c) => !c)}
+                className="text-xs text-slate-400 hover:text-white"
+              >
+                {codegenCollapsed ? '▼ Expand Code Gen' : '▲ Collapse Code Gen'}
+              </button>
             </div>
-
-            {/* Slip Tools Subcomponent (Collapsible) */}
-            <div className="glass space-y-3 p-4 text-sm transition-all">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-white">Slip Tools & Batch Actions</p>
-                <button
-                  type="button"
-                  onClick={() => setToolsCollapsed((c) => !c)}
-                  className="text-xs text-slate-400 hover:text-white"
-                >
-                  {toolsCollapsed ? '▼ Expand Tools' : '▲ Collapse Tools'}
-                </button>
-              </div>
-
-              {!toolsCollapsed && (
-                <>
-                  <div className="flex flex-wrap items-end gap-2">
-                    <label className="text-xs text-slate-400">
-                      Add N games
-                      <input
-                        className="field mt-1 w-20"
-                        inputMode="numeric"
-                        value={randomCount}
-                        onChange={(e) => setRandomCount(e.target.value.replace(/\D/g, ''))}
-                      />
-                    </label>
-                    {user ? (
-                      <>
-                        <button className="btn-gold" disabled={games.status !== 'ok'} onClick={() => void addWithAi()}>
-                          Add with AI
-                        </button>
-                        <button className="btn-ghost" disabled={games.status !== 'ok' || pool.length === 0} onClick={addRandom}>
-                          Add random
-                        </button>
-                      </>
-                    ) : (
-                      <button className="btn-gold" disabled={games.status !== 'ok' || pool.length === 0} onClick={addRandom}>
-                        Add random picks
-                      </button>
-                    )}
-                  </div>
-                  {!user && (
-                    <p className="text-[11px] text-slate-500">
-                      Guests get random picks from the filtered pool. These are not recommendations.
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap items-end gap-2 border-t border-white/10 pt-3">
-                    <label className="text-xs text-slate-400">
-                      Market in slip
-                      <select
-                        className="field mt-1"
-                        disabled={slipMarkets.length === 0}
-                        value={toolSel?.key ?? ''}
-                        onChange={(e) => setToolMarket(e.target.value)}
-                      >
-                        {slipMarkets.length === 0 ? (
-                          <option value="">No legs yet</option>
-                        ) : (
-                          slipMarkets.map((m) => (
-                            <option key={m.key} value={m.key}>
-                              {marketLabel(m.selector)} ({m.count})
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </label>
-                    <label className="text-xs text-slate-400">
-                      Remove N
-                      <input
-                        className="field mt-1 w-20"
-                        inputMode="numeric"
-                        value={removeCount}
-                        onChange={(e) => setRemoveCount(e.target.value.replace(/\D/g, ''))}
-                      />
-                    </label>
-                    <button className="btn-ghost" disabled={!toolSel} onClick={removeN}>
-                      Remove N games
-                    </button>
-                    <button
-                      className="btn-ghost"
-                      disabled={!toolSel}
-                      onClick={() => toolSel && setSlip(greyMarket(slip, toolSel.selector, !greyedInTool))}
-                    >
-                      {greyedInTool ? 'Restore market' : 'Grey out market'}
-                    </button>
-                    <button className="btn-gold" disabled={slip.legs.length === 0} onClick={() => void saveCurrentSlip()}>
-                      Save slip
-                    </button>
-                    <button
-                      className="btn-ghost"
-                      disabled={slip.legs.length === 0}
-                      onClick={() => {
-                        setSlip(emptySlip());
-                        setNotice(null);
-                      }}
-                    >
-                      Clear slip
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Booking Code Generation (Collapsible) */}
-            <div className="glass p-4 transition-all">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-slate-300">Bookmaker Code Generator</p>
-                <button
-                  type="button"
-                  onClick={() => setCodegenCollapsed((c) => !c)}
-                  className="text-xs text-slate-400 hover:text-white"
-                >
-                  {codegenCollapsed ? '▼ Expand Code Gen' : '▲ Collapse Code Gen'}
-                </button>
-              </div>
-              {!codegenCollapsed && (
-                <CodegenPanel
-                  legs={activeLegs}
-                  sourceBookmaker={(() => {
-                    const b = slipBookmaker(slip);
-                    return b ? BOOKMAKER_LABEL[b] : null;
-                  })()}
-                />
-              )}
-            </div>
+            {!codegenCollapsed && (
+              <CodegenPanel
+                legs={activeLegs}
+                sourceBookmaker={(() => {
+                  const b = slipBookmaker(slip);
+                  return b ? BOOKMAKER_LABEL[b] : null;
+                })()}
+              />
+            )}
           </div>
-        )}
-      </div>
-
-      {/* Small screens stack the columns, so keep the slip one tap away. */}
-      {showStaging && slip.legs.length > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-3 border-t border-white/10 bg-navy-950/95 px-4 py-2 backdrop-blur lg:hidden">
-          <span className="text-sm text-slate-200">
-            Slip {totals.activeCount}/{MAX_LEGS} legs · <span className="odds">{totals.totalOdds.ok ? totals.totalOdds.total.toFixed(2) : '—'}</span>
-          </span>
-          <a href="#slip-panel" className="btn-emerald ml-auto h-8 px-3 py-0 text-xs">View slip</a>
         </div>
-      )}
-
-      {statsModal && (
-        <ConformStatsModal
-          legs={statsModal.legs}
-          greyed={slip.greyed}
-          singleGameTitle={statsModal.title}
-          onClose={() => setStatsModal(null)}
-        />
-      )}
+      </div>
     </section>
   );
 }

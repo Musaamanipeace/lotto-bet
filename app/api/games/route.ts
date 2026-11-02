@@ -37,8 +37,10 @@ export async function GET(req: Request) {
   if (b !== null && b !== 'sportybet' && b !== 'betpawa') {
     return Response.json({ ok: false, error: `Unknown bookmaker "${b}"`, details: {} }, { status: 400 });
   }
+  const gameId = q.get('gameId');
+  const allMarkets = q.get('allMarkets') === '1' || q.get('allMarkets') === 'true';
   const rulesParam = q.get('rules');
-  const rules = rulesParam === null ? undefined : parseRules(rulesParam);
+  const rules = allMarkets ? undefined : (rulesParam === null ? undefined : parseRules(rulesParam));
   if (rules === null) {
     return Response.json({ ok: false, error: 'The "rules" parameter is not valid market-filter JSON.', details: {} }, { status: 400 });
   }
@@ -52,9 +54,10 @@ export async function GET(req: Request) {
     // app only listed games kicking off at least 2 minutes from now. SportyBet refuses to share a slip with a started game.
     const earliest = Date.now() + KICKOFF_BUFFER_MS;
     const filter: Filter = {
-      leagues: q.get('leagues')?.split(',').filter(Boolean),
+      gameId: gameId || undefined,
+      leagues: allMarkets ? undefined : q.get('leagues')?.split(',').filter(Boolean),
       dateFrom: Math.max(num(q.get('dateFrom')) ?? 0, earliest), dateTo: num(q.get('dateTo')),
-      oddsMin: num(q.get('oddsMin')), oddsMax: num(q.get('oddsMax')),
+      oddsMin: allMarkets ? undefined : num(q.get('oddsMin')), oddsMax: allMarkets ? undefined : num(q.get('oddsMax')),
       market: kind ? { kind, line: num(q.get('line')) } : undefined,
       rules,
     };

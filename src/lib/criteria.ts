@@ -316,11 +316,6 @@ export const FIT_SCORE_WEIGHTS = {
   cardsCornersData: 0.05,
   failedCriteriaPenalty: -0.10,
   congestionPenalty: -0.10,
-  /**
-   * Less data means less trust, so when criteria are missing the bookmaker's margin-free probability
-   * counts for more: bonus = weight x (1 - data coverage) x implied probability.
-   */
-  lowDataProbabilityBoost: 0.20,
 } as const;
 
 /** Accumulator composition (design §4). */

@@ -64,11 +64,28 @@ export async function POST(req: Request) {
 
   const prompt = `${context}\n\nConversation:\n${history}\nuser: ${message}\nassistant:`;
 
-  const r = await callLlm({
-    system: SYSTEM,
-    prompt,
-    
-  });
+  const geminiKey = req.headers.get('x-gemini-key') || undefined;
+  const openrouterKey = req.headers.get('x-openrouter-key') || undefined;
+  const mistralKey = req.headers.get('x-mistral-key') || undefined;
+  const model = req.headers.get('x-ai-model') || undefined;
+  const provider = req.headers.get('x-ai-provider') || undefined;
+
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    ...(geminiKey ? { GEMINI_API_KEY: geminiKey } : {}),
+    ...(openrouterKey ? { OPENROUTER_API_KEY: openrouterKey } : {}),
+    ...(mistralKey ? { MISTRAL_API_KEY: mistralKey } : {}),
+    ...(model ? { GEMINI_MODEL: model, OPENROUTER_MODEL: model, MISTRAL_MODEL: model } : {}),
+    ...(provider ? { LLM_PROVIDER_ORDER: provider } : {}),
+  };
+
+  const r = await callLlm(
+    {
+      system: SYSTEM,
+      prompt,
+    },
+    env,
+  );
 
   if (!r.ok) {
     return Response.json(
@@ -76,7 +93,7 @@ export async function POST(req: Request) {
         ok: false,
         error: r.error,
         details: r.details,
-        message: 'LLM call failed. Check API keys (GEMINI_API_KEY / OPENROUTER_API_KEY).',
+        message: 'AI call failed. Please check your chosen model or API key in Settings.',
       },
       { status: 502 },
     );

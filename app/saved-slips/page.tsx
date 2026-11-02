@@ -4,8 +4,6 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../components/auth-context';
 import { writeSlip } from '@/lib/slip-store.ts';
-import { ConformStatsModal } from '../components/conform-stats-modal';
-import type { PickRow } from '@/lib/filters.ts';
 
 type SavedSlip = {
   id: string;
@@ -43,7 +41,6 @@ function SavedSlipItem({
   onRemove,
   onShare,
   onLoad,
-  onAudit,
 }: {
   s: SavedSlip;
   user: unknown;
@@ -51,7 +48,6 @@ function SavedSlipItem({
   onRemove: (id: string) => void;
   onShare: (id: string) => void;
   onLoad: (s: SavedSlip) => void;
-  onAudit: (s: SavedSlip) => void;
 }) {
   const [legsOpen, setLegsOpen] = useState(true);
 
@@ -107,13 +103,7 @@ function SavedSlipItem({
         >
           Load to Active Slip
         </button>
-        <button
-          type="button"
-          className="btn-ghost text-xs h-7 px-2.5 text-cyan-300 border-cyan-500/30"
-          onClick={() => onAudit(s)}
-        >
-          ∿ Conform Stats
-        </button>
+
         <button
           type="button"
           className="btn-ghost text-xs h-7 px-2.5"
@@ -142,7 +132,6 @@ export default function SavedSlipsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [auditSlip, setAuditSlip] = useState<{ legs: PickRow[]; title: string } | null>(null);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -236,28 +225,6 @@ export default function SavedSlipsPage() {
     setTimeout(() => setNotice(null), 3500);
   }
 
-  function handleAuditSlip(s: SavedSlip) {
-    const fullLegs = s.legs.map((l, idx) => ({
-      gameId: l.gameId || `leg-${Date.now()}-${idx}`,
-      nativeEventId: l.gameId || 'ev1',
-      home: l.home,
-      away: l.away,
-      bookmaker: (s.bookmaker as 'sportybet' | 'betpawa') || 'sportybet',
-      kickoff: Date.now() + 3600000,
-      league: null,
-      marketNativeId: 'm1',
-      outcomeNativeId: 'o1',
-      specifier: '',
-      marketKind: '1x2' as const,
-      line: null,
-      outcomeKey: null,
-      pick: l.pick,
-      odds: l.odds,
-      implied: l.odds > 0 ? 1 / l.odds : null,
-    }));
-    setAuditSlip({ legs: fullLegs, title: s.name });
-  }
-
   if (loading) {
     return <p className="mt-10 text-center text-sm text-slate-400">Checking session…</p>;
   }
@@ -268,7 +235,7 @@ export default function SavedSlipsPage() {
         <div>
           <h1 className="font-display text-3xl font-bold text-white">Saved Slips</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Slips saved to your account. Reload into active slip, audit mathematical conformity, or share to Community.
+            Slips saved to your account. Reload into active slip, track results, or share to Community.
           </p>
         </div>
         <Link href="/" className="btn-gold">
@@ -292,7 +259,7 @@ export default function SavedSlipsPage() {
         <div className="glass rounded-xl p-8 text-center">
           <p className="text-slate-300">No saved slips yet.</p>
           <p className="mt-2 text-sm text-slate-500">
-            Build a slip on the home page, then use <strong className="text-slate-400">Save slip</strong> in the staging area.
+            Build a slip on the home page, then use <strong className="text-slate-400">Save slip</strong> in the active betslip.
           </p>
           <Link href="/" className="btn-ghost mt-4 inline-flex">
             Go to builder
@@ -310,18 +277,9 @@ export default function SavedSlipsPage() {
             onRemove={remove}
             onShare={share}
             onLoad={handleLoadSlip}
-            onAudit={handleAuditSlip}
           />
         ))}
       </div>
-
-      {auditSlip && (
-        <ConformStatsModal
-          legs={auditSlip.legs}
-          singleGameTitle={auditSlip.title}
-          onClose={() => setAuditSlip(null)}
-        />
-      )}
     </div>
   );
 }
