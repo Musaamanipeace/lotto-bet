@@ -12,6 +12,7 @@ import { LeagueChecklist, type LeagueItem } from '../components/league-checklist
 import { describeReport, planAdd, type Revalidation } from '@/lib/add-picks.ts';
 import { encodeLeagues, parseLeagues } from '@/lib/pick-filter.ts';
 import { SettingsModal } from '../components/settings-modal';
+import { hintForError } from '@/lib/error-hints.ts';
 
 type CriterionEval = {
   id: string;
@@ -535,9 +536,7 @@ export default function AiPicksPage() {
       {error && (
         <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200" role="alert">
           {error}
-          <p className="mt-1 text-xs text-red-300/80">
-            If no fetch run exists yet, open the home page or POST /api/admin/refresh first, then Regenerate AI.
-          </p>
+          {hintForError(error) && <p className="mt-1 text-xs text-red-300/80">{hintForError(error)}</p>}
         </div>
       )}
 

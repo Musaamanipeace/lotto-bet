@@ -26,8 +26,12 @@ export const miss = (state: MissingState, reason: string, provider?: string): Me
 export interface StatsProvider {
   readonly name: string;
   supports(metric: string): boolean;
-  /** Called once at the start of an AI generation run (resets per-run request budgets). */
-  beginRun?(): void;
+  /**
+   * Called once at the start of an AI generation run (resets per-run request budgets).
+   * maxWaitMs caps how long the provider may sleep for rate limits during this run; when a wait
+   * would exceed it the metric is reported as not_fetched instead of blocking the request.
+   */
+  beginRun?(opts?: { maxWaitMs?: number }): void;
   fetch(req: MetricRequest): Promise<MetricOutcome>;
 }
 

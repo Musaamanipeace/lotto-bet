@@ -1,4 +1,4 @@
-import { ensureAiSnapshot } from '@/lib/run-ai.ts';
+import { loadAiSnapshot } from '@/lib/run-ai.ts';
 import { getStore } from '@/lib/server.ts';
 import { filterPicks, parseCsv, parseLeagues } from '@/lib/pick-filter.ts';
 import { generateAlternatives, type SwapScope } from '@/lib/alternatives.ts';
@@ -6,6 +6,7 @@ import type { TargetTier } from '@/lib/ai-picks.ts';
 import type { AiPick } from '@/lib/ai-picks.ts';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 const num = (v: string | null) => (v === null || v.trim() === '' ? null : Number(v));
 const int = (v: string | null, d: number, lo: number, hi: number) => {
@@ -42,7 +43,7 @@ export async function GET(req: Request) {
   if (!['lower', 'average', 'higher'].includes(tier)) return Response.json({ ok: false, error: 'tier must be lower, average or higher' }, { status: 400 });
   const scope: SwapScope = q.get('scope') === 'same_market' ? 'same_market' : 'any';
 
-  const snap = await ensureAiSnapshot(getStore());
+  const snap = await loadAiSnapshot();
   if (!snap.ok) return Response.json(snap, { status: 400 });
 
   const leagues = parseLeagues(q.get('leagues'));

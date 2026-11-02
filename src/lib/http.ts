@@ -19,7 +19,8 @@ export async function fetchJsonOnce(
   try {
     res = await fetchImpl(url, init);
   } catch (e) {
-    return fail(`${who.name} request failed: ${e instanceof Error ? e.message : String(e)}`, {
+    const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    return fail(timedOut ? `${who.name} timed out (no response before the time limit)` : `${who.name} request failed: ${e instanceof Error ? e.message : String(e)}`, {
       bookmaker: who.bookmaker, upstream: who.name, url, cause: String(e),
     });
   }

@@ -1,9 +1,10 @@
-import { ensureAiSnapshot } from '@/lib/run-ai.ts';
+import { loadAiSnapshot } from '@/lib/run-ai.ts';
 import { pickNGames } from '@/lib/ai-engine.ts';
 import { getStore } from '@/lib/server.ts';
 import { filterPicks, parseLeagues } from '@/lib/pick-filter.ts';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 /**
  * GET /api/ai/pick-n?n=20&bookmaker=sportybet
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
   const n = Math.min(50, Math.max(1, Number(url.searchParams.get('n') || 10)));
   const bookmaker = url.searchParams.get('bookmaker');
 
-  const r = await ensureAiSnapshot(getStore());
+  const r = await loadAiSnapshot();
   if (!r.ok) return Response.json(r, { status: 400 });
 
   const ranked = filterPicks(r.picks, { bookmaker, leagues: parseLeagues(url.searchParams.get('leagues')) });
