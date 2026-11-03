@@ -1,14 +1,10 @@
-<<<<<<< HEAD
 
 import { loadAiSnapshot } from '@/lib/run-ai.ts';
-=======
-import { ensureAiSnapshot } from '@/lib/run-ai.ts';
-import { getStore } from '@/lib/server.ts';
->>>>>>> parent of ad1a217 (refined ai logic)
 import type { PickMarketKey } from '@/lib/criteria.ts';
 import { filterPicks, parseLeagues } from '@/lib/pick-filter.ts';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 /**
  * GET /api/ai/picks?market=home_win&bookmaker=sportybet&leagues=A,B&limit=50
@@ -30,12 +26,7 @@ export async function GET(req: Request) {
     Math.max(1, Number(url.searchParams.get('limit') || 50)),
   );
 
-<<<<<<< HEAD
   const r = await loadAiSnapshot();
-=======
-  const r = await ensureAiSnapshot(getStore());
-  if (!r.ok) return Response.json(r, { status: 400 });
->>>>>>> parent of ad1a217 (refined ai logic)
 
   if (!r.ok) {
     return Response.json(r, { status: 400 });

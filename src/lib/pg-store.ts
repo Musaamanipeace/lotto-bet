@@ -4,7 +4,7 @@ import type { RunKind, RunRecord, RunResults, Store } from './store.ts';
 import type { Bookmaker, Game } from './types.ts';
 
 let pool: pg.Pool | null = null;
-function getPool(): pg.Pool {
+export function getPool(): pg.Pool {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set');
   return (pool ??= new pg.Pool({ connectionString: url, max: 3 }));
