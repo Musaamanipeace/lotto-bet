@@ -1,10 +1,9 @@
-import { loadAiSnapshot } from '@/lib/run-ai.ts';
+import { ensureAiSnapshot } from '@/lib/run-ai.ts';
 import { getStore } from '@/lib/server.ts';
 import { readGames } from '@/lib/read-games.ts';
 import { revalidatePicks } from '@/lib/revalidate.ts';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
 /**
  * POST /api/ai/revalidate { pickIds }
@@ -17,7 +16,7 @@ export async function POST(req: Request) {
   const ids = Array.isArray(b.pickIds) ? b.pickIds.filter((x): x is string => typeof x === 'string').slice(0, 500) : [];
   if (ids.length === 0) return Response.json({ ok: false, error: 'pickIds is required' }, { status: 400 });
 
-  const snap = await loadAiSnapshot();
+  const snap = await ensureAiSnapshot(getStore());
   if (!snap.ok) return Response.json(snap, { status: 400 });
   const games = await readGames(getStore());
   if (!games.ok) return Response.json(games, { status: 400 });

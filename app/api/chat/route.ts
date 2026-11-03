@@ -1,11 +1,10 @@
 import { requireJson, jsonError, currentUser } from '@/lib/session.ts';
 import { callLlm } from '@/lib/llm/index.ts';
-import { buildLlmEnv } from '@/lib/llm/request-env.ts';
 import { getAiSnapshot } from '@/lib/ai-store.ts';
+import { ensureAiSnapshot } from '@/lib/run-ai.ts';
+import { getStore } from '@/lib/server.ts';
 
 export const dynamic = 'force-dynamic';
-// The LLM chain has its own 30s budget (see llm/types.ts); this keeps the host from cutting it off first.
-export const maxDuration = 60;
 
 const SYSTEM = `You are the Lotto Bet assistant. Hard rules:
 - Never say a slip will win, is likely to win, or is safe to win. "Safe" is only a tier name (lower risk relative to other tiers).
@@ -35,8 +34,8 @@ export async function POST(req: Request) {
   if (!message) return jsonError('message is required', 400);
   if (message.length > 2000) return jsonError('message too long (max 2000)', 400);
 
-  // Read-only: chat never generates picks. If nothing is saved yet the model is told so.
-  const snap = await getAiSnapshot().catch(() => null);
+  await ensureAiSnapshot(getStore()).catch(() => null);
+  const snap = getAiSnapshot();
   const user = await currentUser(req);
 
   const pickSample = (snap?.picks ?? [])
@@ -65,7 +64,20 @@ export async function POST(req: Request) {
 
   const prompt = `${context}\n\nConversation:\n${history}\nuser: ${message}\nassistant:`;
 
-  const env = buildLlmEnv(req.headers);
+  const geminiKey = req.headers.get('x-gemini-key') || undefined;
+  const openrouterKey = req.headers.get('x-openrouter-key') || undefined;
+  const mistralKey = req.headers.get('x-mistral-key') || undefined;
+  const model = req.headers.get('x-ai-model') || undefined;
+  const provider = req.headers.get('x-ai-provider') || undefined;
+
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    ...(geminiKey ? { GEMINI_API_KEY: geminiKey } : {}),
+    ...(openrouterKey ? { OPENROUTER_API_KEY: openrouterKey } : {}),
+    ...(mistralKey ? { MISTRAL_API_KEY: mistralKey } : {}),
+    ...(model ? { GEMINI_MODEL: model, OPENROUTER_MODEL: model, MISTRAL_MODEL: model } : {}),
+    ...(provider ? { LLM_PROVIDER_ORDER: provider } : {}),
+  };
 
   const r = await callLlm(
     {
@@ -81,7 +93,6 @@ export async function POST(req: Request) {
         ok: false,
         error: r.error,
         details: r.details,
-        attempts: r.details.attempts ?? [],
         message: 'AI call failed. Please check your chosen model or API key in Settings.',
       },
       { status: 502 },
@@ -114,7 +125,5 @@ export async function POST(req: Request) {
     action,
     provider: r.provider,
     model: r.model,
-    // Providers that failed before this one answered, so a fallback is never silent.
-    attempts: r.attempts,
   });
 }

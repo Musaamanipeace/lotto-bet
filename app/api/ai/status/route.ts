@@ -2,15 +2,11 @@ import { getAiSnapshot } from '@/lib/ai-store.ts';
 import { VERIFICATION, CRITERIA } from '@/lib/criteria.ts';
 import { configuredProviders } from '@/lib/stats.ts';
 import { getStore } from '@/lib/server.ts';
-import { storageProblem } from '@/lib/run-ai.ts';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
 export async function GET() {
-  const problem = storageProblem();
-  if (problem) return Response.json({ ok: false, error: problem, details: { code: 'storage_not_configured' } }, { status: 503 });
-  const snap = await getAiSnapshot().catch(() => null);
+  const snap = getAiSnapshot();
   const providers = configuredProviders().map((p) => p.name);
   const run = await getStore().latestRun();
 
@@ -47,13 +43,13 @@ export async function GET() {
   });
 }
 
-function buildStatusMessages(providers: string[], snap: Awaited<ReturnType<typeof getAiSnapshot>>): string[] {
+function buildStatusMessages(providers: string[], snap: ReturnType<typeof getAiSnapshot>): string[] {
   const msgs: string[] = [];
   if (providers.length === 1 && providers[0] === 'null') {
     msgs.push('No stats provider configured, so tier criteria can’t be verified. Picks will be labeled Best fit.');
   }
   if (!snap) {
-    msgs.push('No AI picks generated yet. Press Regenerate AI on the AI Picks page (after a games refresh).');
+    msgs.push('No AI picks generated yet. Call POST /api/ai/generate after a games refresh.');
   } else if (snap.picks.length === 0) {
     msgs.push('No verified picks today. Check which criteria were unavailable.');
   }

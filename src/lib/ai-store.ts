@@ -1,11 +1,10 @@
 /**
- * The latest AI picks / slips. Persisted (Postgres when DATABASE_URL is set) so that any server
- * instance can serve them; see ai-snapshot-store.ts.
+ * In-process store for the latest AI picks / slips.
+ * Separate from the fetch Store so AI generation can run without Postgres.
  */
 import type { AccumulatorSlip, AiPick } from './ai-picks.ts';
 import type { AiEngineResult } from './ai-engine.ts';
 import type { CoverageData } from './data-state.ts';
-import { getSnapshotStore, type SnapshotStore } from './ai-snapshot-store.ts';
 
 export type AiSnapshot = {
   picks: AiPick[];
@@ -20,8 +19,10 @@ export type AiSnapshot = {
   runId: string | null;
 };
 
-export async function saveAiSnapshot(result: AiEngineResult, runId: string | null = null, store: SnapshotStore = getSnapshotStore()): Promise<AiSnapshot> {
-  const snapshot: AiSnapshot = {
+let snapshot: AiSnapshot | null = null;
+
+export function saveAiSnapshot(result: AiEngineResult, runId: string | null = null): AiSnapshot {
+  snapshot = {
     picks: result.picks,
     byMarket: result.byMarket,
     slips25: result.slips25,
@@ -33,10 +34,13 @@ export async function saveAiSnapshot(result: AiEngineResult, runId: string | nul
     coverage: result.coverage,
     runId,
   };
-  await store.save(snapshot);
   return snapshot;
 }
 
-export async function getAiSnapshot(store: SnapshotStore = getSnapshotStore()): Promise<AiSnapshot | null> {
-  return store.latest();
+export function getAiSnapshot(): AiSnapshot | null {
+  return snapshot;
+}
+
+export function clearAiSnapshot(): void {
+  snapshot = null;
 }

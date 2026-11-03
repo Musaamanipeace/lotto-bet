@@ -8,6 +8,28 @@ import { CoverageStrip, CriteriaList, PickDataLine, type CoverageData } from '..
 import type { LeagueItem } from '../components/league-checklist';
 import { planAdd } from '@/lib/add-picks.ts';
 import { SettingsModal } from '../components/settings-modal';
+<<<<<<< HEAD
+=======
+
+type CriterionEval = {
+  id: string;
+  label: string;
+  status: 'pass' | 'fail' | 'unavailable';
+  detail?: string;
+  provisional?: boolean;
+};
+
+type Slip = {
+  id: string;
+  legCount?: number;
+  totalOdds: number;
+  combinedImpliedProbability: number;
+  riskLabel: string;
+  coreCount: number;
+  boosterCount: number;
+  picks: AiPick[];
+};
+>>>>>>> parent of ad1a217 (refined ai logic)
 
 const MARKETS: { key: string; label: string }[] = [
   { key: '', label: 'All markets' },
@@ -239,7 +261,50 @@ export default function AiPicksPage() {
 
       {coverageData && <CoverageStrip coverage={coverageData} />}
 
+<<<<<<< HEAD
       <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+=======
+      <CoverageStrip coverage={meta?.coverage} />
+
+      <details className="mb-4 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2">
+        <summary className="cursor-pointer text-sm text-slate-200">
+          Leagues{leagues.length ? ` (${leagues.length} selected)` : ' (all)'} ▾
+        </summary>
+        <div className="mt-3">
+          {leagueList.length === 0
+            ? <p className="text-xs text-slate-400">No leagues loaded yet. Refresh games first.</p>
+            : <LeagueChecklist leagues={leagueList} selected={leagues} onChange={setLeagues} compact />}
+        </div>
+      </details>
+
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-white/10 pb-2">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => { setTab(t.id); setInputError(null); }}
+            className={`rounded-lg px-3 py-1.5 text-sm ${
+              tab === t.id ? 'bg-white/15 text-white' : 'text-slate-400 hover:bg-white/5'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200" role="alert">
+          {error}
+          <p className="mt-1 text-xs text-red-300/80">
+            If no fetch run exists yet, open the home page or POST /api/admin/refresh first, then Regenerate AI.
+          </p>
+        </div>
+      )}
+
+      {status === 'loading' && <p className="text-sm text-slate-400">Loading…</p>}
+
+      {tab === 'market' && status !== 'loading' && (
+>>>>>>> parent of ad1a217 (refined ai logic)
         <div>
           <label className="mb-1 block text-xs font-medium text-slate-400">Market Filter</label>
           <select

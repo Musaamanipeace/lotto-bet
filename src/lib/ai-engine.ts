@@ -155,17 +155,9 @@ async function evaluateCandidate(c: RawCandidate, providers?: StatsProvider[]): 
  * Run the full AI generation over a set of games.
  * Safe to call after every pipeline fetch; pure function of games + stats.
  */
-export type GenerateOptions = {
-  /**
-   * Longest a stats provider may sleep for rate limits during this run. Default 0: never block, mark
-   * the stat not_fetched and move on. Raise it only where the host allows long requests.
-   */
-  statsWaitMs?: number;
-};
-
-export async function generateAiPicks(games: Game[], opts: GenerateOptions = {}): Promise<AiEngineResult> {
+export async function generateAiPicks(games: Game[]): Promise<AiEngineResult> {
   const providers = configuredProviders();
-  for (const p of providers) p.beginRun?.({ maxWaitMs: opts.statsWaitMs ?? 0 });
+  for (const p of providers) p.beginRun?.();
   const hasKey = Boolean(process.env.FOOTBALL_DATA_API_KEY || process.env.API_FOOTBALL_KEY);
   const statsNote = !hasKey ? NO_STATS_PROVIDER_MESSAGE : null;
 

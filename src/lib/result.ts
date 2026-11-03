@@ -9,8 +9,6 @@ export type ErrorDetails = {
   unmapped?: { leg: string; reason: string }[];
   /** LLM calls: every provider tried, in order, with the real error of each failure. */
   attempts?: { provider: string; error: string; httpStatus?: number }[];
-  /** Stable machine-readable reason so the UI can show the right hint (e.g. no_snapshot, no_fetch_run). */
-  code?: string;
 };
 
 export type Ok<T extends object = {}> = { ok: true } & T;

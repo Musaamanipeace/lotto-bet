@@ -1,17 +1,17 @@
 import { fetchJsonOnce, isRec } from '../http.ts';
 import { fail, ok } from '../result.ts';
-import { LLM_TIMEOUT_MS, type LlmCallOpts, type LlmProvider } from './types.ts';
+import { LLM_TIMEOUT_MS, type LlmProvider } from './types.ts';
 
 const need = (v: string | undefined, name: string) => (v ? null : `${name} is not set`);
 
 export const gemini: LlmProvider = {
   name: 'gemini',
   notConfigured: (env) => need(env.GEMINI_API_KEY ?? env.LLM_API_KEY, 'GEMINI_API_KEY'),
-  async call(req, env, fetchImpl, opts) {
+  async call(req, env, fetchImpl) {
     const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
     const key = (env.GEMINI_API_KEY ?? env.LLM_API_KEY) as string;
     const res = await fetchJsonOnce(fetchImpl, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-      method: 'POST', signal: AbortSignal.timeout(opts?.timeoutMs ?? LLM_TIMEOUT_MS),
+      method: 'POST', signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
       headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
         ...(req.system ? { systemInstruction: { parts: [{ text: req.system }] } } : {}),
@@ -28,9 +28,9 @@ export const gemini: LlmProvider = {
 };
 
 /** Shared by OpenRouter and Mistral: both speak the OpenAI chat-completions shape. */
-async function chatCompletions(who: string, url: string, key: string, model: string, headers: Record<string, string>, req: Parameters<LlmProvider['call']>[0], fetchImpl: Parameters<LlmProvider['call']>[2], opts?: LlmCallOpts) {
+async function chatCompletions(who: string, url: string, key: string, model: string, headers: Record<string, string>, req: Parameters<LlmProvider['call']>[0], fetchImpl: Parameters<LlmProvider['call']>[2]) {
   const res = await fetchJsonOnce(fetchImpl, url, {
-    method: 'POST', signal: AbortSignal.timeout(opts?.timeoutMs ?? LLM_TIMEOUT_MS),
+    method: 'POST', signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}`, ...headers },
     body: JSON.stringify({
       model,
@@ -48,13 +48,13 @@ export const openrouter: LlmProvider = {
   name: 'openrouter',
   // Default is OpenRouter's Auto Router, which picks a model per prompt. Set OPENROUTER_MODEL to pin one (e.g. "provider/model-name" from openrouter.ai/models).
   notConfigured: (env) => need(env.OPENROUTER_API_KEY, 'OPENROUTER_API_KEY'),
-  call: (req, env, f, o) => chatCompletions('OpenRouter', 'https://openrouter.ai/api/v1/chat/completions', env.OPENROUTER_API_KEY as string, env.OPENROUTER_MODEL || 'openrouter/auto', {}, req, f, o),
+  call: (req, env, f) => chatCompletions('OpenRouter', 'https://openrouter.ai/api/v1/chat/completions', env.OPENROUTER_API_KEY as string, env.OPENROUTER_MODEL || 'openrouter/auto', {}, req, f),
 };
 
 export const mistral: LlmProvider = {
   name: 'mistral',
   notConfigured: (env) => need(env.MISTRAL_API_KEY, 'MISTRAL_API_KEY'),
-  call: (req, env, f, o) => chatCompletions('Mistral', 'https://api.mistral.ai/v1/chat/completions', env.MISTRAL_API_KEY as string, env.MISTRAL_MODEL || 'mistral-small-latest', {}, req, f, o),
+  call: (req, env, f) => chatCompletions('Mistral', 'https://api.mistral.ai/v1/chat/completions', env.MISTRAL_API_KEY as string, env.MISTRAL_MODEL || 'mistral-small-latest', {}, req, f),
 };
 
 export const ALL_PROVIDERS: Record<string, LlmProvider> = { gemini, openrouter, mistral };

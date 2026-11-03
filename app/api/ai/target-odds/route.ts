@@ -1,10 +1,9 @@
-import { loadAiSnapshot } from '@/lib/run-ai.ts';
+import { ensureAiSnapshot } from '@/lib/run-ai.ts';
 import { pickTargetOddsTiers, type AccumulatorSlip, type TargetResult } from '@/lib/ai-picks.ts';
 import { getStore } from '@/lib/server.ts';
 import { filterPicks, parseLeagues } from '@/lib/pick-filter.ts';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
 const serializeSlip = (s: AccumulatorSlip | null) =>
   s
@@ -43,7 +42,7 @@ export async function GET(req: Request) {
     return Response.json({ ok: false, error: 'target must be a number greater than 1' }, { status: 400 });
   }
 
-  const r = await loadAiSnapshot();
+  const r = await ensureAiSnapshot(getStore());
   if (!r.ok) return Response.json(r, { status: 400 });
 
   const ranked = filterPicks(r.picks, {

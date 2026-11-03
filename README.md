@@ -23,7 +23,6 @@ Open http://localhost:3000
    - `db/migrations/001_init.sql`
    - `db/migrations/002_auth.sql`
    - `db/migrations/003_enable_rls.sql`
-   - `db/migrations/004_ai_snapshots.sql` (optional: the app creates this table itself on first use)
 4. Set `CRON_SECRET` and protect cron/refresh routes
 5. Restart; the app will use Postgres instead of the in-memory store
 

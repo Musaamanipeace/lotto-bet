@@ -70,32 +70,19 @@ export class FootballDataProvider implements StatsProvider {
     this.baseUrl = deps.baseUrl ?? 'https://api.football-data.org/v4';
   }
 
-  private waitBudgetMs = Infinity;
-  private waitedMs = 0;
-
-  beginRun(opts: { maxWaitMs?: number } = {}): void {
-    this.callsThisRun = 0;
-    this.waitedMs = 0;
-    this.waitBudgetMs = opts.maxWaitMs ?? Infinity;
-  }
+  beginRun(): void { this.callsThisRun = 0; }
 
   supports(metric: string): boolean {
     return FD_STANDINGS_METRICS.has(metric) || FD_MATCH_METRICS.has(metric);
   }
 
-  /**
-   * Waits so no more than ratePerMin calls start inside any rolling minute. Returns false, without
-   * sleeping, when the wait would push this run past its wait budget (see beginRun).
-   */
-  private async throttle(): Promise<boolean> {
+  /** Waits so no more than ratePerMin calls start inside any rolling minute. */
+  private async throttle(): Promise<void> {
     for (;;) {
       const t = this.now();
       this.stamps = this.stamps.filter((s) => t - s < 60_000);
-      if (this.stamps.length < this.ratePerMin) { this.stamps.push(t); return true; }
-      const wait = 60_000 - (t - this.stamps[0]) + 50;
-      if (this.waitedMs + wait > this.waitBudgetMs) return false;
-      this.waitedMs += wait;
-      await this.sleep(wait);
+      if (this.stamps.length < this.ratePerMin) { this.stamps.push(t); return; }
+      await this.sleep(60_000 - (t - this.stamps[0]) + 50);
     }
   }
 
@@ -104,10 +91,8 @@ export class FootballDataProvider implements StatsProvider {
     if (this.callsThisRun >= this.maxCallsPerRun) {
       return { fail: miss('not_fetched', `Per-run request budget reached (${this.maxCallsPerRun}); Big Five leagues are fetched first.`, NAME) as never };
     }
-    if (!(await this.throttle())) {
-      return { fail: miss('not_fetched', `football-data.org allows ${this.ratePerMin} requests a minute and this run's wait limit was reached; this stat will fill in on a later refresh.`, NAME) as never };
-    }
     this.callsThisRun++;
+    await this.throttle();
     let res: Response;
     try {
       res = await this.fetchImpl(`${this.baseUrl}${path}`, { headers: { 'X-Auth-Token': this.key } });

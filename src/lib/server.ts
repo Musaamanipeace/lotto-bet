@@ -4,7 +4,7 @@ import { checkCronAuth } from './cron-auth.ts';
 import { runPipeline } from './pipeline.ts';
 import { PgStore } from './pg-store.ts';
 import { getMemoryStore } from './memory-store.ts';
-import { runAiGeneration, storageProblem } from './run-ai.ts';
+import { runAiGeneration } from './run-ai.ts';
 import type { Store } from './store.ts';
 import type { RunKind } from './store.ts';
 
@@ -33,9 +33,6 @@ export async function handleRefresh(req: Request, kind: RunKind): Promise<Respon
       if (!auth.ok) return Response.json(auth, { status: auth.status ?? 401 });
     }
   }
-
-  const problem = storageProblem();
-  if (problem) return Response.json({ ok: false, error: problem, details: { code: 'storage_not_configured' } }, { status: 503 });
 
   try {
     const store = getStore();

@@ -1,11 +1,10 @@
-import { loadAiSnapshot } from '@/lib/run-ai.ts';
+import { ensureAiSnapshot } from '@/lib/run-ai.ts';
 import { getStore } from '@/lib/server.ts';
 import { filterPicks } from '@/lib/pick-filter.ts';
 import { swapInSlip, type SwapScope } from '@/lib/alternatives.ts';
 import type { TargetTier } from '@/lib/ai-picks.ts';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
 const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 
@@ -22,7 +21,7 @@ export async function POST(req: Request) {
   const pickIds = strs(b.pickIds);
   if (pickIds.length === 0) return Response.json({ ok: false, error: 'pickIds is required' }, { status: 400 });
 
-  const snap = await loadAiSnapshot();
+  const snap = await ensureAiSnapshot(getStore());
   if (!snap.ok) return Response.json(snap, { status: 400 });
   const byId = new Map(snap.picks.map((p) => [p.id, p]));
   const slip = pickIds.map((id) => byId.get(id));
