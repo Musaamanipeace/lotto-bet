@@ -198,7 +198,7 @@ export function SettingsModal({
                 Client AI Provider Keys
               </h3>
               <p className="text-xs text-slate-400">
-                Keys live only in memory for this session. They are never written to localStorage and are cleared on sign-out. Prefer server env vars (GEMINI_API_KEY etc.) when possible.
+                Keys are kept in your browser only and are wiped completely when you sign out. They are never sent to the server except as temporary request headers.
               </p>
             </div>
 
