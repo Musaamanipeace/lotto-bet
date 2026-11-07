@@ -3,13 +3,11 @@
 /**
  * Client-side AI settings.
  *
- * SECURITY (task 2 hardening):
- * - API keys are NEVER written to localStorage / sessionStorage / IndexedDB.
- * - Only non-secret preferences (selected model, provider, timeout) are persisted.
- * - Keys live only in memory for the lifetime of the page. They are cleared on logout
- *   via clearAllUserStorage() + the in-memory reset below.
- * - Prefer setting keys as server environment variables (GEMINI_API_KEY etc.) so the
- *   client never needs to hold them.
+ * Keys (AI + sports data) are stored in localStorage so they survive reloads
+ * while the user is signed in. On logout they are completely wiped by
+ * clearAllUserStorage() + clearClientSecrets().
+ *
+ * Unsigned users never see or use these keys.
  */
 
 export type FreeAiModel = {
@@ -94,23 +92,11 @@ export const SUPPORTED_FREE_MODELS: FreeAiModel[] = [
 export type ClientAiSettings = {
   selectedModel: string;
   provider: 'gemini' | 'openrouter' | 'mistral';
-  /** In-memory only. Never persisted. */
   geminiApiKey: string;
-  /** In-memory only. Never persisted. */
   openrouterApiKey: string;
-  /** In-memory only. Never persisted. */
   mistralApiKey: string;
-  /** In-memory only. Never persisted. */
   footballDataApiKey: string;
-  /** In-memory only. Never persisted. */
   apiFootballKey: string;
-  timeoutSeconds: number;
-};
-
-/** Only the non-secret fields that are safe to keep in localStorage. */
-type PersistedPrefs = {
-  selectedModel: string;
-  provider: 'gemini' | 'openrouter' | 'mistral';
   timeoutSeconds: number;
 };
 
@@ -127,131 +113,43 @@ export const DEFAULT_CLIENT_SETTINGS: ClientAiSettings = {
 
 const STORAGE_KEY = 'lb_client_ai_settings_v1';
 
-/** In-memory store for secrets that must never hit disk. Cleared on logout. */
-let memorySecrets: Pick<
-  ClientAiSettings,
-  'geminiApiKey' | 'openrouterApiKey' | 'mistralApiKey' | 'footballDataApiKey' | 'apiFootballKey'
-> = {
-  geminiApiKey: '',
-  openrouterApiKey: '',
-  mistralApiKey: '',
-  footballDataApiKey: '',
-  apiFootballKey: '',
-};
-
-function readPersistedPrefs(): PersistedPrefs {
-  if (typeof window === 'undefined') {
-    return {
-      selectedModel: DEFAULT_CLIENT_SETTINGS.selectedModel,
-      provider: DEFAULT_CLIENT_SETTINGS.provider,
-      timeoutSeconds: DEFAULT_CLIENT_SETTINGS.timeoutSeconds,
-    };
-  }
+export function getClientSettings(): ClientAiSettings {
+  if (typeof window === 'undefined') return DEFAULT_CLIENT_SETTINGS;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return {
-        selectedModel: DEFAULT_CLIENT_SETTINGS.selectedModel,
-        provider: DEFAULT_CLIENT_SETTINGS.provider,
-        timeoutSeconds: DEFAULT_CLIENT_SETTINGS.timeoutSeconds,
-      };
-    }
-    const parsed = JSON.parse(raw) as Partial<PersistedPrefs & ClientAiSettings>;
-    // Explicitly ignore any legacy key fields that might still be present in old storage.
+    if (!raw) return DEFAULT_CLIENT_SETTINGS;
+    const parsed = JSON.parse(raw);
     return {
-      selectedModel: typeof parsed.selectedModel === 'string' ? parsed.selectedModel : DEFAULT_CLIENT_SETTINGS.selectedModel,
-      provider:
-        parsed.provider === 'gemini' || parsed.provider === 'openrouter' || parsed.provider === 'mistral'
-          ? parsed.provider
-          : DEFAULT_CLIENT_SETTINGS.provider,
-      timeoutSeconds:
-        typeof parsed.timeoutSeconds === 'number' && parsed.timeoutSeconds > 0
-          ? parsed.timeoutSeconds
-          : DEFAULT_CLIENT_SETTINGS.timeoutSeconds,
+      ...DEFAULT_CLIENT_SETTINGS,
+      ...parsed,
     };
   } catch {
-    return {
-      selectedModel: DEFAULT_CLIENT_SETTINGS.selectedModel,
-      provider: DEFAULT_CLIENT_SETTINGS.provider,
-      timeoutSeconds: DEFAULT_CLIENT_SETTINGS.timeoutSeconds,
-    };
+    return DEFAULT_CLIENT_SETTINGS;
   }
-}
-
-function writePersistedPrefs(prefs: PersistedPrefs): void {
-  if (typeof window === 'undefined') return;
-  try {
-    // Only write the safe subset. Never write keys.
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        selectedModel: prefs.selectedModel,
-        provider: prefs.provider,
-        timeoutSeconds: prefs.timeoutSeconds,
-      }),
-    );
-  } catch {
-    /* quota / private mode */
-  }
-}
-
-export function getClientSettings(): ClientAiSettings {
-  const prefs = readPersistedPrefs();
-  return {
-    ...DEFAULT_CLIENT_SETTINGS,
-    ...prefs,
-    // Secrets always come from memory, never from storage.
-    geminiApiKey: memorySecrets.geminiApiKey,
-    openrouterApiKey: memorySecrets.openrouterApiKey,
-    mistralApiKey: memorySecrets.mistralApiKey,
-    footballDataApiKey: memorySecrets.footballDataApiKey,
-    apiFootballKey: memorySecrets.apiFootballKey,
-  };
 }
 
 export function saveClientSettings(settings: Partial<ClientAiSettings>): ClientAiSettings {
   const current = getClientSettings();
   const next: ClientAiSettings = { ...current, ...settings };
-
-  // Update in-memory secrets.
-  memorySecrets = {
-    geminiApiKey: next.geminiApiKey ?? '',
-    openrouterApiKey: next.openrouterApiKey ?? '',
-    mistralApiKey: next.mistralApiKey ?? '',
-    footballDataApiKey: next.footballDataApiKey ?? '',
-    apiFootballKey: next.apiFootballKey ?? '',
-  };
-
-  // Persist only non-secret prefs.
-  writePersistedPrefs({
-    selectedModel: next.selectedModel,
-    provider: next.provider,
-    timeoutSeconds: next.timeoutSeconds,
-  });
-
   if (typeof window !== 'undefined') {
     try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       window.dispatchEvent(new CustomEvent('lb_settings_changed', { detail: next }));
     } catch {
-      /* ignore */
+      /* quota ignored */
     }
   }
-
   return next;
 }
 
 /**
- * Clears in-memory API keys. Called from the central logout path.
- * Does not touch the persisted (safe) prefs; those are removed by clearAllUserStorage.
+ * Clears the in-memory view of secrets after logout.
+ * The actual storage wipe is performed by clearAllUserStorage().
+ * Kept for API compatibility with the logout path.
  */
 export function clearClientSecrets(): void {
-  memorySecrets = {
-    geminiApiKey: '',
-    openrouterApiKey: '',
-    mistralApiKey: '',
-    footballDataApiKey: '',
-    apiFootballKey: '',
-  };
+  // Storage is wiped by clearAllUserStorage(); nothing else needed here.
+  // This function exists so the logout path can call it explicitly.
 }
 
 export function onSettingsChanged(cb: (settings: ClientAiSettings) => void): () => void {
