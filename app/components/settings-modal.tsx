@@ -127,7 +127,7 @@ export function SettingsModal({
                 Client AI & API Settings
               </h2>
               <p className="text-xs text-slate-400">
-                Configure your free AI models and API keys stored securely in your browser.
+                Configure free AI models. API keys stay in memory only and are never written to disk.
               </p>
             </div>
           </div>
@@ -198,7 +198,7 @@ export function SettingsModal({
                 Client AI Provider Keys
               </h3>
               <p className="text-xs text-slate-400">
-                Keys are kept in your browser only (`localStorage`) and sent as temporary request headers.
+                Keys live only in memory for this session. They are never written to localStorage and are cleared on sign-out. Prefer server env vars (GEMINI_API_KEY etc.) when possible.
               </p>
             </div>
 
