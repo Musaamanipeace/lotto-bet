@@ -127,7 +127,7 @@ export function SettingsModal({
                 Client AI & API Settings
               </h2>
               <p className="text-xs text-slate-400">
-                Configure free AI models. API keys stay in memory only and are never written to disk.
+                Configure your free AI models and API keys. Keys are stored in this browser and cleared on sign-out.
               </p>
             </div>
           </div>
