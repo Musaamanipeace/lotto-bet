@@ -25,8 +25,6 @@ export const STORAGE_KEYS = {
   CLIENT_AI_SETTINGS: 'lb_client_ai_settings_v1',
   /** UI preference: whether the top hub is collapsed. */
   TOP_HUB_COLLAPSED: 'lb_top_hub_collapsed',
-  /** Pinned user shortcuts bar cache. */
-  USER_SHORTCUTS: 'lb_user_shortcuts_v1',
 } as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[keyof typeof STORAGE_KEYS];

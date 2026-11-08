@@ -6,7 +6,6 @@ import { useAuth } from './auth-context';
 import { AccountModal } from './account-modal';
 import { BetslipModal } from './betslip-modal';
 import { SettingsModal } from './settings-modal';
-import { ShortcutsBar } from './shortcuts-bar';
 import { useStoredSlip } from './use-slips';
 
 /** Unsigned-in users only have access to the basic Builder, Filters, and Available Games. */
@@ -99,31 +98,6 @@ export function TopBar() {
               </span>
             </button>
 
-            {!loading && !user && (
-              <button className="btn-gold h-8 px-2.5 text-xs" onClick={() => openAuth('signup')}>
-                Get Free Slips
-              </button>
-            )}
-            {user && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setAccountOpen(true)}
-                  className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 max-w-[7rem] truncate"
-                  title="View stored betslips, filter templates, and account"
-                >
-                  👤 {user.username}
-                </button>
-                <button className="btn-ghost h-8 px-2 text-xs" onClick={() => void signOut()}>
-                  Log out
-                </button>
-              </>
-            )}
-            {!loading && !user && (
-              <button className="btn-ghost hidden sm:inline-flex h-8 px-2.5 text-xs" onClick={() => openAuth('login')}>
-                Log in
-              </button>
-            )}
             <div className="relative">
               <button
                 type="button"
@@ -137,7 +111,75 @@ export function TopBar() {
               {open && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-                  <div role="menu" className="glass absolute right-0 z-50 mt-2 w-60 bg-navy-900/95 p-1 shadow-2xl">
+                  <div role="menu" className="glass absolute right-0 z-50 mt-2 w-64 bg-navy-900/95 p-1.5 shadow-2xl">
+                    {/* User name and login status inside the menu dropdown */}
+                    <div className="mb-1 rounded-lg border border-white/10 bg-navy-950/70 px-3 py-2.5">
+                      {loading ? (
+                        <p className="text-xs text-slate-400">Checking session…</p>
+                      ) : user ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-medium uppercase tracking-wider text-emerald-400">
+                              Signed in
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpen(false);
+                                void signOut();
+                              }}
+                              className="text-xs font-medium text-rose-300 hover:text-rose-200 hover:underline"
+                            >
+                              Log out
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpen(false);
+                              setAccountOpen(true);
+                            }}
+                            className="flex w-full items-center justify-between rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-left text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20"
+                            title="View stored betslips, filter templates, and account"
+                          >
+                            <span className="truncate">👤 {user.username}</span>
+                            <span className="text-[10px] text-emerald-400">Account →</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                              Status: Guest
+                            </span>
+                            <span className="text-[11px] text-slate-500">Not signed in</span>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpen(false);
+                                openAuth('login');
+                              }}
+                              className="btn-emerald flex-1 py-1.5 text-xs font-semibold"
+                            >
+                              Log in
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpen(false);
+                                openAuth('signup');
+                              }}
+                              className="btn-gold flex-1 py-1.5 text-xs font-semibold"
+                            >
+                              Sign up
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {menuItems.map((m) => (
                       <Link
                         key={m.label}
@@ -149,19 +191,6 @@ export function TopBar() {
                         {m.label}
                       </Link>
                     ))}
-                    {!user && (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setOpen(false);
-                          openAuth('login');
-                        }}
-                        className="block w-full text-left rounded-lg px-3 py-2 text-sm text-emerald-300 hover:bg-white/10 border-t border-white/10 mt-1"
-                      >
-                        🔑 Log in to unlock AI & tools
-                      </button>
-                    )}
                     {/* Settings is reachable ONLY from the menu and ONLY for signed-in users (Task 5 + BYOK) */}
                     {user && (
                       <button
@@ -195,9 +224,6 @@ export function TopBar() {
         className="w-full shrink-0"
         style={{ height: 'calc(3.5rem + env(safe-area-inset-top, 0px))' }}
       />
-
-      {/* Pinned tool shortcuts bar just below the header when signed in (Task 11) */}
-      <ShortcutsBar />
 
       <BetslipModal
         open={betslipOpen}

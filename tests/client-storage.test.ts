@@ -46,15 +46,14 @@ function createMemoryStorage() {
 }
 
 describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
-  it('exposes the expected registry of keys including USER_SHORTCUTS', () => {
+  it('exposes the expected registry of keys', () => {
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.SLIP));
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.CLIENT_AI_SETTINGS));
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.SAVED_SLIPS));
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.FILTER_TEMPLATES));
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.RESULTS_SCORES));
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.TOP_HUB_COLLAPSED));
-    assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.USER_SHORTCUTS));
-    assert.equal(ALL_USER_STORAGE_KEYS.length, 7);
+    assert.equal(ALL_USER_STORAGE_KEYS.length, 6);
   });
 
   it('namespaces keys by active user ID and prevents User A data from leaking to User B', () => {
