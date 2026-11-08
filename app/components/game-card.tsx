@@ -1,6 +1,11 @@
 'use client';
 import { useState } from 'react';
-import type { PickRow } from '@/lib/filters.ts';
+import {
+  formatGameCardMarket,
+  isAllowedOverUnderLine,
+  tokenizeMarketText,
+  type PickRow,
+} from '@/lib/filters.ts';
 import { BOOKMAKER_LABEL } from '@/lib/types.ts';
 
 /**
@@ -23,16 +28,47 @@ const timeUntil = (ms: number) => {
   return h < 48 ? `in ${h}h` : `in ${Math.floor(h / 24)}d`;
 };
 
-/** Short chip label: 1 / X / 2, GG / NG, otherwise the bookmaker's own description. */
-function chipLabel(r: PickRow): string {
-  switch (r.outcomeKey) {
-    case 'home': return r.marketKind === '1x2' ? '1' : r.pick;
-    case 'draw': return r.marketKind === '1x2' ? 'X' : r.pick;
-    case 'away': return r.marketKind === '1x2' ? '2' : r.pick;
-    case 'yes': return 'GG';
-    case 'no': return 'NG';
-    default: return r.pick;
+/** Short chip label: 1 / x / 2, 1 or x / 1 or 2 / x or 2, Over/Under 0.5–5.5, GG / NG. */
+export function chipLabel(r: PickRow): string {
+  return formatGameCardMarket(r);
+}
+
+/** Strictly allow only 0.5, 1.5, 2.5, 3.5, 4.5, 5.5 for over/under rows. */
+function isValidCardRow(r: PickRow): boolean {
+  if (r.marketKind === 'over_under') {
+    return isAllowedOverUnderLine(r.line);
   }
+  return true;
+}
+
+/** Renders market label with smaller font for alphabet text and larger font for numbers. */
+function MarketLabel({ row }: { row: PickRow }) {
+  const tokens = tokenizeMarketText(chipLabel(row));
+  return (
+    <span className="inline-flex items-baseline whitespace-pre">
+      {tokens.map((t, i) =>
+        t.kind === 'number' ? (
+          <span key={i} className="font-mono text-sm font-bold leading-none">
+            {t.value}
+          </span>
+        ) : (
+          <span key={i} className="text-[10px] font-medium leading-none opacity-90">
+            {t.value}
+          </span>
+        ),
+      )}
+    </span>
+  );
+}
+
+/** Renders odds with smaller @ prefix and larger font for the numeric price. */
+function OddsLabel({ odds }: { odds: number }) {
+  return (
+    <span className="inline-flex items-baseline font-mono leading-none">
+      <span className="text-[10px] opacity-75">@</span>
+      <span className="text-sm font-bold">{odds.toFixed(2)}</span>
+    </span>
+  );
 }
 
 /** Chip colour per market type. */
@@ -60,8 +96,9 @@ export function GameCard({ rows, onAdd, algo = false }: {
   const [loadingOther, setLoadingOther] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const g = rows[0];
-  const addDefault = () => onAdd(rows[0]);
+  const visibleRows = rows.filter(isValidCardRow);
+  const g = visibleRows[0] ?? rows[0];
+  const addDefault = () => onAdd(g);
 
   const toggleOtherMarkets = async () => {
     if (otherOpen) {
@@ -95,11 +132,15 @@ export function GameCard({ rows, onAdd, algo = false }: {
 
   // Set of keys for currently displayed filtered rows
   const existingKeys = new Set(
-    rows.map((r) => `${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`)
+    visibleRows.map((r) => `${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`)
   );
-  // Additional rows that are not in the main filtered list
+  // Additional rows that are not in the main filtered list (strictly 0.5-5.5 for over/under)
   const extraRows = otherRows
-    ? otherRows.filter((r) => !existingKeys.has(`${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`))
+    ? otherRows.filter(
+        (r) =>
+          isValidCardRow(r) &&
+          !existingKeys.has(`${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`),
+      )
     : [];
 
   return (
@@ -118,11 +159,17 @@ export function GameCard({ rows, onAdd, algo = false }: {
         <div className="min-w-0 flex-1 space-y-1.5">
           <p className="flex items-baseline gap-1.5 text-sm font-semibold leading-tight text-white">
             <span className="truncate">{g.home}</span>
-            <span className="shrink-0 font-mono text-[11px] font-normal text-slate-400">1 (Home)</span>
+            <span className="shrink-0 font-mono text-slate-400">
+              <span className="text-sm font-bold text-slate-200">1</span>{' '}
+              <span className="text-[10px] font-normal">(Home)</span>
+            </span>
           </p>
           <p className="flex items-baseline gap-1.5 text-sm font-semibold leading-tight text-white">
             <span className="truncate">{g.away}</span>
-            <span className="shrink-0 font-mono text-[11px] font-normal text-slate-400">2 (Away)</span>
+            <span className="shrink-0 font-mono text-slate-400">
+              <span className="text-sm font-bold text-slate-200">2</span>{' '}
+              <span className="text-[10px] font-normal">(Away)</span>
+            </span>
           </p>
         </div>
         <button
@@ -150,7 +197,7 @@ export function GameCard({ rows, onAdd, algo = false }: {
         <div className="flex items-center justify-between text-[11px] text-slate-400">
           <p className="flex items-center gap-1.5">
             <span aria-hidden className="text-emerald-400">✔</span>
-            Eligible Filtered Picks ({rows.length}):
+            Eligible Filtered Picks (<span className="font-mono text-xs font-bold text-slate-200">{visibleRows.length}</span>):
           </p>
           <button
             type="button"
@@ -158,25 +205,38 @@ export function GameCard({ rows, onAdd, algo = false }: {
             className="text-[11px] text-cyan-400 hover:text-cyan-300 font-medium"
             aria-expanded={picksOpen}
           >
-            {picksOpen ? '▲ Collapse' : `▼ Show (${rows.length})`}
+            {picksOpen ? '▲ Collapse' : `▼ Show (${visibleRows.length})`}
           </button>
         </div>
 
         {picksOpen ? (
           <div className="mt-2 flex flex-wrap gap-2">
-            {rows.map((r) => (
+            {visibleRows.map((r) => (
               <button key={`${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`} type="button" onClick={() => onAdd(r)}
-                aria-label={`Add ${r.pick} at ${r.odds.toFixed(2)}`}
-                className={`inline-flex h-6 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition ${chipTone(r)}`}>
-                {chipLabel(r)}
-                <span className="font-mono text-[10px] opacity-70">@{r.odds.toFixed(2)}</span>
+                aria-label={`Add ${chipLabel(r)} at ${r.odds.toFixed(2)}`}
+                className={`inline-flex h-7 items-baseline gap-1.5 rounded-md border px-2.5 py-1 transition ${chipTone(r)}`}>
+                <MarketLabel row={r} />
+                <OddsLabel odds={r.odds} />
               </button>
             ))}
           </div>
         ) : (
-          <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500">
-            <span>Sample: {rows.slice(0, 2).map((r) => `${chipLabel(r)} @${r.odds.toFixed(2)}`).join(', ')}</span>
-            {rows.length > 2 && <span>+{rows.length - 2} more hidden</span>}
+          <div className="mt-1.5 flex flex-wrap items-baseline gap-2 text-slate-400">
+            <span className="text-[10px]">Sample:</span>
+            {visibleRows.slice(0, 2).map((r) => (
+              <span
+                key={`sample-${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`}
+                className="inline-flex items-baseline gap-1 text-slate-300"
+              >
+                <MarketLabel row={r} />
+                <OddsLabel odds={r.odds} />
+              </span>
+            ))}
+            {visibleRows.length > 2 && (
+              <span className="text-[10px] text-slate-500">
+                +<span className="font-mono text-xs font-bold">{visibleRows.length - 2}</span> more hidden
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -214,12 +274,12 @@ export function GameCard({ rows, onAdd, algo = false }: {
                       key={`other-${r.marketNativeId}|${r.outcomeNativeId}|${r.specifier}`}
                       type="button"
                       onClick={() => onAdd(r)}
-                      aria-label={`Add ${r.pick} at ${r.odds.toFixed(2)}`}
-                      className={`inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition ${chipTone(r)}`}
-                      title={`${r.marketKind.toUpperCase()}: ${r.pick} @ ${r.odds.toFixed(2)}`}
+                      aria-label={`Add ${chipLabel(r)} at ${r.odds.toFixed(2)}`}
+                      className={`inline-flex h-7 items-baseline gap-1.5 rounded-md border px-2.5 py-1 transition ${chipTone(r)}`}
+                      title={`${r.marketKind.toUpperCase()}: ${chipLabel(r)} @ ${r.odds.toFixed(2)}`}
                     >
-                      <span>{chipLabel(r)}</span>
-                      <span className="font-mono text-[10px] opacity-80">@{r.odds.toFixed(2)}</span>
+                      <MarketLabel row={r} />
+                      <OddsLabel odds={r.odds} />
                     </button>
                   ))}
                 </div>

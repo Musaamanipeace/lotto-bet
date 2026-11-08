@@ -4,6 +4,7 @@ import {
   BTTS_CHOICES,
   CARDS,
   DC_CHOICES,
+  GOAL_LINES_FALLBACK,
   MATCH_RESULT_CHOICES,
   allAvailableCards,
   isSolo,
@@ -14,6 +15,7 @@ import {
   type CardId,
   type CardsState,
 } from '@/lib/market-cards.ts';
+import { isAllowedOverUnderLine } from '@/lib/filters.ts';
 import {
   DEFAULT_TEMPLATES,
   deleteLocalTemplate,
@@ -350,7 +352,9 @@ export function MarketFilters({
       ));
     }
     if (def.id === 'over' || def.id === 'under') {
-      const lines = [...new Set([...goalLines, ...c.subs.map(Number)])].sort((x, y) => x - y);
+      const lines = [...new Set([...GOAL_LINES_FALLBACK, ...goalLines, ...c.subs.map(Number)])]
+        .filter(isAllowedOverUnderLine)
+        .sort((x, y) => x - y);
       return lines.map((l) => (
         <button
           key={l}
@@ -359,7 +363,7 @@ export function MarketFilters({
           className={chip(c.subs.includes(String(l)), def.id)}
           onClick={() => pick(String(l))}
         >
-          {def.id === 'over' ? 'Over' : 'Under'} {l}
+          {def.id === 'over' ? 'Over' : 'Under'} {l.toFixed(1)}
         </button>
       ));
     }

@@ -4,6 +4,11 @@ import type { Bookmaker, Game, Market, MarketKind, Outcome } from './types.ts';
 
 export const FT_LINE_MIN = 0.5;
 export const FT_LINE_MAX = 5.5;
+export const FT_LINES = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5] as const;
+
+export function isAllowedOverUnderLine(line: number | null | undefined): line is number {
+  return typeof line === 'number' && (FT_LINES as readonly number[]).includes(line);
+}
 
 export type MarketSelector = { kind: MarketKind; line?: number };
 
@@ -99,11 +104,81 @@ export type PickRow = {
   implied: number | null;
 };
 
-/** A market is usable only if identified; full-time over/under only with a known line in 0.5-5.5. */
+/** A market is usable only if identified; full-time over/under only with a known line strictly in 0.5, 1.5, 2.5, 3.5, 4.5, 5.5. */
 function usable(m: Market): boolean {
   if (m.kind === null || m.unavailableReason !== null) return false;
-  if (m.kind === 'over_under') return m.line !== null && m.line >= FT_LINE_MIN && m.line <= FT_LINE_MAX;
+  if (m.kind === 'over_under') return isAllowedOverUnderLine(m.line);
   return true;
+}
+
+export type MarketTextToken = { kind: 'number' | 'text'; value: string };
+
+/**
+ * Formats the market label for a game card chip:
+ * - 1X2: Home -> "1", Away -> "2", Draw -> "x"
+ * - Double Chance: "1 or x", "1 or 2", "x or 2"
+ * - Over/Under (strictly 0.5, 1.5, 2.5, 3.5, 4.5, 5.5): "Over 0.5" .. "Over 5.5", "Under 0.5" .. "Under 5.5"
+ * - BTTS: "GG", "NG"
+ */
+export function formatGameCardMarket(r: Pick<PickRow, 'marketKind' | 'outcomeKey' | 'pick' | 'line'>): string {
+  if (r.marketKind === '1x2') {
+    if (r.outcomeKey === 'home') return '1';
+    if (r.outcomeKey === 'draw') return 'x';
+    if (r.outcomeKey === 'away') return '2';
+    const p = r.pick.trim().toLowerCase();
+    if (p === '1' || p === 'home') return '1';
+    if (p === 'x' || p === 'draw') return 'x';
+    if (p === '2' || p === 'away') return '2';
+    return r.pick;
+  }
+
+  if (r.marketKind === 'double_chance') {
+    const sub = doubleChanceSubOf(r.pick);
+    if (sub === '1X') return '1 or x';
+    if (sub === '12') return '1 or 2';
+    if (sub === 'X2') return 'x or 2';
+    return r.pick;
+  }
+
+  if (r.marketKind === 'over_under') {
+    const line = isAllowedOverUnderLine(r.line) ? r.line : null;
+    const side =
+      r.outcomeKey === 'over' || /^over\b/i.test(r.pick.trim())
+        ? 'Over'
+        : r.outcomeKey === 'under' || /^under\b/i.test(r.pick.trim())
+          ? 'Under'
+          : null;
+    if (side && line !== null) {
+      return `${side} ${line.toFixed(1)}`;
+    }
+    return r.pick;
+  }
+
+  if (r.marketKind === 'btts') {
+    if (r.outcomeKey === 'yes' || /^(yes|gg)$/i.test(r.pick.trim())) return 'GG';
+    if (r.outcomeKey === 'no' || /^(no|ng|ngg)$/i.test(r.pick.trim())) return 'NG';
+    return r.pick;
+  }
+
+  return r.pick;
+}
+
+/**
+ * Splits a market label into numeric segments (rendered in a larger font)
+ * and alphabetic/text segments (rendered in a smaller font).
+ */
+export function tokenizeMarketText(label: string): MarketTextToken[] {
+  const tokens: MarketTextToken[] = [];
+  const regex = /(\d+(?:\.\d+)?)|([^\d]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(label)) !== null) {
+    if (match[1] !== undefined) {
+      tokens.push({ kind: 'number', value: match[1] });
+    } else if (match[2] !== undefined) {
+      tokens.push({ kind: 'text', value: match[2] });
+    }
+  }
+  return tokens;
 }
 
 /** Margin-free probability of `o`, or null unless every outcome of the market is open and priced. */
