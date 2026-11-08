@@ -105,6 +105,7 @@ export const DEFAULT_TEMPLATES: FilterTemplate[] = [
 
 const LOCAL_STORAGE_KEY = STORAGE_KEYS.FILTER_TEMPLATES;
 const TEMPLATE_EVENT = 'lb-filter-template-applied';
+const TEMPLATES_CHANGED_EVENT = 'lb-filter-templates-changed';
 
 export function getLocalTemplates(): FilterTemplate[] {
   if (typeof window === 'undefined') return DEFAULT_TEMPLATES;
@@ -113,7 +114,16 @@ export function getLocalTemplates(): FilterTemplate[] {
     const raw = localStorage.getItem(key);
     if (!raw) return DEFAULT_TEMPLATES;
     const userCustom: FilterTemplate[] = JSON.parse(raw);
-    const combined = [...DEFAULT_TEMPLATES, ...userCustom.filter((u) => !DEFAULT_TEMPLATES.some((d) => d.id === u.id))];
+    const normalized = userCustom.map((u) => ({
+      ...u,
+      bookmaker: u.bookmaker || 'sportybet',
+      withinHours: u.withinHours !== undefined ? u.withinHours : null,
+      leagues: Array.isArray(u.leagues) ? u.leagues : [],
+    }));
+    const combined = [
+      ...DEFAULT_TEMPLATES,
+      ...normalized.filter((u) => !DEFAULT_TEMPLATES.some((d) => d.id === u.id)),
+    ];
     return combined;
   } catch {
     return DEFAULT_TEMPLATES;
@@ -126,6 +136,10 @@ export function saveLocalTemplate(template: Omit<FilterTemplate, 'id' | 'created
   const custom = getLocalTemplates().filter((t) => !t.isDefault);
   const newTemplate: FilterTemplate = {
     ...template,
+    bookmaker: template.bookmaker || 'sportybet',
+    withinHours: template.withinHours !== undefined ? template.withinHours : null,
+    leagues: Array.isArray(template.leagues) ? [...template.leagues] : [],
+    cards: JSON.parse(JSON.stringify(template.cards)),
     id: `tpl-user-${Date.now()}-${++templateClock}`,
     createdAt: Date.now(),
     isDefault: false,
@@ -137,6 +151,9 @@ export function saveLocalTemplate(template: Omit<FilterTemplate, 'id' | 'created
   } catch {
     /* ignore storage quota */
   }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(TEMPLATES_CHANGED_EVENT, { detail: getLocalTemplates() }));
+  }
   return newTemplate;
 }
 
@@ -146,10 +163,20 @@ export function deleteLocalTemplate(id: string): boolean {
   try {
     const key = scopedStorageKey(LOCAL_STORAGE_KEY);
     localStorage.setItem(key, JSON.stringify(custom));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(TEMPLATES_CHANGED_EVENT, { detail: getLocalTemplates() }));
+    }
     return true;
   } catch {
     return false;
   }
+}
+
+export function onTemplatesChanged(callback: (templates: FilterTemplate[]) => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const handler = () => callback(getLocalTemplates());
+  window.addEventListener(TEMPLATES_CHANGED_EVENT, handler);
+  return () => window.removeEventListener(TEMPLATES_CHANGED_EVENT, handler);
 }
 
 export function notifyTemplateApplied(template: FilterTemplate) {

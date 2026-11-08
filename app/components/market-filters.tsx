@@ -20,6 +20,7 @@ import {
   getLocalTemplates,
   notifyTemplateApplied,
   onTemplateApplied,
+  onTemplatesChanged,
   saveLocalTemplate,
   type FilterTemplate,
 } from '@/lib/template-store.ts';
@@ -215,13 +216,21 @@ export function MarketFilters({
 
   useEffect(() => {
     setTemplates(getLocalTemplates());
-    return onTemplateApplied((tpl) => {
+    const offApplied = onTemplateApplied((tpl) => {
       setSelectedTemplateId(tpl.id);
+      if (tpl.bookmaker) onBookmakerChange?.(tpl.bookmaker);
+      onWithinHoursChange?.(tpl.withinHours !== undefined ? tpl.withinHours : null);
+      onLeaguesChange?.(Array.isArray(tpl.leagues) ? [...tpl.leagues] : []);
       onChange(tpl.cards);
       setNotice(`Applied template: "${tpl.name}"`);
       setTimeout(() => setNotice(null), 3000);
     });
-  }, [onChange]);
+    const offChanged = onTemplatesChanged((next) => setTemplates(next));
+    return () => {
+      offApplied();
+      offChanged();
+    };
+  }, [user, onChange, onBookmakerChange, onWithinHoursChange, onLeaguesChange]);
 
   // Close Leagues dropdown on outside click or Escape
   useEffect(() => {
@@ -262,6 +271,9 @@ export function MarketFilters({
     if (!id) return;
     const tpl = templates.find((t) => t.id === id);
     if (tpl) {
+      if (tpl.bookmaker) onBookmakerChange?.(tpl.bookmaker);
+      onWithinHoursChange?.(tpl.withinHours !== undefined ? tpl.withinHours : null);
+      onLeaguesChange?.(Array.isArray(tpl.leagues) ? [...tpl.leagues] : []);
       onChange(tpl.cards);
       notifyTemplateApplied(tpl);
       setNotice(`Applied template: "${tpl.name}"`);
@@ -275,8 +287,8 @@ export function MarketFilters({
       name: newTemplateName.trim(),
       description: newTemplateDesc.trim() || undefined,
       bookmaker,
-      withinHours,
-      leagues,
+      withinHours: withinHours ?? null,
+      leagues: Array.isArray(leagues) ? [...leagues] : [],
       cards,
     });
 
@@ -709,6 +721,24 @@ export function MarketFilters({
                 value={newTemplateDesc}
                 onChange={(e) => setNewTemplateDesc(e.target.value)}
               />
+            </div>
+            <div className="rounded-lg border border-white/10 bg-navy-950/60 p-3 text-xs text-slate-300 space-y-1">
+              <p className="font-semibold text-slate-200">Included in this template:</p>
+              <p>
+                • <span className="text-slate-400">Bookmaker:</span> {BOOKMAKER_LABEL[bookmaker]}
+              </p>
+              <p>
+                • <span className="text-slate-400">Timeframe:</span>{' '}
+                {withinHours ? `Next ${withinHours} hours` : 'Any time (next 7 days)'}
+              </p>
+              <p>
+                • <span className="text-slate-400">Selected Leagues:</span>{' '}
+                {leagues.length > 0 ? `${leagues.length} selected (${leagues.slice(0, 3).join(', ')}${leagues.length > 3 ? '…' : ''})` : 'All leagues'}
+              </p>
+              <p>
+                • <span className="text-slate-400">Market Filters:</span>{' '}
+                {Object.values(cards).filter((c) => c.on).length} active market card(s)
+              </p>
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
               <button type="button" onClick={() => setSaveModalOpen(false)} className="btn-ghost text-xs">

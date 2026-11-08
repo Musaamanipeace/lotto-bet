@@ -24,8 +24,8 @@ import { useStoredSlip } from './use-slips';
 import { HealthBanner } from './health-banner';
 import { MarketFilters } from './market-filters';
 import { ZeroDataBanner } from './zero-data-banner';
-import { onTemplateApplied, getLocalTemplates, type FilterTemplate } from '@/lib/template-store.ts';
-import { buildTemplateAiAcca, templateSummary } from '@/lib/template-ai.ts';
+import { onTemplateApplied, onTemplatesChanged, getLocalTemplates, type FilterTemplate } from '@/lib/template-store.ts';
+import { buildTemplateAiAcca } from '@/lib/template-ai.ts';
 import { getClientSettings, getClientAiHeaders, hasSubmittedByok, onSettingsChanged } from '@/lib/client-settings.ts';
 import type { LeagueItem } from './league-checklist';
 
@@ -100,7 +100,8 @@ export function Builder({ heading }: { heading?: string }) {
 
   useEffect(() => {
     setTemplates(getLocalTemplates());
-  }, []);
+    return onTemplatesChanged((next) => setTemplates(next));
+  }, [user]);
 
   useEffect(() => {
     const fromUrl = parseLeagues(new URLSearchParams(window.location.search).get('leagues'));
@@ -110,8 +111,8 @@ export function Builder({ heading }: { heading?: string }) {
   useEffect(() => {
     return onTemplateApplied((tpl) => {
       if (tpl.bookmaker) setBookmaker(tpl.bookmaker);
-      if (tpl.withinHours !== undefined) setWithinHours(tpl.withinHours);
-      if (tpl.leagues) setLeagues(tpl.leagues);
+      setWithinHours(tpl.withinHours !== undefined ? tpl.withinHours : null);
+      setLeagues(Array.isArray(tpl.leagues) ? [...tpl.leagues] : []);
       if (tpl.cards) setCards(tpl.cards);
     });
   }, []);
@@ -648,7 +649,7 @@ export function Builder({ heading }: { heading?: string }) {
         </div>
       )}
 
-      {/* Task 8: Collapsible Available Games Carousel (1 card at a time, scroll-snap, prev/next, keyboard arrows) */}
+      {/* Available Games: Expanded = down-scrollable list of all games; Collapsed = 1 card at a time with Prev/Next */}
       <div id="available-games" className="glass mt-4 p-4 scroll-mt-20">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
@@ -658,7 +659,9 @@ export function Builder({ heading }: { heading?: string }) {
                 className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 font-mono text-xs font-semibold text-emerald-300"
                 aria-live="polite"
               >
-                {carouselIndex + 1} / {byGame.length}
+                {gamesExpanded
+                  ? `${byGame.length} game${byGame.length === 1 ? '' : 's'}`
+                  : `${carouselIndex + 1} / ${byGame.length}`}
               </span>
             )}
             {games.status === 'ok' && byGame.length === 0 && (
@@ -667,7 +670,7 @@ export function Builder({ heading }: { heading?: string }) {
           </div>
 
           <div className="flex items-center gap-2">
-            {games.status === 'ok' && byGame.length > 0 && gamesExpanded && (
+            {games.status === 'ok' && byGame.length > 0 && !gamesExpanded && (
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -707,75 +710,87 @@ export function Builder({ heading }: { heading?: string }) {
           </p>
         )}
 
-        {gamesExpanded && (
-          <div className="mt-3">
-            {games.status === 'ok' && bypass && (
-              <div
-                className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100"
-                role="status"
+        <div className="mt-3">
+          {games.status === 'ok' && bypass && (
+            <div
+              className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100"
+              role="status"
+            >
+              <span>
+                Filters bypassed: showing all {shownGames} upcoming game{shownGames === 1 ? '' : 's'} with their full market list.
+              </span>
+              <button
+                type="button"
+                className="btn-ghost ml-auto h-7 px-2.5 py-0 text-xs"
+                onClick={() => setBypass(false)}
               >
-                <span>
-                  Filters bypassed: showing all {shownGames} upcoming game{shownGames === 1 ? '' : 's'} with their full market list.
-                </span>
-                <button
-                  type="button"
-                  className="btn-ghost ml-auto h-7 px-2.5 py-0 text-xs"
-                  onClick={() => setBypass(false)}
-                >
-                  Back to my filters
-                </button>
-              </div>
-            )}
+                Back to my filters
+              </button>
+            </div>
+          )}
 
-            {games.status === 'loading' && (
-              <p className="py-8 text-center text-sm text-slate-400">Loading games…</p>
-            )}
+          {games.status === 'loading' && (
+            <p className="py-8 text-center text-sm text-slate-400">Loading games…</p>
+          )}
 
-            {games.status === 'error' && (
-              <div
-                className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200"
-                role="alert"
-              >
-                <p className="font-semibold">{games.error}</p>
-                {games.httpStatus > 0 && (
-                  <p className="mt-1 text-xs text-red-300">
-                    HTTP {games.httpStatus}
-                    {games.details.upstream ? ` · ${games.details.upstream}` : ''}
-                  </p>
-                )}
-                {games.details.bodySnippet && (
-                  <p className="mt-1 break-all font-mono text-[11px] text-red-300/80">
-                    {games.details.bodySnippet}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {games.status === 'ok' && pool.length === 0 && (
-              games.data.count === 0 ? (
-                <ZeroDataBanner
-                  bookmaker={bookmaker}
-                  leaguesCount={leagues.length}
-                  withinHours={withinHours}
-                  activeCardsCount={Object.values(cards).filter((c) => c.on).length}
-                  onResetFilters={() => {
-                    setWithinHours(null);
-                    setLeagues([]);
-                    setCards(defaultCards);
-                  }}
-                  onSwitchBookmaker={(b) => chooseBookmaker(b)}
-                  onRefreshCompleted={() => {
-                    setBookmaker((b) => b);
-                  }}
-                />
-              ) : (
-                <p className="py-6 text-center text-sm text-slate-400">
-                  Every matching game is already in your slip.
+          {games.status === 'error' && (
+            <div
+              className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200"
+              role="alert"
+            >
+              <p className="font-semibold">{games.error}</p>
+              {games.httpStatus > 0 && (
+                <p className="mt-1 text-xs text-red-300">
+                  HTTP {games.httpStatus}
+                  {games.details.upstream ? ` · ${games.details.upstream}` : ''}
                 </p>
-              )
-            )}
+              )}
+              {games.details.bodySnippet && (
+                <p className="mt-1 break-all font-mono text-[11px] text-red-300/80">
+                  {games.details.bodySnippet}
+                </p>
+              )}
+            </div>
+          )}
 
-            {games.status === 'ok' && byGame.length > 0 && (
+          {games.status === 'ok' && pool.length === 0 && (
+            games.data.count === 0 ? (
+              <ZeroDataBanner
+                bookmaker={bookmaker}
+                leaguesCount={leagues.length}
+                withinHours={withinHours}
+                activeCardsCount={Object.values(cards).filter((c) => c.on).length}
+                onResetFilters={() => {
+                  setWithinHours(null);
+                  setLeagues([]);
+                  setCards(defaultCards);
+                }}
+                onSwitchBookmaker={(b) => chooseBookmaker(b)}
+                onRefreshCompleted={() => {
+                  setBookmaker((b) => b);
+                }}
+              />
+            ) : (
+              <p className="py-6 text-center text-sm text-slate-400">
+                Every matching game is already in your slip.
+              </p>
+            )
+          )}
+
+          {games.status === 'ok' && byGame.length > 0 && (
+            gamesExpanded ? (
+              /* Expanded view: down-scrollable card list to the last game */
+              <div
+                aria-label="Available games list"
+                className="max-h-[42rem] space-y-3 overflow-y-auto pr-1"
+              >
+                {byGame.map((rows) => {
+                  const g = rows[0];
+                  return <GameCard key={g.gameId} rows={rows} onAdd={handleRequestAdd} />;
+                })}
+              </div>
+            ) : (
+              /* Collapsed view: reduced to 1 card at a time with Prev/Next scroll feature */
               <div
                 tabIndex={0}
                 onKeyDown={handleCarouselKeyDown}
@@ -803,31 +818,10 @@ export function Builder({ heading }: { heading?: string }) {
                     );
                   })}
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
-                  <button
-                    type="button"
-                    onClick={() => scrollToSlide(carouselIndex - 1)}
-                    disabled={carouselIndex <= 0}
-                    className="btn-ghost h-8 px-3 text-xs"
-                  >
-                    ← Previous Game
-                  </button>
-                  <span className="font-mono text-xs text-slate-300">
-                    Game {carouselIndex + 1} / {byGame.length} (Swipe or use ← → keys)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => scrollToSlide(carouselIndex + 1)}
-                    disabled={carouselIndex >= byGame.length - 1}
-                    className="btn-ghost h-8 px-3 text-xs"
-                  >
-                    Next Game →
-                  </button>
-                </div>
               </div>
-            )}
-          </div>
-        )}
+            )
+          )}
+        </div>
       </div>
 
       {/* Unsigned-in users ONLY get Random Picks; Signed-in users get AI & Batch Slip Generator + Random Picks */}
@@ -932,34 +926,6 @@ export function Builder({ heading }: { heading?: string }) {
                       </optgroup>
                     )}
                   </select>
-                  <p className="truncate text-[11px] text-cyan-400/80">
-                    {templateSummary(
-                      aiTemplateId
-                        ? (templates.find((t) => t.id === aiTemplateId) ?? {
-                            id: 'active',
-                            name: 'Active',
-                            bookmaker,
-                            withinHours,
-                            leagues,
-                            cards,
-                            createdAt: 0,
-                          })
-                        : {
-                            id: 'active',
-                            name: 'Active',
-                            bookmaker,
-                            withinHours,
-                            leagues,
-                            cards,
-                            createdAt: 0,
-                          },
-                      aiTimeframe !== 'template'
-                        ? aiTimeframe === 'any'
-                          ? null
-                          : Number(aiTimeframe)
-                        : undefined,
-                    )}
-                  </p>
                 </div>
 
                 <div className="space-y-1">

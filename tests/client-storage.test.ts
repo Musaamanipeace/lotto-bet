@@ -18,6 +18,8 @@ import {
 } from '../src/lib/client-settings.ts';
 import { readSlip, writeSlip } from '../src/lib/slip-store.ts';
 import { emptySlip, defaultSlipName } from '../src/lib/slip.ts';
+import { getLocalTemplates, saveLocalTemplate } from '../src/lib/template-store.ts';
+import { defaultCards } from '../src/lib/market-cards.ts';
 
 // Minimal in-memory localStorage mock for Node tests
 function createMemoryStorage() {
@@ -221,5 +223,37 @@ describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
     assert.ok(name.length >= 10);
     const s = emptySlip();
     assert.deepEqual(s.legs, []);
+  });
+
+  it('saves and restores market filters, selected leagues, timeframe, and bookmaker in a saved template', () => {
+    const mem = createMemoryStorage();
+    // @ts-expect-error
+    globalThis.localStorage = mem;
+    // @ts-expect-error
+    globalThis.window = {
+      dispatchEvent: () => true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+    setActiveStorageUserId('user-a');
+
+    const selectedLeagues = ['Premier League', 'La Liga'];
+    const tpl = saveLocalTemplate({
+      name: 'My Weekend EPL + LaLiga 24h',
+      bookmaker: 'betpawa',
+      withinHours: 24,
+      leagues: selectedLeagues,
+      cards: defaultCards(),
+    });
+
+    // Mutating the original array afterwards must not mutate the saved template
+    selectedLeagues.push('Serie A');
+
+    const loaded = getLocalTemplates().find((t) => t.id === tpl.id);
+    assert.ok(loaded);
+    assert.equal(loaded.bookmaker, 'betpawa');
+    assert.equal(loaded.withinHours, 24);
+    assert.deepEqual(loaded.leagues, ['Premier League', 'La Liga']);
+    assert.deepEqual(loaded.cards, defaultCards());
   });
 });
