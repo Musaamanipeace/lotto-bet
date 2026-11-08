@@ -19,18 +19,40 @@ import {
 import {
   loadLocalSavedSlips,
   saveLocalSavedSlips,
-  type SavedSlip,
 } from '@/lib/saved-slips.ts';
 import { SIGNOUT_EVENT } from '@/lib/client-storage.ts';
 
+type SavedSlip = {
+  id: string;
+  name: string;
+  bookmaker: string;
+  legs: {
+    home: string;
+    away: string;
+    pick: string;
+    odds: number;
+    gameId?: string;
+    kickoff?: number;
+    league?: string | null;
+    marketKind?: any;
+    outcomeKey?: any;
+    line?: number | null;
+    specifier?: string;
+  }[];
+  totalOdds: number;
+  combinedImplied: number | null;
+  createdAt: number;
+  shared?: boolean;
+};
+
 function loadLocalSlips(): SavedSlip[] {
-  return loadLocalSavedSlips();
+  return loadLocalSavedSlips<SavedSlip>();
 }
 
 function saveLocalSlip(slip: SavedSlip) {
-  const list = loadLocalSavedSlips();
+  const list = loadLocalSavedSlips<SavedSlip>();
   list.unshift(slip);
-  saveLocalSavedSlips(list.slice(0, 50));
+  saveLocalSavedSlips<SavedSlip>(list.slice(0, 50));
 }
 
 export default function ResultsTrackerPage() {
