@@ -202,6 +202,20 @@ describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
     assert.equal(getClientSettings().geminiApiKey, '');
   });
 
+  it('prevents unsigned-in (guest) users from saving or reading BYOK settings', () => {
+    const mem = createMemoryStorage();
+    // @ts-expect-error
+    globalThis.localStorage = mem;
+    setActiveStorageUserId(null);
+
+    const saved = saveClientSettings({
+      geminiApiKey: 'SHOULD_NOT_SAVE_FOR_GUEST',
+    });
+    assert.equal(saved.geminiApiKey, '');
+    assert.equal(hasSubmittedByok(), false);
+    assert.equal(mem.length, 0);
+  });
+
   it('generates default slip name with date and time (Task 10)', () => {
     const name = defaultSlipName(new Date('2026-11-08T08:45:00Z'));
     assert.ok(name.startsWith('Slip '));

@@ -25,6 +25,11 @@ export async function POST(req: Request) {
   const bad = requireJson(req);
   if (bad) return bad;
 
+  const user = await currentUser(req);
+  if (!user) {
+    return jsonError('Sign in required to use AI Chat.', 401);
+  }
+
   // Enforce strict BYOK: if the client has not submitted their own API key via headers, refuse and tell them to submit.
   if (!hasClientByokHeaders(req.headers)) {
     return Response.json(
@@ -50,7 +55,6 @@ export async function POST(req: Request) {
 
   // Read-only: chat never generates picks. If nothing is saved yet the model is told so.
   const snap = await getAiSnapshot().catch(() => null);
-  const user = await currentUser(req);
 
   const pickSample = (snap?.picks ?? [])
     .slice(0, 25)

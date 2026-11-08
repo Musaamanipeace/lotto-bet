@@ -2,6 +2,8 @@
 import { loadAiSnapshot } from '@/lib/run-ai.ts';
 import type { PickMarketKey } from '@/lib/criteria.ts';
 import { filterPicks, parseLeagues } from '@/lib/pick-filter.ts';
+import { currentUser, jsonError } from '@/lib/session.ts';
+import { hasClientByokHeaders } from '@/lib/llm/request-env.ts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -11,6 +13,21 @@ export const maxDuration = 60;
  * Returns ranked AI picks, optionally filtered by market / bookmaker.
  */
 export async function GET(req: Request) {
+  const user = await currentUser(req);
+  if (!user) {
+    return jsonError('Sign in required to use AI Picks.', 401);
+  }
+  if (!hasClientByokHeaders(req.headers)) {
+    return Response.json(
+      {
+        ok: false,
+        code: 'byok_required',
+        error: 'Please submit your own API key (BYOK) in Settings (Menu ▾ → Settings) before using AI Picks.',
+      },
+      { status: 400 },
+    );
+  }
+
   const url = new URL(req.url);
   const market = url.searchParams.get('market') as PickMarketKey | null;
   const bookmaker = url.searchParams.get('bookmaker');

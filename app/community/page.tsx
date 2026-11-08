@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useAuth } from '../components/auth-context';
 
 type CommunitySlip = {
   id: string;
@@ -69,12 +70,17 @@ function CommunitySlipItem({ s }: { s: CommunitySlip }) {
 }
 
 export default function CommunityPage() {
+  const { user, openAuth } = useAuth();
   const [slips, setSlips] = useState<CommunitySlip[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     (async () => {
       setLoading(true);
       try {
@@ -92,7 +98,23 @@ export default function CommunityPage() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [user]);
+
+  if (!user) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-12">
+        <div className="glass rounded-xl border border-white/10 p-6 text-center space-y-3">
+          <h1 className="font-display text-2xl font-bold text-white">Sign in required</h1>
+          <p className="text-sm text-slate-400">
+            Unsigned-in users can only use the Builder, Filters, and Random Picks. Sign in to view Community slips.
+          </p>
+          <button type="button" onClick={() => openAuth('login')} className="btn-emerald text-xs">
+            Sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">

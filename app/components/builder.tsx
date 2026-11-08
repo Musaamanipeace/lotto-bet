@@ -26,7 +26,7 @@ import { MarketFilters } from './market-filters';
 import { ZeroDataBanner } from './zero-data-banner';
 import { onTemplateApplied, getLocalTemplates, type FilterTemplate } from '@/lib/template-store.ts';
 import { buildTemplateAiAcca, templateSummary } from '@/lib/template-ai.ts';
-import { getClientSettings, getClientAiHeaders, hasSubmittedByok } from '@/lib/client-settings.ts';
+import { getClientSettings, getClientAiHeaders, hasSubmittedByok, onSettingsChanged } from '@/lib/client-settings.ts';
 import type { LeagueItem } from './league-checklist';
 
 type GamesOk = {
@@ -75,8 +75,18 @@ export function Builder({ heading }: { heading?: string }) {
   const [aiTimeframe, setAiTimeframe] = useState<string>('template');
   const [targetTier, setTargetTier] = useState<TargetTier>('average');
   const [isAddingAi, setIsAddingAi] = useState<boolean>(false);
+  const [byokReady, setByokReady] = useState<boolean>(false);
   const [templates, setTemplates] = useState<FilterTemplate[]>([]);
   const reqId = useRef(0);
+
+  useEffect(() => {
+    if (!user) {
+      setByokReady(false);
+      return;
+    }
+    setByokReady(hasSubmittedByok());
+    return onSettingsChanged((s) => setByokReady(hasSubmittedByok(s)));
+  }, [user]);
 
   const showToast = useCallback((tone: 'info' | 'warn', text: string) => {
     setToast({ tone, text });
@@ -278,6 +288,16 @@ export function Builder({ heading }: { heading?: string }) {
     async (targetSlip: Slip): Promise<Slip> => {
       const b = slipBookmaker(targetSlip);
       if (!b || targetSlip.legs.length === 0) return targetSlip;
+      // Unsigned-in users only use the active working slip in localStorage (no account slip saving)
+      if (!user) {
+        const updatedGuest: Slip = {
+          ...targetSlip,
+          id: targetSlip.id || `guest-${Date.now()}`,
+          name: targetSlip.name || defaultSlipName(),
+        };
+        setSlip(updatedGuest);
+        return updatedGuest;
+      }
       const totalsNow = slipTotals(targetSlip);
       const totalOdds = totalsNow.totalOdds.ok
         ? totalsNow.totalOdds.total
@@ -810,231 +830,279 @@ export function Builder({ heading }: { heading?: string }) {
         )}
       </div>
 
-      {/* AI & Batch Accumulator Generator Card */}
-      <div className="glass mt-4 space-y-3 p-4 text-sm transition-all">
-        <div className="flex items-center justify-between">
-          <p className="font-semibold text-white">AI & Batch Slip Generator</p>
-          <button
-            type="button"
-            onClick={() => setToolsCollapsed((c) => !c)}
-            className="text-xs text-slate-400 hover:text-white"
-          >
-            {toolsCollapsed ? '▼ Expand Generator' : '▲ Collapse Generator'}
-          </button>
+      {/* Unsigned-in users ONLY get Random Picks; Signed-in users get AI & Batch Slip Generator + Random Picks */}
+      {!user ? (
+        <div className="glass mt-4 flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
+          <div>
+            <p className="font-semibold text-white">Random Picks</p>
+            <p className="text-xs text-slate-400">
+              Add random picks from the currently filtered games pool to your slip.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={randomCount}
+              onChange={(e) => setRandomCount(e.target.value.replace(/\D/g, '').slice(0, 2))}
+              aria-label="Random picks count"
+              className="field h-8 w-14 px-2 text-center text-xs"
+            />
+            <button
+              type="button"
+              className="btn-emerald py-1.5 px-3 text-xs font-semibold"
+              disabled={games.status !== 'ok' || pool.length === 0}
+              onClick={addRandom}
+            >
+              Add Random
+            </button>
+          </div>
         </div>
+      ) : (
+        <div className="glass mt-4 space-y-3 p-4 text-sm transition-all">
+          <div className="flex items-center justify-between">
+            <p className="font-semibold text-white">AI & Batch Slip Generator</p>
+            <button
+              type="button"
+              onClick={() => setToolsCollapsed((c) => !c)}
+              className="text-xs text-slate-400 hover:text-white"
+            >
+              {toolsCollapsed ? '▼ Expand Generator' : '▲ Collapse Generator'}
+            </button>
+          </div>
 
-        {!toolsCollapsed && (
-          <div className="rounded-xl border border-gold-500/30 bg-gradient-to-br from-gold-500/10 via-navy-900/60 to-navy-950 p-3.5 shadow-sm">
-            <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5 font-display text-sm font-bold text-gold-300">
-                ⚡ AI Picks from Template
-              </span>
-              <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                Target & Batch
-              </span>
-            </div>
+          {!toolsCollapsed && (
+            <div className="rounded-xl border border-gold-500/30 bg-gradient-to-br from-gold-500/10 via-navy-900/60 to-navy-950 p-3.5 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 font-display text-sm font-bold text-gold-300">
+                  ⚡ AI Picks from Template
+                </span>
+                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                  Target & Batch
+                </span>
+              </div>
 
-            <div className="mt-2.5 grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs text-slate-300">
-                  <span className="font-medium">Filter Template:</span>
-                  <span className="text-[11px] text-slate-500">
-                    {aiTemplateId ? templates.find((t) => t.id === aiTemplateId)?.bookmaker : bookmaker}
+              {!byokReady && (
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  <span>
+                    🔑 <strong>BYOK Required:</strong> Submit your own API key in <strong>Menu ▾ → Settings</strong> to use AI Picks.
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new Event('lb-open-settings'));
+                      }
+                    }}
+                    className="btn-gold px-2.5 py-1 text-[11px] font-bold"
+                  >
+                    Submit BYOK Key
+                  </button>
                 </div>
-                <select
-                  className="field w-full text-xs py-1.5"
-                  value={aiTemplateId}
-                  onChange={(e) => setAiTemplateId(e.target.value)}
-                >
-                  <option value="">Current Active Screen Filters</option>
-                  <optgroup label="Default Filter Templates">
-                    {templates.filter((t) => t.isDefault).map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({BOOKMAKER_LABEL[t.bookmaker]})
-                      </option>
-                    ))}
-                  </optgroup>
-                  {templates.some((t) => !t.isDefault) && (
-                    <optgroup label="My Saved Templates">
-                      {templates.filter((t) => !t.isDefault).map((t) => (
+              )}
+
+              <div className="mt-2.5 grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs text-slate-300">
+                    <span className="font-medium">Filter Template:</span>
+                    <span className="text-[11px] text-slate-500">
+                      {aiTemplateId ? templates.find((t) => t.id === aiTemplateId)?.bookmaker : bookmaker}
+                    </span>
+                  </div>
+                  <select
+                    className="field w-full text-xs py-1.5"
+                    value={aiTemplateId}
+                    onChange={(e) => setAiTemplateId(e.target.value)}
+                  >
+                    <option value="">Current Active Screen Filters</option>
+                    <optgroup label="Default Filter Templates">
+                      {templates.filter((t) => t.isDefault).map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.name} ({BOOKMAKER_LABEL[t.bookmaker]})
                         </option>
                       ))}
                     </optgroup>
-                  )}
-                </select>
-                <p className="truncate text-[11px] text-cyan-400/80">
-                  {templateSummary(
-                    aiTemplateId
-                      ? (templates.find((t) => t.id === aiTemplateId) ?? {
-                          id: 'active',
-                          name: 'Active',
-                          bookmaker,
-                          withinHours,
-                          leagues,
-                          cards,
-                          createdAt: 0,
-                        })
-                      : {
-                          id: 'active',
-                          name: 'Active',
-                          bookmaker,
-                          withinHours,
-                          leagues,
-                          cards,
-                          createdAt: 0,
-                        },
-                    aiTimeframe !== 'template'
-                      ? aiTimeframe === 'any'
-                        ? null
-                        : Number(aiTimeframe)
-                      : undefined,
-                  )}
-                </p>
-              </div>
+                    {templates.some((t) => !t.isDefault) && (
+                      <optgroup label="My Saved Templates">
+                        {templates.filter((t) => !t.isDefault).map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({BOOKMAKER_LABEL[t.bookmaker]})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  <p className="truncate text-[11px] text-cyan-400/80">
+                    {templateSummary(
+                      aiTemplateId
+                        ? (templates.find((t) => t.id === aiTemplateId) ?? {
+                            id: 'active',
+                            name: 'Active',
+                            bookmaker,
+                            withinHours,
+                            leagues,
+                            cards,
+                            createdAt: 0,
+                          })
+                        : {
+                            id: 'active',
+                            name: 'Active',
+                            bookmaker,
+                            withinHours,
+                            leagues,
+                            cards,
+                            createdAt: 0,
+                          },
+                      aiTimeframe !== 'template'
+                        ? aiTimeframe === 'any'
+                          ? null
+                          : Number(aiTimeframe)
+                        : undefined,
+                    )}
+                  </p>
+                </div>
 
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs text-slate-300">
-                  <span className="font-medium">AI Picks Timeframe:</span>
-                  <span className="text-[11px] text-cyan-400 font-mono">
-                    {aiTimeframe === 'template'
-                      ? 'From Template'
-                      : aiTimeframe === 'any'
-                        ? 'Any time'
-                        : `<${aiTimeframe}h`}
-                  </span>
-                </div>
-                <select
-                  className="field w-full text-xs py-1.5"
-                  value={aiTimeframe}
-                  onChange={(e) => setAiTimeframe(e.target.value)}
-                >
-                  <option value="template">From Template Default</option>
-                  <option value="2">Next 2 hours (Kickoff soon)</option>
-                  <option value="6">Next 6 hours</option>
-                  <option value="12">Next 12 hours</option>
-                  <option value="24">Next 24 hours (Today)</option>
-                  <option value="48">Next 48 hours (Next 2 days)</option>
-                  <option value="72">Next 3 days (This weekend)</option>
-                  <option value="any">Any time (Next 7 days)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-white/10 pt-3">
-              <div className="space-y-1.5 rounded-lg bg-black/25 p-2.5 border border-white/5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-medium text-slate-300">
-                    Target Odds <span className="text-slate-500 font-normal">(optional)</span>
-                  </label>
-                  {targetOddsInput && (
-                    <button
-                      type="button"
-                      onClick={() => setTargetOddsInput('')}
-                      className="text-[10px] text-slate-400 hover:text-white"
-                    >
-                      ✕ Clear
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={targetOddsInput}
-                    onChange={(e) => {
-                      const t = e.target.value.replace(/[^\d.]/g, '');
-                      setTargetOddsInput(t.slice(0, 7));
-                    }}
-                    className="field h-7 w-full text-right text-xs font-bold text-gold-400"
-                    placeholder="e.g. 20.0"
-                  />
-                  <span className="text-xs font-bold text-slate-400">x</span>
-                </div>
-              </div>
-
-              <div className="space-y-1.5 rounded-lg bg-black/25 p-2.5 border border-white/5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-medium text-slate-300">
-                    Number of Games <span className="text-slate-500 font-normal">(optional)</span>
-                  </label>
-                  {targetGamesInput && (
-                    <button
-                      type="button"
-                      onClick={() => setTargetGamesInput('')}
-                      className="text-[10px] text-slate-400 hover:text-white"
-                    >
-                      ✕ Clear
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={targetGamesInput}
-                    onChange={(e) => setTargetGamesInput(e.target.value.replace(/\D/g, '').slice(0, 2))}
-                    className="field h-7 w-full text-right text-xs font-bold text-cyan-300"
-                    placeholder="e.g. 5"
-                  />
-                  <span className="text-xs text-slate-400">legs</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-400">Risk Profile:</span>
-                {(['lower', 'average', 'higher'] as const).map((tier) => (
-                  <button
-                    key={tier}
-                    type="button"
-                    onClick={() => setTargetTier(tier)}
-                    className={`rounded border px-2 py-0.5 text-[10px] font-medium transition ${
-                      targetTier === tier
-                        ? 'border-gold-500 bg-gold-500/20 text-gold-300'
-                        : 'border-white/10 text-slate-400 hover:text-white'
-                    }`}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs text-slate-300">
+                    <span className="font-medium">AI Picks Timeframe:</span>
+                    <span className="text-[11px] text-cyan-400 font-mono">
+                      {aiTimeframe === 'template'
+                        ? 'From Template'
+                        : aiTimeframe === 'any'
+                          ? 'Any time'
+                          : `<${aiTimeframe}h`}
+                    </span>
+                  </div>
+                  <select
+                    className="field w-full text-xs py-1.5"
+                    value={aiTimeframe}
+                    onChange={(e) => setAiTimeframe(e.target.value)}
                   >
-                    {tier === 'lower' ? 'Safe' : tier === 'average' ? 'Balanced' : 'Value'}
-                  </button>
-                ))}
+                    <option value="template">From Template Default</option>
+                    <option value="2">Next 2 hours (Kickoff soon)</option>
+                    <option value="6">Next 6 hours</option>
+                    <option value="12">Next 12 hours</option>
+                    <option value="24">Next 24 hours (Today)</option>
+                    <option value="48">Next 48 hours (Next 2 days)</option>
+                    <option value="72">Next 3 days (This weekend)</option>
+                    <option value="any">Any time (Next 7 days)</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="btn-gold py-1.5 text-xs font-bold"
-                  disabled={isAddingAi}
-                  onClick={() => void addWithAi()}
-                >
-                  {isAddingAi ? '⚡ Generating…' : '⚡ Add AI Picks'}
-                </button>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={randomCount}
-                    onChange={(e) => setRandomCount(e.target.value.replace(/\D/g, '').slice(0, 2))}
-                    aria-label="Random picks count"
-                    className="field h-7 w-12 px-1 text-center text-xs"
-                  />
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-white/10 pt-3">
+                <div className="space-y-1.5 rounded-lg bg-black/25 p-2.5 border border-white/5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-medium text-slate-300">
+                      Target Odds <span className="text-slate-500 font-normal">(optional)</span>
+                    </label>
+                    {targetOddsInput && (
+                      <button
+                        type="button"
+                        onClick={() => setTargetOddsInput('')}
+                        className="text-[10px] text-slate-400 hover:text-white"
+                      >
+                        ✕ Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={targetOddsInput}
+                      onChange={(e) => {
+                        const t = e.target.value.replace(/[^\d.]/g, '');
+                        setTargetOddsInput(t.slice(0, 7));
+                      }}
+                      className="field h-7 w-full text-right text-xs font-bold text-gold-400"
+                      placeholder="e.g. 20.0"
+                    />
+                    <span className="text-xs font-bold text-slate-400">x</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 rounded-lg bg-black/25 p-2.5 border border-white/5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-medium text-slate-300">
+                      Number of Games <span className="text-slate-500 font-normal">(optional)</span>
+                    </label>
+                    {targetGamesInput && (
+                      <button
+                        type="button"
+                        onClick={() => setTargetGamesInput('')}
+                        className="text-[10px] text-slate-400 hover:text-white"
+                      >
+                        ✕ Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={targetGamesInput}
+                      onChange={(e) => setTargetGamesInput(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                      className="field h-7 w-full text-right text-xs font-bold text-cyan-300"
+                      placeholder="e.g. 5"
+                    />
+                    <span className="text-xs text-slate-400">legs</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-400">Risk Profile:</span>
+                  {(['lower', 'average', 'higher'] as const).map((tier) => (
+                    <button
+                      key={tier}
+                      type="button"
+                      onClick={() => setTargetTier(tier)}
+                      className={`rounded border px-2 py-0.5 text-[10px] font-medium transition ${
+                        targetTier === tier
+                          ? 'border-gold-500 bg-gold-500/20 text-gold-300'
+                          : 'border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {tier === 'lower' ? 'Safe' : tier === 'average' ? 'Balanced' : 'Value'}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="btn-ghost py-1.5 text-xs"
-                    disabled={games.status !== 'ok' || pool.length === 0}
-                    onClick={addRandom}
+                    className="btn-gold py-1.5 text-xs font-bold"
+                    disabled={isAddingAi}
+                    onClick={() => void addWithAi()}
                   >
-                    Add Random
+                    {isAddingAi ? '⚡ Generating…' : '⚡ Add AI Picks'}
                   </button>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={randomCount}
+                      onChange={(e) => setRandomCount(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                      aria-label="Random picks count"
+                      className="field h-7 w-12 px-1 text-center text-xs"
+                    />
+                    <button
+                      type="button"
+                      className="btn-ghost py-1.5 text-xs"
+                      disabled={games.status !== 'ok' || pool.length === 0}
+                      onClick={addRandom}
+                    >
+                      Add Random
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* Task 10: Active Slip Chooser Modal ("Add to current slip" or "New slip") */}
       {pendingPick && (

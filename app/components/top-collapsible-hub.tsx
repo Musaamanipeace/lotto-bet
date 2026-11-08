@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from './auth-context';
 import { useStoredSlip } from './use-slips';
 import { emptySlip, slipBookmaker, slipTotals } from '@/lib/slip.ts';
 import { BOOKMAKER_LABEL } from '@/lib/types.ts';
@@ -28,7 +29,9 @@ const ROUTES = [
 ];
 
 export function TopCollapsibleHub() {
+  const { user } = useAuth();
   const pathname = usePathname();
+  const visibleRoutes = user ? ROUTES : ROUTES.slice(0, 2);
   const [collapsed, setCollapsed] = useState(true);
   const [slip, setSlip] = useStoredSlip();
   const [templates, setTemplates] = useState<FilterTemplate[]>(DEFAULT_TEMPLATES);
@@ -129,7 +132,7 @@ export function TopCollapsibleHub() {
                 All Routes Navigation
               </p>
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
-                {ROUTES.map((r) => {
+                {visibleRoutes.map((r) => {
                   const active = pathname === r.href;
                   return (
                     <Link

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useAuth } from '../components/auth-context';
 import {
   getClientSettings,
   getClientAiHeaders,
@@ -13,6 +14,7 @@ import {
 type Msg = { role: 'user' | 'assistant' | 'system'; content: string };
 
 export default function ChatPage() {
+  const { user, openAuth } = useAuth();
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: 'assistant',
@@ -127,6 +129,22 @@ export default function ChatPage() {
   }
 
   const byokReady = hasSubmittedByok(clientSettings);
+
+  if (!user) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-12">
+        <div className="glass rounded-xl border border-white/10 p-6 text-center space-y-3">
+          <h1 className="font-display text-2xl font-bold text-white">Sign in required</h1>
+          <p className="text-sm text-slate-400">
+            Unsigned-in users can only use the Builder, Filters, and Random Picks. Sign in and submit your BYOK key to use AI Chat.
+          </p>
+          <button type="button" onClick={() => openAuth('login')} className="btn-emerald text-xs">
+            Sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col px-4 py-8" style={{ minHeight: 'calc(100vh - 4rem)' }}>

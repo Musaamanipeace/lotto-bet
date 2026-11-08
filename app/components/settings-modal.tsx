@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useAuth } from './auth-context';
 import {
   getClientSettings,
   hasSubmittedByok,
@@ -16,25 +17,28 @@ export function SettingsModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const { user } = useAuth();
   const [settings, setSettings] = useState<ClientAiSettings>(getClientSettings());
   const [showKeys, setShowKeys] = useState({
     gemini: false,
     openrouter: false,
     mistral: false,
     footballData: false,
+    apiFootball: false,
   });
   const [testStatus, setTestStatus] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
 
   useEffect(() => {
-    if (open) {
+    if (open && user) {
       setSettings(getClientSettings());
       setTestStatus(null);
     }
-  }, [open]);
+  }, [open, user]);
 
-  if (!open) return null;
+  // Strictly signed-in only: unsigned users never have a Settings panel
+  if (!open || !user) return null;
 
   const handleModelChange = (modelId: string) => {
     const found = SUPPORTED_FREE_MODELS.find((m) => m.id === modelId);
@@ -133,7 +137,7 @@ export function SettingsModal({
                 Client AI & API Settings (BYOK)
               </h2>
               <p className="text-xs text-slate-400">
-                Bring your own API keys. Keys are stored only in this browser (never in the database) and cleared on sign-out.
+                Bring your own API keys. Keys are stored only in your browser while signed in (never in the database) and wiped on sign-out.
               </p>
             </div>
           </div>
@@ -149,7 +153,7 @@ export function SettingsModal({
 
         {savedNotice && (
           <div className="bg-emerald-500/15 border-b border-emerald-500/30 px-5 py-2 text-xs text-emerald-300">
-            ✓ Settings saved to browser storage.
+            ✓ BYOK settings saved to your signed-in browser storage.
           </div>
         )}
 
@@ -193,7 +197,7 @@ export function SettingsModal({
               </optgroup>
             </select>
             <p className="mt-1.5 text-[11px] text-slate-400">
-              Switches between Gemini, OpenRouter free models, or Mistral. Your choice is persisted across reloads.
+              Switches between Gemini, OpenRouter free models, or Mistral. Your choice is persisted across reloads while signed in.
             </p>
           </div>
 
@@ -204,7 +208,7 @@ export function SettingsModal({
                 Client AI Provider Keys (Required BYOK)
               </h3>
               <p className="text-xs text-slate-400">
-                Submit your own API key to use AI features. Keys stay in your browser only, are never stored in the database, and are wiped completely when you sign out.
+                Submit your own API key to use AI features. Keys stay in your browser only, are passed via request headers, and are wiped completely when you sign out.
               </p>
             </div>
 
@@ -272,14 +276,14 @@ export function SettingsModal({
             </div>
           </div>
 
-          {/* Section 3: Football Stats Key */}
+          {/* Section 3: Football Stats Keys */}
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
             <div>
               <h3 className="text-sm font-semibold text-white">
-                Football Data API Key (Optional Stats BYOK)
+                Football Data API Keys (Optional Stats BYOK)
               </h3>
               <p className="text-xs text-slate-400">
-                Powers verified team statistics and live match results. Free keys available at football-data.org.
+                Powers verified team statistics and live match results using your own token.
               </p>
             </div>
             <div>
@@ -299,6 +303,25 @@ export function SettingsModal({
                 placeholder="e.g. 847d8f9c1..."
                 value={settings.footballDataApiKey}
                 onChange={(e) => handleKeyChange('footballDataApiKey', e.target.value)}
+              />
+            </div>
+            <div>
+              <div className="flex justify-between items-center text-xs mb-1">
+                <label className="text-slate-300 font-medium">API-Football Key (api-sports.io)</label>
+                <button
+                  type="button"
+                  onClick={() => setShowKeys((p) => ({ ...p, apiFootball: !p.apiFootball }))}
+                  className="text-[11px] text-cyan-400 hover:underline"
+                >
+                  {showKeys.apiFootball ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <input
+                type={showKeys.apiFootball ? 'text' : 'password'}
+                className="field w-full text-xs font-mono"
+                placeholder="e.g. a1b2c3d4..."
+                value={settings.apiFootballKey}
+                onChange={(e) => handleKeyChange('apiFootballKey', e.target.value)}
               />
             </div>
           </div>

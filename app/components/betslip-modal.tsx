@@ -460,13 +460,15 @@ export function BetslipModal({
                   >
                     {busyCodegen ? 'Generating book code…' : 'Generate book code'}
                   </button>
-                  <button
-                    type="button"
-                    className="btn-emerald text-xs"
-                    onClick={() => void handleSaveSlip()}
-                  >
-                    Save slip
-                  </button>
+                  {user && (
+                    <button
+                      type="button"
+                      className="btn-emerald text-xs"
+                      onClick={() => void handleSaveSlip()}
+                    >
+                      Save slip
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn-ghost text-xs text-rose-300 hover:bg-rose-500/10"

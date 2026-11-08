@@ -24,6 +24,7 @@ import {
   type FilterTemplate,
 } from '@/lib/template-store.ts';
 import { BOOKMAKER_LABEL, type Bookmaker } from '@/lib/types.ts';
+import { useAuth } from './auth-context';
 import { LeagueChecklist, type LeagueItem } from './league-checklist';
 
 /** Full class names on purpose: Tailwind only generates classes it can read literally in these files. */
@@ -201,6 +202,7 @@ export function MarketFilters({
   goalLines: number[];
   qualifying: number | null;
 }) {
+  const { user } = useAuth();
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [collapsedCards, setCollapsedCards] = useState<Record<string, boolean>>({});
   const [templates, setTemplates] = useState<FilterTemplate[]>(DEFAULT_TEMPLATES);
@@ -386,13 +388,15 @@ export function MarketFilters({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="btn-ghost px-3 py-1.5 text-xs text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/10"
-            onClick={() => setSaveModalOpen(true)}
-          >
-            💾 Save as Template
-          </button>
+          {user && (
+            <button
+              type="button"
+              className="btn-ghost px-3 py-1.5 text-xs text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/10"
+              onClick={() => setSaveModalOpen(true)}
+            >
+              💾 Save as Template
+            </button>
+          )}
           <button
             type="button"
             className="btn-ghost px-3 py-1.5 text-xs"

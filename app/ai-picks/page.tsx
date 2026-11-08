@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AiPick } from '@/lib/ai-picks.ts';
 import { removeLeg, type Slip as BuilderSlip } from '@/lib/slip.ts';
 import { useStoredSlip } from '../components/use-slips';
+import { useAuth } from '../components/auth-context';
 import { CoverageStrip, CriteriaList, PickDataLine, type CoverageData } from '../components/data-status';
 import type { LeagueItem } from '../components/league-checklist';
 import { planAdd } from '@/lib/add-picks.ts';
@@ -161,6 +162,7 @@ function PickCard({ pick, slip, onAdd, onRemove }: {
 }
 
 export default function AiPicksPage() {
+  const { user, openAuth } = useAuth();
   const [picks, setPicks] = useState<AiPick[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,7 +172,7 @@ export default function AiPicksPage() {
   const [maxOdds, setMaxOdds] = useState('');
   const [coverageData, setCoverageData] = useState<CoverageData | null>(null);
   const [, setLeagues] = useState<LeagueItem[]>([]);
-  const [byokReady, setByokReady] = useState<boolean>(() => hasSubmittedByok());
+  const [byokReady, setByokReady] = useState<boolean>(false);
 
   const [slip, setSlip] = useStoredSlip();
 
@@ -181,6 +183,12 @@ export default function AiPicksPage() {
   };
 
   const loadPicks = useCallback(async () => {
+    if (!user) {
+      setByokReady(false);
+      setPicks([]);
+      setLoading(false);
+      return;
+    }
     const s = getClientSettings();
     const ready = hasSubmittedByok(s);
     setByokReady(ready);
@@ -206,7 +214,7 @@ export default function AiPicksPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     void loadPicks();
@@ -248,6 +256,22 @@ export default function AiPicksPage() {
     },
     [slip, setSlip]
   );
+
+  if (!user) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-12">
+        <div className="glass rounded-xl border border-white/10 p-6 text-center space-y-3">
+          <h1 className="font-display text-2xl font-bold text-white">Sign in required</h1>
+          <p className="text-sm text-slate-400">
+            Unsigned-in users can only use the Builder, Filters, and Random Picks. Sign in and submit your BYOK key to use AI Picks.
+          </p>
+          <button type="button" onClick={() => openAuth('login')} className="btn-emerald text-xs">
+            Sign in
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">

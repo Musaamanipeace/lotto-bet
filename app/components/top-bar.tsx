@@ -9,7 +9,14 @@ import { SettingsModal } from './settings-modal';
 import { ShortcutsBar } from './shortcuts-bar';
 import { useStoredSlip } from './use-slips';
 
-const MENU: { label: string; href: string }[] = [
+/** Unsigned-in users only have access to the basic Builder, Filters, and Available Games. */
+const GUEST_MENU: { label: string; href: string }[] = [
+  { label: 'Builder', href: '/' },
+  { label: 'Available Games', href: '/#available-games' },
+];
+
+/** Signed-in users unlock all features plus BYOK Settings. */
+const USER_MENU: { label: string; href: string }[] = [
   { label: 'Builder', href: '/' },
   { label: 'Available Games', href: '/#available-games' },
   { label: 'AI Picks', href: '/ai-picks' },
@@ -37,14 +44,29 @@ export function TopBar() {
     setOpen(false);
   }, [pathname]);
 
-  // Allow other components (e.g. Chat error banner) to open Settings via custom event
+  // Close settings/account modals immediately if user signs out
   useEffect(() => {
-    const onOpenSettings = () => setSettingsOpen(true);
+    if (!user) {
+      setSettingsOpen(false);
+      setAccountOpen(false);
+    }
+  }, [user]);
+
+  // Allow signed-in components to open BYOK Settings via custom event
+  useEffect(() => {
+    const onOpenSettings = () => {
+      if (user) {
+        setSettingsOpen(true);
+      } else {
+        openAuth('login');
+      }
+    };
     window.addEventListener('lb-open-settings', onOpenSettings);
     return () => window.removeEventListener('lb-open-settings', onOpenSettings);
-  }, []);
+  }, [user, openAuth]);
 
   const legCount = slip.legs.length;
+  const menuItems = user ? USER_MENU : GUEST_MENU;
 
   return (
     <>
@@ -116,7 +138,7 @@ export function TopBar() {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
                   <div role="menu" className="glass absolute right-0 z-50 mt-2 w-60 bg-navy-900/95 p-1 shadow-2xl">
-                    {MENU.map((m) => (
+                    {menuItems.map((m) => (
                       <Link
                         key={m.label}
                         role="menuitem"
@@ -135,23 +157,25 @@ export function TopBar() {
                           setOpen(false);
                           openAuth('login');
                         }}
-                        className="block sm:hidden w-full text-left rounded-lg px-3 py-2 text-sm text-emerald-300 hover:bg-white/10"
+                        className="block w-full text-left rounded-lg px-3 py-2 text-sm text-emerald-300 hover:bg-white/10 border-t border-white/10 mt-1"
                       >
-                        🔑 Log in
+                        🔑 Log in to unlock AI & tools
                       </button>
                     )}
-                    {/* Settings is reachable ONLY from the menu (Task 5) */}
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setOpen(false);
-                        setSettingsOpen(true);
-                      }}
-                      className="block w-full text-left rounded-lg px-3 py-2 text-sm text-cyan-300 hover:bg-white/10 border-t border-white/10 mt-1"
-                    >
-                      ⚙️ Settings
-                    </button>
+                    {/* Settings is reachable ONLY from the menu and ONLY for signed-in users (Task 5 + BYOK) */}
+                    {user && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setOpen(false);
+                          setSettingsOpen(true);
+                        }}
+                        className="block w-full text-left rounded-lg px-3 py-2 text-sm text-cyan-300 hover:bg-white/10 border-t border-white/10 mt-1"
+                      >
+                        ⚙️ Settings (BYOK Keys)
+                      </button>
+                    )}
                   </div>
                 </>
               )}
@@ -180,11 +204,15 @@ export function TopBar() {
         onClose={() => setBetslipOpen(false)}
         triggerRef={betslipTriggerRef}
       />
-      <AccountModal
-        open={accountOpen}
-        onClose={() => setAccountOpen(false)}
-      />
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {user && (
+        <>
+          <AccountModal
+            open={accountOpen}
+            onClose={() => setAccountOpen(false)}
+          />
+          <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        </>
+      )}
     </>
   );
 }

@@ -1,18 +1,20 @@
 'use client';
 
-import { STORAGE_KEYS, scopedStorageKey } from './client-storage.ts';
+import {
+  STORAGE_KEYS,
+  getActiveStorageUserId,
+  scopedStorageKey,
+} from './client-storage.ts';
 
 /**
  * Client-side AI settings (Bring Your Own Key — BYOK).
  *
- * Keys (AI + sports data) are stored ONLY in user-scoped browser localStorage
- * (`lb_client_ai_settings_v1:<userId>`) so they survive reloads while the user is signed in,
- * are never stored in the database, and are completely wiped on sign-out by
- * performFullSignOutCleanup() / clearAllUserStorage().
- *
- * The server never uses server-side LLM/sports API keys on behalf of users;
- * if the client has not submitted a BYOK key, AI actions refuse to run and prompt
- * the user to submit their key in Settings.
+ * Strictly for signed-in users:
+ * - Unsigned-in (guest) users have no Settings panel, cannot save or read keys, and cannot use AI features.
+ * - Signed-in users store their own BYOK keys ONLY in user-scoped browser localStorage
+ *   (`lb_client_ai_settings_v1:<userId>`) — never in the database — and pass them via request headers.
+ * - On sign-out, performFullSignOutCleanup() / clearAllUserStorage() wipes all stored keys.
+ * - If a signed-in user has not submitted their BYOK key, AI actions do not execute and prompt them to submit.
  */
 
 export type FreeAiModel = {
@@ -118,8 +120,10 @@ export const DEFAULT_CLIENT_SETTINGS: ClientAiSettings = {
 
 export function getClientSettings(): ClientAiSettings {
   if (typeof window === 'undefined') return DEFAULT_CLIENT_SETTINGS;
+  const userId = getActiveStorageUserId();
+  if (!userId) return DEFAULT_CLIENT_SETTINGS;
   try {
-    const key = scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS);
+    const key = scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS, userId);
     const raw = localStorage.getItem(key);
     if (!raw) return DEFAULT_CLIENT_SETTINGS;
     const parsed = JSON.parse(raw);
@@ -133,11 +137,13 @@ export function getClientSettings(): ClientAiSettings {
 }
 
 export function saveClientSettings(settings: Partial<ClientAiSettings>): ClientAiSettings {
+  const userId = getActiveStorageUserId();
+  if (!userId) return DEFAULT_CLIENT_SETTINGS;
   const current = getClientSettings();
   const next: ClientAiSettings = { ...current, ...settings };
   if (typeof window !== 'undefined') {
     try {
-      const key = scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS);
+      const key = scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS, userId);
       localStorage.setItem(key, JSON.stringify(next));
       if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
         window.dispatchEvent(new CustomEvent('lb_settings_changed', { detail: next }));
@@ -150,10 +156,10 @@ export function saveClientSettings(settings: Partial<ClientAiSettings>): ClientA
 }
 
 /**
- * Returns true only if the client has submitted at least one BYOK AI provider key
- * (or the key for their selected provider).
+ * Returns true only if a user is signed in AND has submitted at least one BYOK AI provider key.
  */
 export function hasSubmittedByok(customSettings?: ClientAiSettings): boolean {
+  if (!getActiveStorageUserId() && !customSettings) return false;
   const s = customSettings || getClientSettings();
   return Boolean(
     s.geminiApiKey?.trim() ||

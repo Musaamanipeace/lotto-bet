@@ -1,7 +1,15 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 const SESSION_COOKIE = 'lb_session';
-const PROTECTED_PATHS = ['/my-picks', '/saved-slips', '/results'];
+const PROTECTED_PATHS = [
+  '/my-picks',
+  '/saved-slips',
+  '/results',
+  '/ai-picks',
+  '/chat',
+  '/community',
+  '/leagues',
+];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -28,5 +36,14 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/my-picks/:path*', '/saved-slips/:path*', '/results/:path*', '/api/:path*'],
+  matcher: [
+    '/my-picks/:path*',
+    '/saved-slips/:path*',
+    '/results/:path*',
+    '/ai-picks/:path*',
+    '/chat/:path*',
+    '/community/:path*',
+    '/leagues/:path*',
+    '/api/:path*',
+  ],
 };

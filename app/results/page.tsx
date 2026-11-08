@@ -57,7 +57,7 @@ function saveLocalSlip(slip: SavedSlip) {
 }
 
 export default function ResultsTrackerPage() {
-  const { user } = useAuth();
+  const { user, openAuth } = useAuth();
   const [slips, setSlips] = useState<SavedSlip[]>([]);
   const [scores, setScores] = useState<Record<string, MatchScore>>({});
   const [filterStatus, setFilterStatus] = useState<'all' | 'won' | 'lost' | 'pending'>('all');
@@ -317,6 +317,22 @@ export default function ResultsTrackerPage() {
     setScores({ ...initialScores });
     setSlips((prev) => [demoSlip, ...prev]);
   };
+
+  if (!user) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-12">
+        <div className="glass rounded-xl border border-white/10 p-6 text-center space-y-3">
+          <h1 className="font-display text-2xl font-bold text-white">Sign in required</h1>
+          <p className="text-sm text-slate-400">
+            Unsigned-in users can only use the Builder, Filters, and Random Picks. Sign in to track saved slips and results.
+          </p>
+          <button type="button" onClick={() => openAuth('login')} className="btn-emerald text-xs">
+            Sign in
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-navy-950 px-4 py-8 text-white">
