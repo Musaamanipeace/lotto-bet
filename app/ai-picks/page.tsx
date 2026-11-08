@@ -7,6 +7,12 @@ import { useStoredSlip } from '../components/use-slips';
 import { CoverageStrip, CriteriaList, PickDataLine, type CoverageData } from '../components/data-status';
 import type { LeagueItem } from '../components/league-checklist';
 import { planAdd } from '@/lib/add-picks.ts';
+import {
+  getClientAiHeaders,
+  getClientSettings,
+  hasSubmittedByok,
+  onSettingsChanged,
+} from '@/lib/client-settings.ts';
 
 const MARKETS: { key: string; label: string }[] = [
   { key: '', label: 'All markets' },
@@ -156,7 +162,7 @@ function PickCard({ pick, slip, onAdd, onRemove }: {
 
 export default function AiPicksPage() {
   const [picks, setPicks] = useState<AiPick[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedMarket, setSelectedMarket] = useState('');
   const [selectedTier, setSelectedTier] = useState('');
@@ -164,27 +170,50 @@ export default function AiPicksPage() {
   const [maxOdds, setMaxOdds] = useState('');
   const [coverageData, setCoverageData] = useState<CoverageData | null>(null);
   const [, setLeagues] = useState<LeagueItem[]>([]);
+  const [byokReady, setByokReady] = useState<boolean>(() => hasSubmittedByok());
 
   const [slip, setSlip] = useStoredSlip();
 
-  useEffect(() => {
-    async function loadPicks() {
-      try {
-        setLoading(true);
-        const res = await fetch('/api/ai/picks');
-        if (!res.ok) throw new Error('Failed to fetch AI picks data');
-        const data = await res.json();
-        setPicks(data.picks ?? []);
-        setCoverageData(data.coverage ?? null);
-        setLeagues(data.leagues ?? []);
-      } catch (err: any) {
-        setError(err.message ?? 'An unknown error occurred');
-      } finally {
-        setLoading(false);
-      }
+  const openSettings = () => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('lb-open-settings'));
     }
-    loadPicks();
+  };
+
+  const loadPicks = useCallback(async () => {
+    const s = getClientSettings();
+    const ready = hasSubmittedByok(s);
+    setByokReady(ready);
+    if (!ready) {
+      setPicks([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch('/api/ai/picks', {
+        headers: getClientAiHeaders(s),
+      });
+      if (!res.ok) throw new Error('Failed to fetch AI picks data');
+      const data = await res.json();
+      setPicks(data.picks ?? []);
+      setCoverageData(data.coverage ?? null);
+      setLeagues(data.leagues ?? []);
+    } catch (err: any) {
+      setError(err.message ?? 'An unknown error occurred');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadPicks();
+    return onSettingsChanged(() => {
+      void loadPicks();
+    });
+  }, [loadPicks]);
 
   const filteredPicks = useMemo(() => {
     return picks.filter((p) => {
@@ -198,6 +227,10 @@ export default function AiPicksPage() {
 
   const handleAddPick = useCallback(
     (pick: AiPick): string | null => {
+      if (!hasSubmittedByok()) {
+        openSettings();
+        return 'Please submit your own API key (BYOK) in Settings first.';
+      }
       const base = slip.legs.some((l) => l.gameId === pick.gameId) ? removeLeg(slip, pick.gameId) : slip;
       const { slip: nextSlip, report } = planAdd([pick], base, 1);
       if (report.added === 0) {
@@ -227,83 +260,96 @@ export default function AiPicksPage() {
         </div>
       </header>
 
-      {coverageData && <CoverageStrip coverage={coverageData} />}
-
-      <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-400">Market Filter</label>
-          <select
-            value={selectedMarket}
-            onChange={(e) => setSelectedMarket(e.target.value)}
-            className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-          >
-            {MARKETS.map((m) => (
-              <option key={m.key} value={m.key}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+      {!byokReady ? (
+        <div className="glass rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 text-center space-y-3">
+          <p className="text-sm font-medium text-amber-200">
+            🔑 Please submit your own API key (BYOK) in Menu ▾ → Settings before using AI Picks.
+          </p>
+          <button type="button" onClick={openSettings} className="btn-gold text-xs">
+            Submit BYOK in Settings
+          </button>
         </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-400">Risk Tier</label>
-          <select
-            value={selectedTier}
-            onChange={(e) => setSelectedTier(e.target.value)}
-            className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-          >
-            <option value="">All Tiers</option>
-            <option value="safe">Safe</option>
-            <option value="balanced">Balanced</option>
-            <option value="value">Value</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-400">Min Odds</label>
-          <input
-            type="number"
-            step="0.05"
-            placeholder="e.g. 1.20"
-            value={minOdds}
-            onChange={(e) => setMinOdds(e.target.value)}
-            className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-400">Max Odds</label>
-          <input
-            type="number"
-            step="0.05"
-            placeholder="e.g. 3.00"
-            value={maxOdds}
-            onChange={(e) => setMaxOdds(e.target.value)}
-            className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-          />
-        </div>
-      </section>
-
-      {loading ? (
-        <div className="py-12 text-center text-slate-400">Loading AI picks...</div>
-      ) : error ? (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-center text-rose-300">
-          {error}
-        </div>
-      ) : filteredPicks.length === 0 ? (
-        <div className="py-12 text-center text-slate-400">No picks matched your active filters.</div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredPicks.map((pick) => (
-            <PickCard
-              key={`${pick.gameId}-${pick.marketNativeId}-${pick.outcomeNativeId}`}
-              pick={pick}
-              slip={slip}
-              onAdd={handleAddPick}
-              onRemove={handleRemovePick}
-            />
-          ))}
-        </div>
+        <>
+          {coverageData && <CoverageStrip coverage={coverageData} />}
+
+          <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-400">Market Filter</label>
+              <select
+                value={selectedMarket}
+                onChange={(e) => setSelectedMarket(e.target.value)}
+                className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              >
+                {MARKETS.map((m) => (
+                  <option key={m.key} value={m.key}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-400">Risk Tier</label>
+              <select
+                value={selectedTier}
+                onChange={(e) => setSelectedTier(e.target.value)}
+                className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              >
+                <option value="">All Tiers</option>
+                <option value="safe">Safe</option>
+                <option value="balanced">Balanced</option>
+                <option value="value">Value</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-400">Min Odds</label>
+              <input
+                type="number"
+                step="0.05"
+                placeholder="e.g. 1.20"
+                value={minOdds}
+                onChange={(e) => setMinOdds(e.target.value)}
+                className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-400">Max Odds</label>
+              <input
+                type="number"
+                step="0.05"
+                placeholder="e.g. 3.00"
+                value={maxOdds}
+                onChange={(e) => setMaxOdds(e.target.value)}
+                className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              />
+            </div>
+          </section>
+
+          {loading ? (
+            <div className="py-12 text-center text-slate-400">Loading AI picks...</div>
+          ) : error ? (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-center text-rose-300">
+              {error}
+            </div>
+          ) : filteredPicks.length === 0 ? (
+            <div className="py-12 text-center text-slate-400">No picks matched your active filters.</div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {filteredPicks.map((pick) => (
+                <PickCard
+                  key={`${pick.gameId}-${pick.marketNativeId}-${pick.outcomeNativeId}`}
+                  pick={pick}
+                  slip={slip}
+                  onAdd={handleAddPick}
+                  onRemove={handleRemovePick}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </main>
   );

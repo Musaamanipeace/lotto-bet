@@ -14,6 +14,7 @@ import {
   getClientSettings,
   saveClientSettings,
   getClientAiHeaders,
+  hasSubmittedByok,
 } from '../src/lib/client-settings.ts';
 import { readSlip, writeSlip } from '../src/lib/slip-store.ts';
 import { emptySlip, defaultSlipName } from '../src/lib/slip.ts';
@@ -166,36 +167,39 @@ describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
     assert.equal(hasAnyUserStorage(), false);
   });
 
-  it('never stores or sends API keys from client settings (Task 2)', () => {
+  it('scopes client BYOK keys per user, detects missing BYOK, and wipes keys on sign-out', async () => {
     const mem = createMemoryStorage();
     // @ts-expect-error
     globalThis.localStorage = mem;
     setActiveStorageUserId('user-a');
 
-    // Attempt to inject legacy API key fields into localStorage
-    mem.setItem(
-      scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS),
-      JSON.stringify({
-        selectedModel: 'gemini-2.5-flash',
-        provider: 'gemini',
-        geminiApiKey: 'LEAKED_KEY',
-        openrouterApiKey: 'LEAKED_OR_KEY',
-        mistralApiKey: 'LEAKED_MISTRAL_KEY',
-      }),
-    );
+    // Before submitting BYOK, hasSubmittedByok() is false and no x-*-key headers are sent
+    assert.equal(hasSubmittedByok(), false);
+    assert.equal('x-gemini-key' in getClientAiHeaders(), false);
 
-    const loaded = getClientSettings() as Record<string, unknown>;
-    assert.equal('geminiApiKey' in loaded, false);
-    assert.equal('openrouterApiKey' in loaded, false);
-    assert.equal('mistralApiKey' in loaded, false);
-    assert.equal('footballDataApiKey' in loaded, false);
-    assert.equal('apiFootballKey' in loaded, false);
+    // User A submits their own BYOK key
+    saveClientSettings({
+      selectedModel: 'gemini-2.5-flash',
+      provider: 'gemini',
+      geminiApiKey: 'USER_A_GEMINI_KEY',
+    });
 
-    const headers = getClientAiHeaders();
-    assert.equal('x-gemini-key' in headers, false);
-    assert.equal('x-openrouter-key' in headers, false);
-    assert.equal('x-mistral-key' in headers, false);
-    assert.equal(headers['x-ai-model'], 'gemini-2.5-flash');
+    assert.equal(hasSubmittedByok(), true);
+    const headersA = getClientAiHeaders();
+    assert.equal(headersA['x-gemini-key'], 'USER_A_GEMINI_KEY');
+    assert.equal(headersA['x-ai-model'], 'gemini-2.5-flash');
+
+    // User B does not see User A's BYOK key
+    setActiveStorageUserId('user-b');
+    assert.equal(hasSubmittedByok(), false);
+    assert.equal(getClientSettings().geminiApiKey, '');
+    assert.equal('x-gemini-key' in getClientAiHeaders(), false);
+
+    // Sign-out wipes all stored BYOK keys
+    await performFullSignOutCleanup();
+    setActiveStorageUserId('user-a');
+    assert.equal(hasSubmittedByok(), false);
+    assert.equal(getClientSettings().geminiApiKey, '');
   });
 
   it('generates default slip name with date and time (Task 10)', () => {

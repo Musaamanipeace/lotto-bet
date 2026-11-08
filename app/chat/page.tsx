@@ -1,8 +1,14 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { getClientSettings, getClientAiHeaders } from '@/lib/client-settings.ts';
+import {
+  getClientSettings,
+  getClientAiHeaders,
+  hasSubmittedByok,
+  onSettingsChanged,
+  type ClientAiSettings,
+} from '@/lib/client-settings.ts';
 
 type Msg = { role: 'user' | 'assistant' | 'system'; content: string };
 
@@ -17,19 +23,51 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [clientSettings, setClientSettings] = useState<ClientAiSettings>(() => getClientSettings());
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setClientSettings(getClientSettings());
+    return onSettingsChanged((s) => {
+      setClientSettings(s);
+      if (hasSubmittedByok(s)) setError(null);
+    });
+  }, []);
+
+  const openSettings = () => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('lb-open-settings'));
+    }
+  };
 
   async function send() {
     const text = input.trim();
     if (!text || busy) return;
+
+    const currentSettings = getClientSettings();
+    setClientSettings(currentSettings);
+
+    // If the client has not submitted BYOK, tell them to submit and do not perform anything.
+    if (!hasSubmittedByok(currentSettings)) {
+      const msg = 'Please submit your own API key (BYOK) in Menu ▾ → Settings before using AI Chat.';
+      setError(msg);
+      setMessages((m) => [
+        ...m,
+        { role: 'user', content: text },
+        { role: 'assistant', content: `🔑 ${msg}` },
+      ]);
+      setInput('');
+      openSettings();
+      return;
+    }
+
     setInput('');
     setError(null);
     const next: Msg[] = [...messages, { role: 'user', content: text }];
     setMessages(next);
     setBusy(true);
 
-    const clientSettings = getClientSettings();
-    const timeoutSeconds = clientSettings.timeoutSeconds || 35;
+    const timeoutSeconds = currentSettings.timeoutSeconds || 35;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutSeconds * 1000);
 
@@ -38,7 +76,7 @@ export default function ChatPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getClientAiHeaders(clientSettings),
+          ...getClientAiHeaders(currentSettings),
         },
         body: JSON.stringify({
           message: text,
@@ -55,7 +93,7 @@ export default function ChatPage() {
           ...m,
           {
             role: 'assistant',
-            content: `AI Error: ${errMsg}. You can select another model in Menu ▾ → Settings.`,
+            content: `AI Error: ${errMsg}. You can set your free model and BYOK API key in Menu ▾ → Settings.`,
           },
         ]);
       } else {
@@ -88,7 +126,7 @@ export default function ChatPage() {
     }
   }
 
-  const clientSettings = typeof window !== 'undefined' ? getClientSettings() : null;
+  const byokReady = hasSubmittedByok(clientSettings);
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col px-4 py-8" style={{ minHeight: 'calc(100vh - 4rem)' }}>
@@ -106,10 +144,29 @@ export default function ChatPage() {
         </div>
       </div>
 
+      {!byokReady && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-200" role="status">
+          <span>🔑 You have not submitted an API key (BYOK) yet. Submit your key in Settings to use AI Chat.</span>
+          <button
+            type="button"
+            onClick={openSettings}
+            className="btn-gold h-7 px-2.5 py-0 text-xs"
+          >
+            Submit BYOK in Settings
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200" role="status">
           <span>{error}</span>
-          <span className="text-xs text-slate-300">Open Menu ▾ → Settings in the header to change AI model</span>
+          <button
+            type="button"
+            onClick={openSettings}
+            className="btn-gold h-7 px-2.5 py-0 text-xs"
+          >
+            Configure in Settings
+          </button>
         </div>
       )}
 

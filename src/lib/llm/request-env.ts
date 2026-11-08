@@ -1,9 +1,10 @@
 /**
- * Builds the LLM environment for one request from the server env plus the optional per-user
- * non-secret model/provider preference headers (`x-ai-provider`, `x-ai-model`).
+ * Builds the LLM environment for one request from the client's BYOK headers
+ * (x-ai-provider, x-ai-model, x-gemini-key, x-openrouter-key, x-mistral-key).
  *
- * Security rule: API keys are NEVER read from client headers or database rows.
- * All credentials come strictly from server environment variables (`process.env`).
+ * The chosen model applies ONLY to the chosen provider. Failover providers keep their own defaults,
+ * so falling over from Gemini to Mistral never sends Mistral a Gemini model name. The chosen provider
+ * goes first and the rest of the order follows it, so one slow or overloaded provider is not the end.
  */
 import { ALL_PROVIDERS } from './providers.ts';
 import { DEFAULT_ORDER } from './index.ts';
@@ -15,8 +16,25 @@ const MODEL_VAR: Record<string, string> = {
   mistral: 'MISTRAL_MODEL',
 };
 
-export function buildLlmEnv(headers: { get(name: string): string | null }, base: LlmEnv = process.env): LlmEnv {
+const KEY_VAR: [string, string][] = [
+  ['x-gemini-key', 'GEMINI_API_KEY'],
+  ['x-openrouter-key', 'OPENROUTER_API_KEY'],
+  ['x-mistral-key', 'MISTRAL_API_KEY'],
+];
+
+/**
+ * Returns true if the request includes at least one client-submitted BYOK API key header.
+ */
+export function hasClientByokHeaders(headers: { get(name: string): string | null }): boolean {
+  return KEY_VAR.some(([header]) => Boolean(headers.get(header)?.trim()));
+}
+
+export function buildLlmEnv(headers: { get(name: string): string | null }, base: LlmEnv = {}): LlmEnv {
   const env: LlmEnv = { ...base };
+  for (const [header, name] of KEY_VAR) {
+    const v = headers.get(header)?.trim();
+    if (v) env[name] = v;
+  }
 
   const provider = headers.get('x-ai-provider')?.trim().toLowerCase();
   if (provider && ALL_PROVIDERS[provider]) {

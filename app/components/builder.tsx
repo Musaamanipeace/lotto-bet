@@ -26,7 +26,7 @@ import { MarketFilters } from './market-filters';
 import { ZeroDataBanner } from './zero-data-banner';
 import { onTemplateApplied, getLocalTemplates, type FilterTemplate } from '@/lib/template-store.ts';
 import { buildTemplateAiAcca, templateSummary } from '@/lib/template-ai.ts';
-import { getClientSettings, getClientAiHeaders } from '@/lib/client-settings.ts';
+import { getClientSettings, getClientAiHeaders, hasSubmittedByok } from '@/lib/client-settings.ts';
 import type { LeagueItem } from './league-checklist';
 
 type GamesOk = {
@@ -441,9 +441,17 @@ export function Builder({ heading }: { heading?: string }) {
   }
 
   async function addWithAi() {
+    const clientSettings = getClientSettings();
+    if (!hasSubmittedByok(clientSettings)) {
+      showToast('warn', 'Please submit your own API key (BYOK) in Menu ▾ → Settings before using AI picks.');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('lb-open-settings'));
+      }
+      return;
+    }
+
     setIsAddingAi(true);
     showToast('info', 'Loading AI picks…');
-    const clientSettings = getClientSettings();
     const timeoutMs = (clientSettings.timeoutSeconds || 35) * 1000;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);

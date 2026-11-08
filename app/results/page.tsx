@@ -21,6 +21,7 @@ import {
   saveLocalSavedSlips,
 } from '@/lib/saved-slips.ts';
 import { SIGNOUT_EVENT } from '@/lib/client-storage.ts';
+import { getClientAiHeaders } from '@/lib/client-settings.ts';
 
 type SavedSlip = {
   id: string;
@@ -111,7 +112,9 @@ export default function ResultsTrackerPage() {
 
     if (allMatches.length > 0) {
       try {
-        const scoreRes = await fetch('/api/slips/results');
+        const scoreRes = await fetch('/api/slips/results', {
+          headers: getClientAiHeaders(),
+        });
         const scoreData = await scoreRes.json();
         if (scoreData.ok && scoreData.scores) {
           Object.assign(currentScores, scoreData.scores);

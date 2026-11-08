@@ -7,12 +7,15 @@ import {
 } from '@/lib/results-store.ts';
 import { normalizeMatchKey, type MatchScore } from '@/lib/results-evaluator.ts';
 
-// Query external football scores if API key exists
-async function fetchExternalScores(matches: Array<{ home: string; away: string }>): Promise<Record<string, MatchScore>> {
+// Query external football scores using ONLY the client's BYOK key headers (never server env keys)
+async function fetchExternalScores(
+  matches: Array<{ home: string; away: string }>,
+  headers: Headers,
+): Promise<Record<string, MatchScore>> {
   const scores: Record<string, MatchScore> = {};
 
-  const footballDataKey = process.env.FOOTBALL_DATA_API_KEY;
-  const apiFootballKey = process.env.API_FOOTBALL_KEY;
+  const footballDataKey = headers.get('x-football-data-key')?.trim();
+  const apiFootballKey = headers.get('x-api-football-key')?.trim();
 
   if (footballDataKey) {
     try {
@@ -102,7 +105,7 @@ export async function GET(req: NextRequest) {
     if (existing[key]) {
       return NextResponse.json({ ok: true, scores: { [key]: existing[key] } });
     }
-    const fetched = await fetchExternalScores([{ home, away }]);
+    const fetched = await fetchExternalScores([{ home, away }], req.headers);
     return NextResponse.json({ ok: true, scores: fetched });
   }
 

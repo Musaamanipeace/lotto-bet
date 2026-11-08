@@ -3,11 +3,16 @@
 import { STORAGE_KEYS, scopedStorageKey } from './client-storage.ts';
 
 /**
- * Client-side AI model preferences.
+ * Client-side AI settings (Bring Your Own Key — BYOK).
  *
- * IMPORTANT: No API keys or secrets are ever stored in client storage or database.
- * All provider credentials come strictly from server environment variables.
- * Preferences (selectedModel, provider, timeoutSeconds) are user-scoped and cleared on sign-out.
+ * Keys (AI + sports data) are stored ONLY in user-scoped browser localStorage
+ * (`lb_client_ai_settings_v1:<userId>`) so they survive reloads while the user is signed in,
+ * are never stored in the database, and are completely wiped on sign-out by
+ * performFullSignOutCleanup() / clearAllUserStorage().
+ *
+ * The server never uses server-side LLM/sports API keys on behalf of users;
+ * if the client has not submitted a BYOK key, AI actions refuse to run and prompt
+ * the user to submit their key in Settings.
  */
 
 export type FreeAiModel = {
@@ -92,12 +97,22 @@ export const SUPPORTED_FREE_MODELS: FreeAiModel[] = [
 export type ClientAiSettings = {
   selectedModel: string;
   provider: 'gemini' | 'openrouter' | 'mistral';
+  geminiApiKey: string;
+  openrouterApiKey: string;
+  mistralApiKey: string;
+  footballDataApiKey: string;
+  apiFootballKey: string;
   timeoutSeconds: number;
 };
 
 export const DEFAULT_CLIENT_SETTINGS: ClientAiSettings = {
   selectedModel: 'gemini-2.5-flash',
   provider: 'gemini',
+  geminiApiKey: '',
+  openrouterApiKey: '',
+  mistralApiKey: '',
+  footballDataApiKey: '',
+  apiFootballKey: '',
   timeoutSeconds: 35,
 };
 
@@ -107,20 +122,10 @@ export function getClientSettings(): ClientAiSettings {
     const key = scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS);
     const raw = localStorage.getItem(key);
     if (!raw) return DEFAULT_CLIENT_SETTINGS;
-    const parsed = JSON.parse(raw) as Partial<ClientAiSettings>;
+    const parsed = JSON.parse(raw);
     return {
-      selectedModel:
-        typeof parsed.selectedModel === 'string' && parsed.selectedModel
-          ? parsed.selectedModel
-          : DEFAULT_CLIENT_SETTINGS.selectedModel,
-      provider:
-        parsed.provider === 'gemini' || parsed.provider === 'openrouter' || parsed.provider === 'mistral'
-          ? parsed.provider
-          : DEFAULT_CLIENT_SETTINGS.provider,
-      timeoutSeconds:
-        typeof parsed.timeoutSeconds === 'number' && parsed.timeoutSeconds >= 5 && parsed.timeoutSeconds <= 120
-          ? parsed.timeoutSeconds
-          : DEFAULT_CLIENT_SETTINGS.timeoutSeconds,
+      ...DEFAULT_CLIENT_SETTINGS,
+      ...parsed,
     };
   } catch {
     return DEFAULT_CLIENT_SETTINGS;
@@ -129,16 +134,14 @@ export function getClientSettings(): ClientAiSettings {
 
 export function saveClientSettings(settings: Partial<ClientAiSettings>): ClientAiSettings {
   const current = getClientSettings();
-  const next: ClientAiSettings = {
-    selectedModel: settings.selectedModel ?? current.selectedModel,
-    provider: settings.provider ?? current.provider,
-    timeoutSeconds: settings.timeoutSeconds ?? current.timeoutSeconds,
-  };
+  const next: ClientAiSettings = { ...current, ...settings };
   if (typeof window !== 'undefined') {
     try {
       const key = scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS);
       localStorage.setItem(key, JSON.stringify(next));
-      window.dispatchEvent(new CustomEvent('lb_settings_changed', { detail: next }));
+      if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('lb_settings_changed', { detail: next }));
+      }
     } catch {
       /* quota ignored */
     }
@@ -146,8 +149,25 @@ export function saveClientSettings(settings: Partial<ClientAiSettings>): ClientA
   return next;
 }
 
+/**
+ * Returns true only if the client has submitted at least one BYOK AI provider key
+ * (or the key for their selected provider).
+ */
+export function hasSubmittedByok(customSettings?: ClientAiSettings): boolean {
+  const s = customSettings || getClientSettings();
+  return Boolean(
+    s.geminiApiKey?.trim() ||
+      s.openrouterApiKey?.trim() ||
+      s.mistralApiKey?.trim(),
+  );
+}
+
+/**
+ * Clears the in-memory view of secrets after logout.
+ * The actual storage wipe is performed by clearAllUserStorage().
+ */
 export function clearClientSecrets(): void {
-  // No secrets are stored on the client; storage is wiped by performFullSignOutCleanup().
+  // Storage is wiped by performFullSignOutCleanup() / clearAllUserStorage().
 }
 
 export function onSettingsChanged(cb: (settings: ClientAiSettings) => void): () => void {
@@ -160,11 +180,17 @@ export function onSettingsChanged(cb: (settings: ClientAiSettings) => void): () 
   return () => window.removeEventListener('lb_settings_changed', handler);
 }
 
-/** Formats non-secret client preferences into headers for API routes. */
+/** Formats client BYOK settings into headers for thin-proxy API routes */
 export function getClientAiHeaders(customSettings?: ClientAiSettings): Record<string, string> {
   const s = customSettings || getClientSettings();
-  return {
+  const headers: Record<string, string> = {
     'x-ai-provider': s.provider,
     'x-ai-model': s.selectedModel,
   };
+  if (s.geminiApiKey?.trim()) headers['x-gemini-key'] = s.geminiApiKey.trim();
+  if (s.openrouterApiKey?.trim()) headers['x-openrouter-key'] = s.openrouterApiKey.trim();
+  if (s.mistralApiKey?.trim()) headers['x-mistral-key'] = s.mistralApiKey.trim();
+  if (s.footballDataApiKey?.trim()) headers['x-football-data-key'] = s.footballDataApiKey.trim();
+  if (s.apiFootballKey?.trim()) headers['x-api-football-key'] = s.apiFootballKey.trim();
+  return headers;
 }

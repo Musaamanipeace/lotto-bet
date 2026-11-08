@@ -1,6 +1,6 @@
 import { requireJson, jsonError, currentUser } from '@/lib/session.ts';
 import { callLlm } from '@/lib/llm/index.ts';
-import { buildLlmEnv } from '@/lib/llm/request-env.ts';
+import { buildLlmEnv, hasClientByokHeaders } from '@/lib/llm/request-env.ts';
 import { getAiSnapshot } from '@/lib/ai-store.ts';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +24,19 @@ ACTION: none
 export async function POST(req: Request) {
   const bad = requireJson(req);
   if (bad) return bad;
+
+  // Enforce strict BYOK: if the client has not submitted their own API key via headers, refuse and tell them to submit.
+  if (!hasClientByokHeaders(req.headers)) {
+    return Response.json(
+      {
+        ok: false,
+        code: 'byok_required',
+        error: 'Please submit your own API key (BYOK) in Settings (Menu ▾ → Settings) before using AI features.',
+        message: 'Please submit your own API key (BYOK) in Settings (Menu ▾ → Settings) before using AI features.',
+      },
+      { status: 400 },
+    );
+  }
 
   let body: { message?: string; slipSummary?: string; history?: { role: string; content: string }[] };
   try {
@@ -65,7 +78,8 @@ export async function POST(req: Request) {
 
   const prompt = `${context}\n\nConversation:\n${history}\nuser: ${message}\nassistant:`;
 
-  const env = buildLlmEnv(req.headers);
+  // Strictly use client BYOK headers (`base = {}`), never server API keys.
+  const env = buildLlmEnv(req.headers, {});
 
   const r = await callLlm(
     {
