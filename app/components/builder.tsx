@@ -305,9 +305,9 @@ export function Builder({ heading }: { heading?: string }) {
           j?.ok && j.slip
             ? j.slip
             : {
+                ...payload,
                 id: targetSlip.id || `saved-${Date.now()}`,
                 userId: user?.id ?? null,
-                ...payload,
                 createdAt: Date.now(),
                 shared: false,
               };
@@ -317,9 +317,9 @@ export function Builder({ heading }: { heading?: string }) {
         return updated;
       } catch {
         const fallback = {
+          ...payload,
           id: targetSlip.id || `saved-${Date.now()}`,
           userId: user?.id ?? null,
-          ...payload,
           createdAt: Date.now(),
           shared: false,
         };

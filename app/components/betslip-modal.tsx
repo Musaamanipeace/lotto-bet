@@ -259,9 +259,9 @@ export function BetslipModal({
         j?.ok && j.slip
           ? j.slip
           : {
+              ...payload,
               id: slip.id || `local-${Date.now()}`,
               userId: user?.id ?? null,
-              ...payload,
               createdAt: Date.now(),
               shared: false,
             };
