@@ -2,5 +2,5 @@
 export default {
   output: 'standalone',
   reactStrictMode: true,
-  experimental: { serverComponentsExternalPackages: ['playwright-core'] },
+  experimental: { serverComponentsExternalPackages: ['playwright-core', 'pg'] },
 };

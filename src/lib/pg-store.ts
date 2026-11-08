@@ -8,8 +8,9 @@ export async function getPool(): Promise<pg.Pool> {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set');
   if (pool) return pool;
-  const pgMod = await import('pg');
-  const Pool = pgMod.default?.Pool ?? pgMod.Pool;
+  const pkg = 'pg';
+  const pgMod = await import(/* webpackIgnore: true */ pkg);
+  const Pool = (pgMod.default?.Pool ?? pgMod.Pool) as typeof pg.Pool;
   pool = new Pool({ connectionString: url, max: 3 });
   return pool;
 }

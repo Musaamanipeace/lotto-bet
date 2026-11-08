@@ -1,5 +1,5 @@
 import { currentUser, jsonError, requireJson } from '@/lib/session.ts';
-import { getShortcutStore } from '@/lib/shortcuts.ts';
+import { getShortcutStore } from '@/lib/shortcuts-store.ts';
 
 export const dynamic = 'force-dynamic';
 

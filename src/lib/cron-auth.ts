@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'crypto';
 import { fail, ok, type Result } from './result.ts';
 
 /** Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`. Fails closed if the secret is unset. */

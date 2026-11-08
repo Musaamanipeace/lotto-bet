@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { SESSION_COOKIE } from './src/lib/auth.ts';
 
+const SESSION_COOKIE = 'lb_session';
 const PROTECTED_PATHS = ['/my-picks', '/saved-slips', '/results'];
 
 export function middleware(req: NextRequest) {

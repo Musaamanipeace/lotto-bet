@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'crypto';
 import { fail, ok, type Result } from './result.ts';
 
 export const SESSION_COOKIE = 'lb_session';
