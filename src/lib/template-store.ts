@@ -1,5 +1,6 @@
-import { type CardsState, defaultCards } from './market-cards.ts';
+import { type CardsState } from './market-cards.ts';
 import type { Bookmaker } from './types.ts';
+import { STORAGE_KEYS, scopedStorageKey } from './client-storage.ts';
 
 export type FilterTemplate = {
   id: string;
@@ -102,13 +103,14 @@ export const DEFAULT_TEMPLATES: FilterTemplate[] = [
   },
 ];
 
-const LOCAL_STORAGE_KEY = 'lb_filter_templates_v1';
+const LOCAL_STORAGE_KEY = STORAGE_KEYS.FILTER_TEMPLATES;
 const TEMPLATE_EVENT = 'lb-filter-template-applied';
 
 export function getLocalTemplates(): FilterTemplate[] {
   if (typeof window === 'undefined') return DEFAULT_TEMPLATES;
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    const key = scopedStorageKey(LOCAL_STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return DEFAULT_TEMPLATES;
     const userCustom: FilterTemplate[] = JSON.parse(raw);
     const combined = [...DEFAULT_TEMPLATES, ...userCustom.filter((u) => !DEFAULT_TEMPLATES.some((d) => d.id === u.id))];
@@ -130,7 +132,8 @@ export function saveLocalTemplate(template: Omit<FilterTemplate, 'id' | 'created
   };
   const updated = [newTemplate, ...custom];
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+    const key = scopedStorageKey(LOCAL_STORAGE_KEY);
+    localStorage.setItem(key, JSON.stringify(updated));
   } catch {
     /* ignore storage quota */
   }
@@ -141,7 +144,8 @@ export function deleteLocalTemplate(id: string): boolean {
   if (DEFAULT_TEMPLATES.some((t) => t.id === id)) return false; // cannot delete defaults
   const custom = getLocalTemplates().filter((t) => !t.isDefault && t.id !== id);
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(custom));
+    const key = scopedStorageKey(LOCAL_STORAGE_KEY);
+    localStorage.setItem(key, JSON.stringify(custom));
     return true;
   } catch {
     return false;

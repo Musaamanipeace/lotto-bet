@@ -13,6 +13,7 @@ import {
   onTemplateApplied,
   type FilterTemplate,
 } from '@/lib/template-store.ts';
+import { STORAGE_KEYS, scopedStorageKey, SIGNOUT_EVENT } from '@/lib/client-storage.ts';
 
 const ROUTES = [
   { label: 'Builder', href: '/', icon: '📝', desc: 'Custom Slip Builder' },
@@ -33,22 +34,28 @@ export function TopCollapsibleHub() {
   const [templates, setTemplates] = useState<FilterTemplate[]>(DEFAULT_TEMPLATES);
   const [activeTemplateName, setActiveTemplateName] = useState<string>('Custom');
 
-  // Remember collapse preference in localStorage
+  // Remember collapse preference in user-scoped localStorage
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('lb_top_hub_collapsed');
-      if (stored !== null) setCollapsed(stored === 'true');
-    } catch {
-      /* ignore */
-    }
-    setTemplates(getLocalTemplates());
+    const sync = () => {
+      try {
+        const stored = localStorage.getItem(scopedStorageKey(STORAGE_KEYS.TOP_HUB_COLLAPSED));
+        if (stored !== null) setCollapsed(stored === 'true');
+        else setCollapsed(true);
+      } catch {
+        /* ignore */
+      }
+      setTemplates(getLocalTemplates());
+    };
+    sync();
+    window.addEventListener(SIGNOUT_EVENT, sync);
+    return () => window.removeEventListener(SIGNOUT_EVENT, sync);
   }, []);
 
   const toggleCollapse = () => {
     setCollapsed((c) => {
       const next = !c;
       try {
-        localStorage.setItem('lb_top_hub_collapsed', String(next));
+        localStorage.setItem(scopedStorageKey(STORAGE_KEYS.TOP_HUB_COLLAPSED), String(next));
       } catch {
         /* ignore */
       }

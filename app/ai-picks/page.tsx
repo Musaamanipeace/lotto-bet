@@ -7,7 +7,6 @@ import { useStoredSlip } from '../components/use-slips';
 import { CoverageStrip, CriteriaList, PickDataLine, type CoverageData } from '../components/data-status';
 import type { LeagueItem } from '../components/league-checklist';
 import { planAdd } from '@/lib/add-picks.ts';
-import { SettingsModal } from '../components/settings-modal';
 
 const MARKETS: { key: string; label: string }[] = [
   { key: '', label: 'All markets' },
@@ -165,7 +164,6 @@ export default function AiPicksPage() {
   const [maxOdds, setMaxOdds] = useState('');
   const [coverageData, setCoverageData] = useState<CoverageData | null>(null);
   const [, setLeagues] = useState<LeagueItem[]>([]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [slip, setSlip] = useStoredSlip();
 
@@ -173,7 +171,7 @@ export default function AiPicksPage() {
     async function loadPicks() {
       try {
         setLoading(true);
-        const res = await fetch('/api/ai-picks');
+        const res = await fetch('/api/ai/picks');
         if (!res.ok) throw new Error('Failed to fetch AI picks data');
         const data = await res.json();
         setPicks(data.picks ?? []);
@@ -200,7 +198,6 @@ export default function AiPicksPage() {
 
   const handleAddPick = useCallback(
     (pick: AiPick): string | null => {
-      // If another outcome for the same game is already in the slip, replace it.
       const base = slip.legs.some((l) => l.gameId === pick.gameId) ? removeLeg(slip, pick.gameId) : slip;
       const { slip: nextSlip, report } = planAdd([pick], base, 1);
       if (report.added === 0) {
@@ -228,13 +225,6 @@ export default function AiPicksPage() {
             Algorithmic football market analysis verified against historical trend data
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setSettingsOpen(true)}
-          className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20 transition-colors"
-        >
-          Settings
-        </button>
       </header>
 
       {coverageData && <CoverageStrip coverage={coverageData} />}
@@ -315,8 +305,6 @@ export default function AiPicksPage() {
           ))}
         </div>
       )}
-
-      {settingsOpen && <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />}
     </main>
   );
 }

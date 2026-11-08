@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useAuth } from './auth-context';
 import { deleteLocalTemplate, getLocalTemplates, notifyTemplateApplied, type FilterTemplate } from '@/lib/template-store.ts';
 import { writeSlip } from '@/lib/slip-store.ts';
+import { loadLocalSavedSlips, saveLocalSavedSlips } from '@/lib/saved-slips.ts';
 
 type SavedSlip = {
   id: string;
@@ -19,13 +20,11 @@ type SavedSlip = {
 export function AccountModal({
   open,
   onClose,
-  onOpenSettings,
 }: {
   open: boolean;
   onClose: () => void;
-  onOpenSettings?: () => void;
 }) {
-  const { user, logout } = useAuth();
+  const { user, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<'slips' | 'templates' | 'profile'>('slips');
   const [slips, setSlips] = useState<SavedSlip[]>([]);
   const [templates, setTemplates] = useState<FilterTemplate[]>([]);
@@ -33,35 +32,23 @@ export function AccountModal({
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !user) return;
     setActionNotice(null);
     setLoading(true);
 
-    // Load templates
     setTemplates(getLocalTemplates());
 
-    // Load slips
-    fetch('/api/slips/list')
+    fetch('/api/slips/list', { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => {
-        if (j.ok && Array.isArray(j.slips)) {
+        if (j.ok && Array.isArray(j.slips) && j.slips.length > 0) {
           setSlips(j.slips);
         } else {
-          try {
-            const raw = localStorage.getItem('lb_saved_slips_v1');
-            setSlips(raw ? JSON.parse(raw) : []);
-          } catch {
-            setSlips([]);
-          }
+          setSlips(loadLocalSavedSlips<SavedSlip>());
         }
       })
       .catch(() => {
-        try {
-          const raw = localStorage.getItem('lb_saved_slips_v1');
-          setSlips(raw ? JSON.parse(raw) : []);
-        } catch {
-          setSlips([]);
-        }
+        setSlips(loadLocalSavedSlips<SavedSlip>());
       })
       .finally(() => setLoading(false));
   }, [open, user]);
@@ -69,7 +56,6 @@ export function AccountModal({
   if (!open || !user) return null;
 
   function handleLoadSlip(s: SavedSlip) {
-    // Convert to builder slip format and save to slip store
     const fullLegs = s.legs.map((l, idx) => ({
       gameId: l.gameId || `leg-${Date.now()}-${idx}`,
       nativeEventId: l.gameId || 'ev1',
@@ -88,8 +74,8 @@ export function AccountModal({
       odds: l.odds,
       implied: l.odds > 0 ? 1 / l.odds : null,
     }));
-    writeSlip({ legs: fullLegs, greyed: [] });
-    setActionNotice(`Loaded "${s.name}" with ${s.legs.length} legs into the builder slip.`);
+    writeSlip({ id: s.id, name: s.name, legs: fullLegs, greyed: [] });
+    setActionNotice(`Loaded "${s.name}" with ${s.legs.length} legs into the active slip.`);
   }
 
   async function handleDeleteSlip(id: string) {
@@ -100,15 +86,8 @@ export function AccountModal({
         body: JSON.stringify({ id }),
       });
       setSlips((prev) => prev.filter((s) => s.id !== id));
-      try {
-        const raw = localStorage.getItem('lb_saved_slips_v1');
-        if (raw) {
-          const arr: SavedSlip[] = JSON.parse(raw);
-          localStorage.setItem('lb_saved_slips_v1', JSON.stringify(arr.filter((s) => s.id !== id)));
-        }
-      } catch {
-        /* ignore */
-      }
+      const next = loadLocalSavedSlips<SavedSlip>().filter((s) => s.id !== id);
+      saveLocalSavedSlips(next);
       setActionNotice('Slip removed.');
     } catch {
       setActionNotice('Could not delete slip.');
@@ -132,45 +111,65 @@ export function AccountModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" onClick={onClose} role="dialog" aria-modal="true" aria-label="Account Data & Settings">
-      <div className="glass max-h-[90vh] w-full max-w-2xl overflow-hidden bg-navy-900/95 shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Account Data"
+    >
+      <div
+        className="glass max-h-[90vh] w-full max-w-2xl overflow-hidden bg-navy-900/95 shadow-2xl flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b border-white/10 p-5">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20 font-display font-bold text-emerald-400">
-                {user.username.slice(0, 2).toUpperCase()}
-              </span>
-              <div>
-                <h2 className="font-display text-lg font-bold text-white">{user.username}</h2>
-                <p className="text-xs text-slate-400">Account storage: {slips.length} slips · {templates.length} templates</p>
-              </div>
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20 font-display font-bold text-emerald-400">
+              {user.username.slice(0, 2).toUpperCase()}
+            </span>
+            <div>
+              <h2 className="font-display text-lg font-bold text-white">{user.username}</h2>
+              <p className="text-xs text-slate-400">
+                Account storage: {slips.length} slips · {templates.length} templates
+              </p>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Close modal">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white"
+            aria-label="Close modal"
+          >
             ✕
           </button>
         </div>
 
-        {/* Tab switcher */}
         <div className="flex border-b border-white/10 bg-white/[0.02] px-5">
           <button
             type="button"
-            className={`border-b-2 px-4 py-2.5 text-xs font-semibold transition ${activeTab === 'slips' ? 'border-gold-400 text-gold-400' : 'border-transparent text-slate-400 hover:text-white'}`}
+            className={`border-b-2 px-4 py-2.5 text-xs font-semibold transition ${
+              activeTab === 'slips' ? 'border-gold-400 text-gold-400' : 'border-transparent text-slate-400 hover:text-white'
+            }`}
             onClick={() => setActiveTab('slips')}
           >
             Saved Betslips ({slips.length})
           </button>
           <button
             type="button"
-            className={`border-b-2 px-4 py-2.5 text-xs font-semibold transition ${activeTab === 'templates' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-400 hover:text-white'}`}
+            className={`border-b-2 px-4 py-2.5 text-xs font-semibold transition ${
+              activeTab === 'templates' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-400 hover:text-white'
+            }`}
             onClick={() => setActiveTab('templates')}
           >
             Filter Templates ({templates.length})
           </button>
           <button
             type="button"
-            className={`border-b-2 px-4 py-2.5 text-xs font-semibold transition ${activeTab === 'profile' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
+            className={`border-b-2 px-4 py-2.5 text-xs font-semibold transition ${
+              activeTab === 'profile'
+                ? 'border-emerald-400 text-emerald-400'
+                : 'border-transparent text-slate-400 hover:text-white'
+            }`}
             onClick={() => setActiveTab('profile')}
           >
             Profile & Session
@@ -183,7 +182,6 @@ export function AccountModal({
           </div>
         )}
 
-        {/* Content body */}
         <div className="flex-1 overflow-y-auto p-5">
           {loading ? (
             <p className="py-8 text-center text-sm text-slate-400">Loading stored account data…</p>
@@ -192,14 +190,19 @@ export function AccountModal({
               {slips.length === 0 ? (
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-8 text-center">
                   <p className="text-sm text-slate-300">No saved slips yet.</p>
-                  <p className="mt-1 text-xs text-slate-500">Build slips on the home page and save them to your account.</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Add selections on the home page to automatically create and save slips.
+                  </p>
                   <Link href="/" onClick={onClose} className="btn-gold mt-4 inline-flex text-xs">
                     Open Builder
                   </Link>
                 </div>
               ) : (
                 slips.map((s) => (
-                  <div key={s.id} className="rounded-xl border border-white/10 bg-navy-800/50 p-4 transition hover:border-white/20">
+                  <div
+                    key={s.id}
+                    className="rounded-xl border border-white/10 bg-navy-800/50 p-4 transition hover:border-white/20"
+                  >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
                         <h3 className="font-semibold text-white">{s.name}</h3>
@@ -208,20 +211,11 @@ export function AccountModal({
                         </p>
                       </div>
                       <div className="text-right">
-                        <span className="font-display text-lg font-bold text-gold-400">{Number(s.totalOdds).toFixed(2)}</span>
-                        {s.combinedImplied !== null && (
-                          <p className="text-[11px] text-slate-400">implied {(s.combinedImplied * 100).toFixed(2)}%</p>
-                        )}
+                        <span className="font-display text-lg font-bold text-gold-400">
+                          {Number(s.totalOdds).toFixed(2)}
+                        </span>
                       </div>
                     </div>
-                    <ul className="mt-2.5 max-h-24 space-y-1 overflow-y-auto rounded-lg bg-navy-950/60 p-2 text-xs text-slate-300">
-                      {s.legs.map((l, idx) => (
-                        <li key={idx} className="flex justify-between border-b border-white/5 py-0.5 last:border-none">
-                          <span className="truncate">{l.home} v {l.away} ({l.pick})</span>
-                          <span className="odds text-[11px]">{Number(l.odds).toFixed(2)}</span>
-                        </li>
-                      ))}
-                    </ul>
                     <div className="mt-3 flex items-center justify-between gap-2 pt-2 border-t border-white/5">
                       <div className="flex gap-2">
                         <button type="button" onClick={() => handleLoadSlip(s)} className="btn-emerald h-7 px-2.5 text-xs">
@@ -231,7 +225,11 @@ export function AccountModal({
                           Full View
                         </Link>
                       </div>
-                      <button type="button" onClick={() => handleDeleteSlip(s.id)} className="text-xs text-red-400 hover:underline">
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteSlip(s.id)}
+                        className="text-xs text-red-400 hover:underline"
+                      >
                         Delete
                       </button>
                     </div>
@@ -241,23 +239,22 @@ export function AccountModal({
             </div>
           ) : activeTab === 'templates' ? (
             <div className="space-y-3">
-              <p className="text-xs text-slate-400">
-                Filter templates store your preferred bookmaker, odds thresholds, and market combinations for rapid slip building.
-              </p>
               {templates.map((tpl) => (
-                <div key={tpl.id} className="rounded-xl border border-white/10 bg-navy-800/50 p-4 transition hover:border-white/20">
+                <div
+                  key={tpl.id}
+                  className="rounded-xl border border-white/10 bg-navy-800/50 p-4 transition hover:border-white/20"
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold text-white">{tpl.name}</h3>
                         {tpl.isDefault && (
-                          <span className="rounded bg-cyan-500/20 px-1.5 py-0.5 text-[10px] font-medium text-cyan-300">Preset</span>
+                          <span className="rounded bg-cyan-500/20 px-1.5 py-0.5 text-[10px] font-medium text-cyan-300">
+                            Preset
+                          </span>
                         )}
                       </div>
                       {tpl.description && <p className="mt-0.5 text-xs text-slate-400">{tpl.description}</p>}
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Bookmaker: {tpl.bookmaker} · Kickoff: {tpl.withinHours ? `Next ${tpl.withinHours}h` : 'Any time'}
-                      </p>
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -271,25 +268,12 @@ export function AccountModal({
                         <button
                           type="button"
                           onClick={() => handleDeleteTemplate(tpl.id)}
-                          className="btn-ghost h-7 px-2 text-xs text-red-300 hover:border-red-400/40 hover:bg-red-500/10"
-                          title="Delete template"
+                          className="btn-ghost h-7 px-2 text-xs text-red-300"
                         >
                           ✕
                         </button>
                       )}
                     </div>
-                  </div>
-                  {/* Market summary */}
-                  <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {Object.entries(tpl.cards).map(([id, card]) => {
-                      if (!card.on) return null;
-                      return (
-                        <span key={id} className="rounded border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-slate-300">
-                          {id.toUpperCase()}: {card.low.toFixed(2)} - {card.high.toFixed(2)}
-                          {card.subs.length > 0 && ` (${card.subs.join(', ')})`}
-                        </span>
-                      );
-                    })}
                   </div>
                 </div>
               ))}
@@ -305,33 +289,15 @@ export function AccountModal({
                   <span className="text-slate-400">Account ID</span>
                   <span className="font-mono text-xs text-slate-300">{user.id}</span>
                 </div>
-                <div className="flex justify-between items-center text-sm border-b border-white/5 pb-2">
-                  <span className="text-slate-400">Session Status</span>
-                  <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" /> Active Authenticated
-                  </span>
-                </div>
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-slate-400">Total Saved Betslips</span>
                   <span className="odds">{slips.length}</span>
                 </div>
               </div>
-              {onOpenSettings && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onOpenSettings();
-                  }}
-                  className="btn-gold w-full text-xs flex items-center justify-center gap-1.5"
-                >
-                  ⚙️ Configure AI Models & API Keys
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => {
-                  void logout();
+                  void signOut();
                   onClose();
                 }}
                 className="btn-ghost w-full text-xs text-red-300 hover:bg-red-500/10 hover:border-red-500/40"
@@ -342,7 +308,6 @@ export function AccountModal({
           )}
         </div>
 
-        {/* Footer */}
         <div className="border-t border-white/10 bg-white/[0.02] p-3 text-right">
           <button type="button" onClick={onClose} className="btn-ghost text-xs">
             Close

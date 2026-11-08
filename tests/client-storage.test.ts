@@ -5,7 +5,18 @@ import {
   STORAGE_KEYS,
   clearAllUserStorage,
   hasAnyUserStorage,
+  performFullSignOutCleanup,
+  scopedStorageKey,
+  setActiveStorageUserId,
+  getActiveStorageUserId,
 } from '../src/lib/client-storage.ts';
+import {
+  getClientSettings,
+  saveClientSettings,
+  getClientAiHeaders,
+} from '../src/lib/client-settings.ts';
+import { readSlip, writeSlip } from '../src/lib/slip-store.ts';
+import { emptySlip, defaultSlipName } from '../src/lib/slip.ts';
 
 // Minimal in-memory localStorage mock for Node tests
 function createMemoryStorage() {
@@ -33,40 +44,165 @@ function createMemoryStorage() {
   };
 }
 
-describe('client-storage', () => {
-  it('exposes the expected registry of keys', () => {
+describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
+  it('exposes the expected registry of keys including USER_SHORTCUTS', () => {
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.SLIP));
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.CLIENT_AI_SETTINGS));
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.SAVED_SLIPS));
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.FILTER_TEMPLATES));
-    assert.equal(ALL_USER_STORAGE_KEYS.length >= 5, true);
+    assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.RESULTS_SCORES));
+    assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.TOP_HUB_COLLAPSED));
+    assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.USER_SHORTCUTS));
+    assert.equal(ALL_USER_STORAGE_KEYS.length, 7);
   });
 
-  it('clearAllUserStorage removes every registered key and any lb_* leftovers', () => {
+  it('namespaces keys by active user ID and prevents User A data from leaking to User B', () => {
     const mem = createMemoryStorage();
-    // @ts-expect-error – injecting mock into global for the pure functions
+    // @ts-expect-error – injecting mock into global
     globalThis.localStorage = mem;
     // @ts-expect-error
     globalThis.sessionStorage = createMemoryStorage();
     // @ts-expect-error
     globalThis.window = globalThis;
 
-    // Seed known keys + a legacy one
+    setActiveStorageUserId('user-a');
+    assert.equal(getActiveStorageUserId(), 'user-a');
+    assert.equal(scopedStorageKey(STORAGE_KEYS.SLIP), 'lb_slip_v1:user-a');
+
+    // User A saves a slip and custom AI model settings
+    writeSlip({
+      id: 'slip-a',
+      name: 'User A Slip',
+      greyed: [],
+      legs: [
+        {
+          id: 'g1:1:1:',
+          gameId: 'g1',
+          home: 'Arsenal',
+          away: 'Chelsea',
+          league: 'EPL',
+          kickoff: 1700000000000,
+          bookmaker: 'sportybet',
+          marketNativeId: '1',
+          outcomeNativeId: '1',
+          specifier: '',
+          selectionLabel: 'Arsenal',
+          marketLabel: '1X2',
+          odds: 1.85,
+          impliedProbability: 0.51,
+        },
+      ],
+    });
+    saveClientSettings({ selectedModel: 'mistral-small-latest', timeoutSeconds: 45 });
+
+    assert.equal(readSlip().legs.length, 1);
+    assert.equal(getClientSettings().selectedModel, 'mistral-small-latest');
+
+    // Switch to User B (without even clearing first, User B must not read User A's keys)
+    setActiveStorageUserId('user-b');
+    assert.equal(scopedStorageKey(STORAGE_KEYS.SLIP), 'lb_slip_v1:user-b');
+    assert.equal(readSlip().legs.length, 0);
+    assert.equal(getClientSettings().selectedModel, 'gemini-2.5-flash');
+  });
+
+  it('performFullSignOutCleanup clears all registered keys, sessionStorage, IndexedDB, and SW caches', async () => {
+    const mem = createMemoryStorage();
+    const sess = createMemoryStorage();
+    // @ts-expect-error
+    globalThis.localStorage = mem;
+    // @ts-expect-error
+    globalThis.sessionStorage = sess;
+
+    const deletedDbs: string[] = [];
+    // @ts-expect-error
+    globalThis.indexedDB = {
+      databases: async () => [{ name: 'lb-local-db' }, { name: 'supabase-cache' }],
+      deleteDatabase: (name: string) => {
+        deletedDbs.push(name);
+        const req: any = {};
+        queueMicrotask(() => req.onsuccess?.());
+        return req;
+      },
+    };
+
+    const deletedCaches: string[] = [];
+    // @ts-expect-error
+    globalThis.caches = {
+      keys: async () => ['lotto-bet-static-v1', 'other-cache'],
+      delete: async (k: string) => {
+        deletedCaches.push(k);
+        return true;
+      },
+    };
+
+    // Seed unscoped, user-scoped, legacy keys, and sessionStorage
+    setActiveStorageUserId('user-a');
     for (const k of ALL_USER_STORAGE_KEYS) {
-      mem.setItem(k, 'present');
+      mem.setItem(k, 'unscoped-val');
+      mem.setItem(`${k}:user-a`, 'scoped-val-a');
+      mem.setItem(`${k}:user-b`, 'scoped-val-b');
     }
     mem.setItem('lb_legacy_secret', 'should-also-go');
+    mem.setItem('sb-auth-token', 'should-also-go');
     mem.setItem('unrelated', 'keep-me');
+    sess.setItem('session_temp', 'temp-val');
 
     assert.equal(hasAnyUserStorage(), true);
 
-    clearAllUserStorage();
+    await performFullSignOutCleanup();
 
+    assert.equal(getActiveStorageUserId(), null);
     for (const k of ALL_USER_STORAGE_KEYS) {
       assert.equal(mem.getItem(k), null, `expected ${k} to be cleared`);
+      assert.equal(mem.getItem(`${k}:user-a`), null, `expected ${k}:user-a to be cleared`);
+      assert.equal(mem.getItem(`${k}:user-b`), null, `expected ${k}:user-b to be cleared`);
     }
     assert.equal(mem.getItem('lb_legacy_secret'), null);
+    assert.equal(mem.getItem('sb-auth-token'), null);
     assert.equal(mem.getItem('unrelated'), 'keep-me');
+    assert.equal(sess.length, 0);
+    assert.deepEqual(deletedDbs, ['lb-local-db', 'supabase-cache']);
+    assert.deepEqual(deletedCaches, ['lotto-bet-static-v1', 'other-cache']);
     assert.equal(hasAnyUserStorage(), false);
+  });
+
+  it('never stores or sends API keys from client settings (Task 2)', () => {
+    const mem = createMemoryStorage();
+    // @ts-expect-error
+    globalThis.localStorage = mem;
+    setActiveStorageUserId('user-a');
+
+    // Attempt to inject legacy API key fields into localStorage
+    mem.setItem(
+      scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS),
+      JSON.stringify({
+        selectedModel: 'gemini-2.5-flash',
+        provider: 'gemini',
+        geminiApiKey: 'LEAKED_KEY',
+        openrouterApiKey: 'LEAKED_OR_KEY',
+        mistralApiKey: 'LEAKED_MISTRAL_KEY',
+      }),
+    );
+
+    const loaded = getClientSettings() as Record<string, unknown>;
+    assert.equal('geminiApiKey' in loaded, false);
+    assert.equal('openrouterApiKey' in loaded, false);
+    assert.equal('mistralApiKey' in loaded, false);
+    assert.equal('footballDataApiKey' in loaded, false);
+    assert.equal('apiFootballKey' in loaded, false);
+
+    const headers = getClientAiHeaders();
+    assert.equal('x-gemini-key' in headers, false);
+    assert.equal('x-openrouter-key' in headers, false);
+    assert.equal('x-mistral-key' in headers, false);
+    assert.equal(headers['x-ai-model'], 'gemini-2.5-flash');
+  });
+
+  it('generates default slip name with date and time (Task 10)', () => {
+    const name = defaultSlipName(new Date('2026-11-08T08:45:00Z'));
+    assert.ok(name.startsWith('Slip '));
+    assert.ok(name.length >= 10);
+    const s = emptySlip();
+    assert.deepEqual(s.legs, []);
   });
 });

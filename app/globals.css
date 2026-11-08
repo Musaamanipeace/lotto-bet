@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 html { color-scheme: dark; }
-body { @apply bg-navy-950 text-slate-200 font-sans antialiased; }
+body { @apply bg-navy-950 text-slate-200 font-sans antialiased min-h-dvh; }
 
 @layer components {
   .glass { @apply rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-md; }
@@ -14,6 +14,9 @@ body { @apply bg-navy-950 text-slate-200 font-sans antialiased; }
   .btn-ghost { @apply btn border border-white/15 text-slate-200 hover:bg-white/10; }
   .odds { @apply font-display font-bold tabular-nums text-gold-400; }
 }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* Landing backdrop: plain dark, faint dot grid, soft blurred colour glows. No photo layer. */
 .dotgrid {

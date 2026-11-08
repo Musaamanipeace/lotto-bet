@@ -10,6 +10,7 @@ export async function POST(req: Request) {
   if (bad) return bad;
   const user = await currentUser(req);
   let body: {
+    id?: string;
     name?: string;
     bookmaker?: Bookmaker;
     legs?: PickRow[];
@@ -28,6 +29,7 @@ export async function POST(req: Request) {
     return jsonError('totalOdds must be a number greater than 1', 400);
   }
   const slip = saveSlip({
+    id: typeof body.id === 'string' && body.id ? body.id : undefined,
     userId: user?.id ?? null,
     name: body.name ?? '',
     bookmaker: body.bookmaker,

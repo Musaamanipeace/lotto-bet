@@ -1,13 +1,13 @@
 'use client';
 
+import { STORAGE_KEYS, scopedStorageKey } from './client-storage.ts';
+
 /**
- * Client-side AI settings.
+ * Client-side AI model preferences.
  *
- * Keys (AI + sports data) are stored in localStorage so they survive reloads
- * while the user is signed in. On logout they are completely wiped by
- * clearAllUserStorage() + clearClientSecrets().
- *
- * Unsigned users never see or use these keys.
+ * IMPORTANT: No API keys or secrets are ever stored in client storage or database.
+ * All provider credentials come strictly from server environment variables.
+ * Preferences (selectedModel, provider, timeoutSeconds) are user-scoped and cleared on sign-out.
  */
 
 export type FreeAiModel = {
@@ -92,36 +92,35 @@ export const SUPPORTED_FREE_MODELS: FreeAiModel[] = [
 export type ClientAiSettings = {
   selectedModel: string;
   provider: 'gemini' | 'openrouter' | 'mistral';
-  geminiApiKey: string;
-  openrouterApiKey: string;
-  mistralApiKey: string;
-  footballDataApiKey: string;
-  apiFootballKey: string;
   timeoutSeconds: number;
 };
 
 export const DEFAULT_CLIENT_SETTINGS: ClientAiSettings = {
   selectedModel: 'gemini-2.5-flash',
   provider: 'gemini',
-  geminiApiKey: '',
-  openrouterApiKey: '',
-  mistralApiKey: '',
-  footballDataApiKey: '',
-  apiFootballKey: '',
   timeoutSeconds: 35,
 };
-
-const STORAGE_KEY = 'lb_client_ai_settings_v1';
 
 export function getClientSettings(): ClientAiSettings {
   if (typeof window === 'undefined') return DEFAULT_CLIENT_SETTINGS;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const key = scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS);
+    const raw = localStorage.getItem(key);
     if (!raw) return DEFAULT_CLIENT_SETTINGS;
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as Partial<ClientAiSettings>;
     return {
-      ...DEFAULT_CLIENT_SETTINGS,
-      ...parsed,
+      selectedModel:
+        typeof parsed.selectedModel === 'string' && parsed.selectedModel
+          ? parsed.selectedModel
+          : DEFAULT_CLIENT_SETTINGS.selectedModel,
+      provider:
+        parsed.provider === 'gemini' || parsed.provider === 'openrouter' || parsed.provider === 'mistral'
+          ? parsed.provider
+          : DEFAULT_CLIENT_SETTINGS.provider,
+      timeoutSeconds:
+        typeof parsed.timeoutSeconds === 'number' && parsed.timeoutSeconds >= 5 && parsed.timeoutSeconds <= 120
+          ? parsed.timeoutSeconds
+          : DEFAULT_CLIENT_SETTINGS.timeoutSeconds,
     };
   } catch {
     return DEFAULT_CLIENT_SETTINGS;
@@ -130,10 +129,15 @@ export function getClientSettings(): ClientAiSettings {
 
 export function saveClientSettings(settings: Partial<ClientAiSettings>): ClientAiSettings {
   const current = getClientSettings();
-  const next: ClientAiSettings = { ...current, ...settings };
+  const next: ClientAiSettings = {
+    selectedModel: settings.selectedModel ?? current.selectedModel,
+    provider: settings.provider ?? current.provider,
+    timeoutSeconds: settings.timeoutSeconds ?? current.timeoutSeconds,
+  };
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      const key = scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS);
+      localStorage.setItem(key, JSON.stringify(next));
       window.dispatchEvent(new CustomEvent('lb_settings_changed', { detail: next }));
     } catch {
       /* quota ignored */
@@ -142,14 +146,8 @@ export function saveClientSettings(settings: Partial<ClientAiSettings>): ClientA
   return next;
 }
 
-/**
- * Clears the in-memory view of secrets after logout.
- * The actual storage wipe is performed by clearAllUserStorage().
- * Kept for API compatibility with the logout path.
- */
 export function clearClientSecrets(): void {
-  // Storage is wiped by clearAllUserStorage(); nothing else needed here.
-  // This function exists so the logout path can call it explicitly.
+  // No secrets are stored on the client; storage is wiped by performFullSignOutCleanup().
 }
 
 export function onSettingsChanged(cb: (settings: ClientAiSettings) => void): () => void {
@@ -162,17 +160,11 @@ export function onSettingsChanged(cb: (settings: ClientAiSettings) => void): () 
   return () => window.removeEventListener('lb_settings_changed', handler);
 }
 
-/** Formats client settings into headers for thin-proxy API routes */
+/** Formats non-secret client preferences into headers for API routes. */
 export function getClientAiHeaders(customSettings?: ClientAiSettings): Record<string, string> {
   const s = customSettings || getClientSettings();
-  const headers: Record<string, string> = {
+  return {
     'x-ai-provider': s.provider,
     'x-ai-model': s.selectedModel,
   };
-  if (s.geminiApiKey) headers['x-gemini-key'] = s.geminiApiKey;
-  if (s.openrouterApiKey) headers['x-openrouter-key'] = s.openrouterApiKey;
-  if (s.mistralApiKey) headers['x-mistral-key'] = s.mistralApiKey;
-  if (s.footballDataApiKey) headers['x-football-data-key'] = s.footballDataApiKey;
-  if (s.apiFootballKey) headers['x-api-football-key'] = s.apiFootballKey;
-  return headers;
 }

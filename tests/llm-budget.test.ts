@@ -68,9 +68,9 @@ test('failing over from the chosen provider sends the next provider ITS OWN defa
   assert.equal(r.attempts[0].provider, 'gemini', 'the Gemini failure stays visible');
 });
 
-test('headers: keys are picked up, unknown providers and oversized models are ignored', () => {
-  const env = buildLlmEnv(new Headers({ 'x-gemini-key': ' abc ', 'x-ai-provider': 'nope', 'x-ai-model': 'x' }), {});
-  assert.equal(env.GEMINI_API_KEY, 'abc');
+test('headers: client key headers are ignored (server env only), unknown providers and oversized models are ignored', () => {
+  const env = buildLlmEnv(new Headers({ 'x-ai-provider': 'nope', 'x-ai-model': 'x' }), { GEMINI_API_KEY: 'server-key' });
+  assert.equal(env.GEMINI_API_KEY, 'server-key');
   assert.equal(env.LLM_PROVIDER_ORDER, undefined);
   assert.equal(env.GEMINI_MODEL, undefined);
   const big = buildLlmEnv(new Headers({ 'x-ai-provider': 'gemini', 'x-ai-model': 'm'.repeat(300) }), {});

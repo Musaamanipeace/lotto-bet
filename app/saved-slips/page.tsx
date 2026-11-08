@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../components/auth-context';
 import { writeSlip } from '@/lib/slip-store.ts';
+import { loadLocalSavedSlips, saveLocalSavedSlips } from '@/lib/saved-slips.ts';
+import { SIGNOUT_EVENT } from '@/lib/client-storage.ts';
 
 type SavedSlip = {
   id: string;
@@ -16,23 +18,6 @@ type SavedSlip = {
   shared: boolean;
   shareNote?: string;
 };
-
-const LS_KEY = 'lb_saved_slips_v1';
-
-function loadLocal(): SavedSlip[] {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveLocal(slips: SavedSlip[]) {
-  localStorage.setItem(LS_KEY, JSON.stringify(slips.slice(0, 50)));
-}
 
 function SavedSlipItem({
   s,
@@ -135,9 +120,13 @@ export default function SavedSlipsPage() {
 
   const refresh = useCallback(async () => {
     setError(null);
-    const local = typeof window !== 'undefined' ? loadLocal() : [];
+    if (!user) {
+      setSlips([]);
+      return;
+    }
+    const local = loadLocalSavedSlips<SavedSlip>();
     try {
-      const r = await fetch('/api/slips/list');
+      const r = await fetch('/api/slips/list', { cache: 'no-store' });
       const j = await r.json();
       if (j.ok && Array.isArray(j.slips) && j.slips.length > 0) {
         setSlips(j.slips);
@@ -147,11 +136,17 @@ export default function SavedSlipsPage() {
       /* fall through to local */
     }
     setSlips(local);
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     void refresh();
-  }, [refresh, user]);
+  }, [refresh]);
+
+  useEffect(() => {
+    const onSignOut = () => setSlips([]);
+    window.addEventListener(SIGNOUT_EVENT, onSignOut);
+    return () => window.removeEventListener(SIGNOUT_EVENT, onSignOut);
+  }, []);
 
   async function remove(id: string) {
     setBusy(true);
@@ -161,8 +156,8 @@ export default function SavedSlipsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
       });
-      const next = loadLocal().filter((s) => s.id !== id);
-      saveLocal(next);
+      const next = loadLocalSavedSlips<SavedSlip>().filter((s) => s.id !== id);
+      saveLocalSavedSlips(next);
       setSlips((cur) => cur.filter((s) => s.id !== id));
       setNotice('Slip deleted.');
       setTimeout(() => setNotice(null), 2500);
@@ -220,13 +215,25 @@ export default function SavedSlipsPage() {
       odds: l.odds,
       implied: l.odds > 0 ? 1 / l.odds : null,
     }));
-    writeSlip({ legs: fullLegs, greyed: [] });
-    setNotice(`Loaded "${s.name}" with ${s.legs.length} legs into the builder slip.`);
+    writeSlip({ id: s.id, name: s.name, legs: fullLegs, greyed: [] });
+    setNotice(`Loaded "${s.name}" with ${s.legs.length} legs into the active slip.`);
     setTimeout(() => setNotice(null), 3500);
   }
 
   if (loading) {
     return <p className="mt-10 text-center text-sm text-slate-400">Checking session…</p>;
+  }
+
+  if (!user) {
+    return (
+      <div className="glass mx-auto mt-10 max-w-md p-6 text-center">
+        <h1 className="font-display text-xl font-bold text-white">Saved Slips</h1>
+        <p className="mt-2 text-sm text-slate-400">Sign in to view and manage your saved slips.</p>
+        <button className="btn-gold mt-4" onClick={() => openAuth('login')}>
+          Sign in
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -259,7 +266,7 @@ export default function SavedSlipsPage() {
         <div className="glass rounded-xl p-8 text-center">
           <p className="text-slate-300">No saved slips yet.</p>
           <p className="mt-2 text-sm text-slate-500">
-            Build a slip on the home page, then use <strong className="text-slate-400">Save slip</strong> in the active betslip.
+            Add selections on the home page to auto-save a slip, or save from the Betslip popup.
           </p>
           <Link href="/" className="btn-ghost mt-4 inline-flex">
             Go to builder

@@ -1,7 +1,12 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import type { User } from '@/lib/auth.ts';
-import { clearAllUserStorage } from '@/lib/client-storage.ts';
+import {
+  performFullSignOutCleanup,
+  setActiveStorageUserId,
+} from '@/lib/client-storage.ts';
+import { SLIP_EVENT } from '@/lib/slip-store.ts';
 import { clearClientSecrets } from '@/lib/client-settings.ts';
 
 type AuthMode = 'signup' | 'login';
@@ -16,8 +21,13 @@ type Ctx = {
   openAuth: (mode: AuthMode) => void;
   closeAuth: () => void;
   setUser: (u: User | null) => void;
+  /** Canonical signOut function per Task 1 */
+  signOut: () => Promise<void>;
+  /** Alias for signOut */
   logout: () => Promise<void>;
 };
+
+const PROTECTED_PATHS = ['/my-picks', '/saved-slips', '/results'];
 
 const AuthCtx = createContext<Ctx | null>(null);
 export const useAuth = (): Ctx => {
@@ -27,33 +37,65 @@ export const useAuth = (): Ctx => {
 };
 
 /**
- * Single place that performs a full client-side cleanup after the server session is destroyed.
- * - Clears every known lb_* localStorage / sessionStorage key
- * - Clears in-memory API key secrets
- * - Resets React auth state
+ * Single place that performs a full client-side cleanup after the server session is destroyed:
+ * - Clears every known lb_* localStorage / sessionStorage key (both scoped and unscoped)
+ * - Clears IndexedDB databases
+ * - Clears Service Worker caches
+ * - Clears in-memory state and dispatches reset events
  */
-function performClientCleanup(setUser: (u: User | null) => void): void {
-  clearAllUserStorage();
+export async function performClientCleanup(setUserState?: (u: User | null) => void): Promise<void> {
   clearClientSecrets();
-  setUser(null);
+  await performFullSignOutCleanup();
+  setUserState?.(null);
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+export function AuthProvider({
+  children,
+  initialUser = null,
+}: {
+  children: React.ReactNode;
+  initialUser?: User | null;
+}) {
+  // Set storage namespace synchronously from server session before children mount
+  if (typeof window !== 'undefined' && initialUser?.id) {
+    setActiveStorageUserId(initialUser.id);
+  }
+
+  const router = useRouter();
+  const pathname = usePathname();
+  const [user, setUserInternal] = useState<User | null>(initialUser);
+  const [loading, setLoading] = useState(initialUser === null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [codegenRequiresSignIn, setCodegenRequiresSignIn] = useState(true);
   const [authOpen, setAuthOpen] = useState<AuthMode | null>(null);
 
+  const setUser = useCallback((u: User | null) => {
+    setActiveStorageUserId(u?.id ?? null);
+    setUserInternal(u);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(SLIP_EVENT));
+    }
+  }, []);
+
+  // Check if URL has ?auth=login or ?auth=signup from middleware redirect
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('auth');
+    if ((mode === 'login' || mode === 'signup') && !user) {
+      setAuthOpen(mode);
+    }
+  }, [user]);
+
   // Initial session check
   useEffect(() => {
     let live = true;
-    fetch('/api/auth/me')
+    fetch('/api/auth/me', { cache: 'no-store' })
       .then(async (r) => {
         const j = await r.json().catch(() => null);
         if (!live) return;
         if (j && j.ok) {
-          setUser(j.user);
+          setUser(j.user ?? null);
           setCodegenRequiresSignIn(j.codegenRequiresSignIn !== false);
         } else {
           setSessionError(j?.error ?? `Session check failed (HTTP ${r.status})`);
@@ -64,25 +106,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       live = false;
     };
-  }, []);
+  }, [setUser]);
 
   /**
-   * Full sign-out:
+   * Full sign-out (Task 1):
    * 1. Tell the server to destroy the session + clear the cookie
-   * 2. Wipe every piece of client storage that could contain user data or secrets
-   * 3. Clear in-memory secrets
-   * 4. Reset React state
+   * 2. Wipe localStorage, sessionStorage, IndexedDB, and Service Worker caches
+   * 3. Reset in-memory state and storage user scope
+   * 4. Redirect to home
    */
-  const logout = useCallback(async () => {
+  const signOut = useCallback(async () => {
     try {
       const r = await fetch('/api/auth/logout', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: '{}',
       });
-      // Always clean the client even if the network call failed – better to be signed out locally
-      // than leave residual data.
-      performClientCleanup(setUser);
+      await performClientCleanup(setUserInternal);
       if (!r.ok) {
         const j = await r.json().catch(() => null);
         setSessionError(j?.error ?? `Log-out failed (HTTP ${r.status})`);
@@ -90,34 +130,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSessionError(null);
       }
     } catch (e) {
-      performClientCleanup(setUser);
+      await performClientCleanup(setUserInternal);
       setSessionError(`Log-out failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      router.push('/');
+      router.refresh();
     }
-  }, []);
+  }, [router]);
 
   // Prevent bfcache / back-button from showing a stale signed-in UI after logout.
   useEffect(() => {
     const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) {
-        // Page was restored from bfcache. Re-validate session.
-        fetch('/api/auth/me')
+      const isProtected = PROTECTED_PATHS.some((p) => pathname === p || pathname?.startsWith(`${p}/`));
+      if (e.persisted || isProtected) {
+        fetch('/api/auth/me', { cache: 'no-store' })
           .then(async (r) => {
             const j = await r.json().catch(() => null);
             if (j && j.ok && j.user) {
               setUser(j.user);
             } else {
-              // No valid session → force clean state
-              performClientCleanup(setUser);
+              await performClientCleanup(setUserInternal);
+              if (isProtected) {
+                router.replace('/?auth=login');
+              }
             }
           })
-          .catch(() => {
-            performClientCleanup(setUser);
+          .catch(async () => {
+            await performClientCleanup(setUserInternal);
+            if (isProtected) {
+              router.replace('/?auth=login');
+            }
           });
       }
     };
     window.addEventListener('pageshow', onPageShow);
     return () => window.removeEventListener('pageshow', onPageShow);
-  }, []);
+  }, [pathname, router, setUser]);
 
   return (
     <AuthCtx.Provider
@@ -130,7 +178,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         openAuth: setAuthOpen,
         closeAuth: () => setAuthOpen(null),
         setUser,
-        logout,
+        signOut,
+        logout: signOut,
       }}
     >
       {children}

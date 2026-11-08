@@ -1,6 +1,7 @@
 import { normalizeMatchKey, type MatchScore, type MatchStatus } from './results-evaluator.ts';
+import { STORAGE_KEYS, scopedStorageKey } from './client-storage.ts';
 
-const SCORES_LS_KEY = 'lb_results_scores_v1';
+const SCORES_LS_KEY = STORAGE_KEYS.RESULTS_SCORES;
 
 // Server-side in-memory cache of resolved scores
 const globalScores = new Map<string, MatchScore>();
@@ -20,12 +21,13 @@ export function deterministicScore(home: string, away: string): { homeScore: num
 }
 
 /**
- * Returns current scores from local storage in browser
+ * Returns current scores from user-scoped local storage in browser
  */
 export function getLocalScores(): Record<string, MatchScore> {
   if (typeof window === 'undefined') return {};
   try {
-    const raw = localStorage.getItem(SCORES_LS_KEY);
+    const key = scopedStorageKey(SCORES_LS_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return typeof parsed === 'object' && parsed !== null ? parsed : {};
@@ -35,12 +37,13 @@ export function getLocalScores(): Record<string, MatchScore> {
 }
 
 /**
- * Saves scores to local storage in browser
+ * Saves scores to user-scoped local storage in browser
  */
 export function saveLocalScores(scores: Record<string, MatchScore>): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(SCORES_LS_KEY, JSON.stringify(scores));
+    const key = scopedStorageKey(SCORES_LS_KEY);
+    localStorage.setItem(key, JSON.stringify(scores));
   } catch {
     /* storage full or blocked */
   }

@@ -25,7 +25,7 @@ export class PgSnapshotStore implements SnapshotStore {
   /** Idempotent; mirrors db/migrations/004_ai_snapshots.sql so a missed migration does not break the app. */
   private ensureTable(): Promise<void> {
     return (this.ready ??= (async () => {
-      const pool = getPool();
+      const pool = await getPool();
       await pool.query(`CREATE TABLE IF NOT EXISTS ai_snapshots (
         id bigserial PRIMARY KEY, run_id text, generated_at timestamptz NOT NULL DEFAULT now(), data jsonb NOT NULL)`);
       await pool.query('ALTER TABLE ai_snapshots ENABLE ROW LEVEL SECURITY');
@@ -34,14 +34,15 @@ export class PgSnapshotStore implements SnapshotStore {
 
   async save(snap: AiSnapshot) {
     await this.ensureTable();
-    const pool = getPool();
+    const pool = await getPool();
     await pool.query('INSERT INTO ai_snapshots (run_id, data) VALUES ($1, $2::jsonb)', [snap.runId, JSON.stringify(snap)]);
     await pool.query('DELETE FROM ai_snapshots WHERE id NOT IN (SELECT id FROM ai_snapshots ORDER BY id DESC LIMIT $1)', [KEEP]);
   }
 
   async latest() {
     await this.ensureTable();
-    const r = await getPool().query('SELECT data FROM ai_snapshots ORDER BY id DESC LIMIT 1');
+    const pool = await getPool();
+    const r = await pool.query('SELECT data FROM ai_snapshots ORDER BY id DESC LIMIT 1');
     return r.rows[0] ? (r.rows[0].data as AiSnapshot) : null;
   }
 }

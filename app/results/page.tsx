@@ -16,51 +16,21 @@ import {
   saveLocalScores,
   deterministicScore,
 } from '@/lib/results-store.ts';
-
-type SavedSlip = {
-  id: string;
-  name: string;
-  bookmaker: string;
-  legs: {
-    home: string;
-    away: string;
-    pick: string;
-    odds: number;
-    gameId?: string;
-    kickoff?: number;
-    league?: string | null;
-    marketKind?: any;
-    outcomeKey?: any;
-    line?: number | null;
-    specifier?: string;
-  }[];
-  totalOdds: number;
-  combinedImplied: number | null;
-  createdAt: number;
-  shared?: boolean;
-};
-
-const LS_KEY = 'lb_saved_slips_v1';
+import {
+  loadLocalSavedSlips,
+  saveLocalSavedSlips,
+  type SavedSlip,
+} from '@/lib/saved-slips.ts';
+import { SIGNOUT_EVENT } from '@/lib/client-storage.ts';
 
 function loadLocalSlips(): SavedSlip[] {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  return loadLocalSavedSlips();
 }
 
 function saveLocalSlip(slip: SavedSlip) {
-  try {
-    const list = loadLocalSlips();
-    list.unshift(slip);
-    localStorage.setItem(LS_KEY, JSON.stringify(list.slice(0, 50)));
-  } catch {
-    /* storage full */
-  }
+  const list = loadLocalSavedSlips();
+  list.unshift(slip);
+  saveLocalSavedSlips(list.slice(0, 50));
 }
 
 export default function ResultsTrackerPage() {
@@ -153,7 +123,13 @@ export default function ResultsTrackerPage() {
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+    const onSignOut = () => {
+      setSlips([]);
+      setScores({});
+    };
+    window.addEventListener(SIGNOUT_EVENT, onSignOut);
+    return () => window.removeEventListener(SIGNOUT_EVENT, onSignOut);
+  }, [loadData, user]);
 
   // Evaluate all slips against match scores
   const evaluatedSlips: EvaluatedSlip[] = useMemo(() => {
