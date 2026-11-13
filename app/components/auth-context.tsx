@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import type { User } from '@/lib/auth.ts';
 import {
@@ -7,7 +7,7 @@ import {
   setActiveStorageUserId,
 } from '@/lib/client-storage.ts';
 import { SLIP_EVENT } from '@/lib/slip-store.ts';
-import { clearClientSecrets } from '@/lib/client-settings.ts';
+import { clearClientSecrets, refreshServerSettings } from '@/lib/client-settings.ts';
 
 type AuthMode = 'signup' | 'login';
 type Ctx = {
@@ -19,6 +19,8 @@ type Ctx = {
   codegenRequiresSignIn: boolean;
   authOpen: AuthMode | null;
   openAuth: (mode: AuthMode) => void;
+  /** Open Auth modal and automatically re-open Settings modal upon successful login/signup (Task 12). */
+  openAuthWithSettingsReturn: (mode?: AuthMode) => void;
   closeAuth: () => void;
   setUser: (u: User | null) => void;
   /** Canonical signOut function per Task 1 */
@@ -27,7 +29,15 @@ type Ctx = {
   logout: () => Promise<void>;
 };
 
-const PROTECTED_PATHS = ['/my-picks', '/saved-slips', '/results'];
+const PROTECTED_PATHS = [
+  '/my-picks',
+  '/saved-slips',
+  '/results',
+  '/ai-picks',
+  '/chat',
+  '/community',
+  '/leagues',
+];
 
 const AuthCtx = createContext<Ctx | null>(null);
 export const useAuth = (): Ctx => {
@@ -68,6 +78,7 @@ export function AuthProvider({
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [codegenRequiresSignIn, setCodegenRequiresSignIn] = useState(true);
   const [authOpen, setAuthOpen] = useState<AuthMode | null>(null);
+  const returnToSettingsRef = useRef(false);
 
   const setUser = useCallback((u: User | null) => {
     setActiveStorageUserId(u?.id ?? null);
@@ -75,6 +86,31 @@ export function AuthProvider({
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event(SLIP_EVENT));
     }
+    if (u) {
+      void refreshServerSettings();
+      if (returnToSettingsRef.current) {
+        returnToSettingsRef.current = false;
+        if (typeof window !== 'undefined') {
+          setTimeout(() => window.dispatchEvent(new Event('lb-open-settings')), 0);
+        }
+      }
+    } else {
+      clearClientSecrets();
+    }
+  }, []);
+
+  const openAuth = useCallback((mode: AuthMode) => {
+    setAuthOpen(mode);
+  }, []);
+
+  const openAuthWithSettingsReturn = useCallback((mode: AuthMode = 'login') => {
+    returnToSettingsRef.current = true;
+    setAuthOpen(mode);
+  }, []);
+
+  const closeAuth = useCallback(() => {
+    returnToSettingsRef.current = false;
+    setAuthOpen(null);
   }, []);
 
   // Check if URL has ?auth=login or ?auth=signup from middleware redirect
@@ -116,6 +152,7 @@ export function AuthProvider({
    * 4. Redirect to home
    */
   const signOut = useCallback(async () => {
+    returnToSettingsRef.current = false;
     try {
       const r = await fetch('/api/auth/logout', {
         method: 'POST',
@@ -175,8 +212,9 @@ export function AuthProvider({
         sessionError,
         codegenRequiresSignIn,
         authOpen,
-        openAuth: setAuthOpen,
-        closeAuth: () => setAuthOpen(null),
+        openAuth,
+        openAuthWithSettingsReturn,
+        closeAuth,
         setUser,
         signOut,
         logout: signOut,

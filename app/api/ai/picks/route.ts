@@ -1,32 +1,19 @@
-
 import { loadAiSnapshot } from '@/lib/run-ai.ts';
 import type { PickMarketKey } from '@/lib/criteria.ts';
 import { filterPicks, parseLeagues } from '@/lib/pick-filter.ts';
-import { currentUser, jsonError } from '@/lib/session.ts';
-import { hasClientByokHeaders } from '@/lib/llm/request-env.ts';
+import { requireAiAccess } from '@/lib/ai-auth.ts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /**
  * GET /api/ai/picks?market=home_win&bookmaker=sportybet&leagues=A,B&limit=50
- * Returns ranked AI picks, optionally filtered by market / bookmaker.
+ * Returns ranked AI picks, optionally filtered by market / bookmaker / leagues / timeframe.
+ * Requires signed-in session (401) and user-stored API key (400 keys_required).
  */
 export async function GET(req: Request) {
-  const user = await currentUser(req);
-  if (!user) {
-    return jsonError('Sign in required to use AI Picks.', 401);
-  }
-  if (!hasClientByokHeaders(req.headers)) {
-    return Response.json(
-      {
-        ok: false,
-        code: 'byok_required',
-        error: 'Please submit your own API key (BYOK) in Settings (Menu ▾ → Settings) before using AI Picks.',
-      },
-      { status: 400 },
-    );
-  }
+  const access = await requireAiAccess(req, { requireAiKey: true });
+  if (!access.ok) return access.response;
 
   const url = new URL(req.url);
   const market = url.searchParams.get('market') as PickMarketKey | null;
@@ -44,7 +31,6 @@ export async function GET(req: Request) {
   );
 
   const r = await loadAiSnapshot();
-
   if (!r.ok) {
     return Response.json(r, { status: 400 });
   }

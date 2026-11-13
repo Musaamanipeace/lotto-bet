@@ -24,9 +24,16 @@ import { useStoredSlip } from './use-slips';
 import { HealthBanner } from './health-banner';
 import { MarketFilters } from './market-filters';
 import { ZeroDataBanner } from './zero-data-banner';
-import { onTemplateApplied, onTemplatesChanged, getLocalTemplates, type FilterTemplate } from '@/lib/template-store.ts';
+import { onTemplateApplied, onTemplatesChanged, getLocalTemplates, DEFAULT_TEMPLATES, type FilterTemplate } from '@/lib/template-store.ts';
 import { buildTemplateAiAcca } from '@/lib/template-ai.ts';
-import { getClientSettings, getClientAiHeaders, hasSubmittedByok, onSettingsChanged } from '@/lib/client-settings.ts';
+import {
+  getClientPreferenceHeaders,
+  getClientSettings,
+  hasConfiguredAiKeys,
+  onSettingsChanged,
+  refreshServerSettings,
+} from '@/lib/client-settings.ts';
+import { useFilters } from './filter-context';
 import type { LeagueItem } from './league-checklist';
 
 type GamesOk = {
@@ -47,18 +54,27 @@ type GamesState =
 
 export function Builder({ heading }: { heading?: string }) {
   const { user } = useAuth();
-  const [bookmaker, setBookmaker] = useState<Bookmaker>('sportybet');
-  const [leagues, setLeagues] = useState<string[]>([]);
-  const [leagueList, setLeagueList] = useState<LeagueItem[] | null>(null);
+  const {
+    filterState,
+    setBookmaker,
+    setWithinHours,
+    setLeagues,
+    setCards,
+    setAvailableLeagues,
+    leagueList,
+    setLeagueList,
+    setGoalLines,
+    setQualifyingCount,
+  } = useFilters();
+  const { bookmaker, leagues, withinHours, cards } = filterState;
+
   const [bypass, setBypass] = useState(false);
-  const [withinHours, setWithinHours] = useState<number | null>(null);
-  const [cards, setCards] = useState(defaultCards);
   const [options, setOptions] = useState<GamesOk['options'] | null>(null);
   const [games, setGames] = useState<GamesState>({ status: 'loading' });
   const [slip, setSlip, slipReady] = useStoredSlip();
   const [toast, setToast] = useState<{ tone: 'info' | 'warn'; text: string } | null>(null);
 
-  // Task 8: Games Carousel state (collapsible, expanded by default, preserves index)
+  // Task 8: Games Carousel state (collapsible, expanded by default, 1 card at a time, preserves index)
   const [gamesExpanded, setGamesExpanded] = useState(true);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -76,7 +92,7 @@ export function Builder({ heading }: { heading?: string }) {
   const [targetTier, setTargetTier] = useState<TargetTier>('average');
   const [isAddingAi, setIsAddingAi] = useState<boolean>(false);
   const [byokReady, setByokReady] = useState<boolean>(false);
-  const [templates, setTemplates] = useState<FilterTemplate[]>([]);
+  const [templates, setTemplates] = useState<FilterTemplate[]>(DEFAULT_TEMPLATES);
   const reqId = useRef(0);
 
   useEffect(() => {
@@ -84,8 +100,11 @@ export function Builder({ heading }: { heading?: string }) {
       setByokReady(false);
       return;
     }
-    setByokReady(hasSubmittedByok());
-    return onSettingsChanged((s) => setByokReady(hasSubmittedByok(s)));
+    setByokReady(hasConfiguredAiKeys());
+    void refreshServerSettings().then((snap) => {
+      if (snap) setByokReady(snap.aiKeysConfigured);
+    });
+    return onSettingsChanged(() => setByokReady(hasConfiguredAiKeys()));
   }, [user]);
 
   const showToast = useCallback((tone: 'info' | 'warn', text: string) => {
@@ -99,14 +118,26 @@ export function Builder({ heading }: { heading?: string }) {
   }, [toast]);
 
   useEffect(() => {
+    if (!user) {
+      setTemplates(DEFAULT_TEMPLATES);
+      return;
+    }
     setTemplates(getLocalTemplates());
+    fetch('/api/templates', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j?.ok && Array.isArray(j.templates)) {
+          setTemplates(j.templates);
+        }
+      })
+      .catch(() => {});
     return onTemplatesChanged((next) => setTemplates(next));
   }, [user]);
 
   useEffect(() => {
     const fromUrl = parseLeagues(new URLSearchParams(window.location.search).get('leagues'));
     if (fromUrl.length) setLeagues(fromUrl);
-  }, []);
+  }, [setLeagues]);
 
   useEffect(() => {
     return onTemplateApplied((tpl) => {
@@ -115,7 +146,7 @@ export function Builder({ heading }: { heading?: string }) {
       setLeagues(Array.isArray(tpl.leagues) ? [...tpl.leagues] : []);
       if (tpl.cards) setCards(tpl.cards);
     });
-  }, []);
+  }, [setBookmaker, setWithinHours, setLeagues, setCards]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -128,7 +159,7 @@ export function Builder({ heading }: { heading?: string }) {
         if (!ctrl.signal.aborted) setLeagueList(null);
       });
     return () => ctrl.abort();
-  }, [bookmaker]);
+  }, [bookmaker, setLeagueList]);
 
   const syncedBookmaker = useRef(false);
   useEffect(() => {
@@ -136,7 +167,7 @@ export function Builder({ heading }: { heading?: string }) {
     syncedBookmaker.current = true;
     const b = slipBookmaker(slip);
     if (b) setBookmaker(b);
-  }, [slipReady, slip]);
+  }, [slipReady, slip, setBookmaker]);
 
   const rulesKey = useMemo(() => JSON.stringify(cardsToRules(cards)), [cards]);
 
@@ -264,6 +295,19 @@ export function Builder({ heading }: { heading?: string }) {
     () => (games.status === 'ok' ? new Set(games.data.rows.map((r) => r.gameId)).size : 0),
     [games],
   );
+
+  // Sync live options/counts into FilterProvider so Menu -> Filters modal matches Builder
+  useEffect(() => {
+    setAvailableLeagues(options?.leagues ?? null);
+  }, [options, setAvailableLeagues]);
+
+  useEffect(() => {
+    setGoalLines(goalLines);
+  }, [goalLines, setGoalLines]);
+
+  useEffect(() => {
+    setQualifyingCount(games.status === 'ok' ? byGame.length : null);
+  }, [games.status, byGame.length, setQualifyingCount]);
 
   function chooseBookmaker(b: Bookmaker) {
     if (b === bookmaker) return;
@@ -462,9 +506,19 @@ export function Builder({ heading }: { heading?: string }) {
   }
 
   async function addWithAi() {
+    if (!user) {
+      showToast('warn', 'Sign in and save an API key in Settings before using AI picks.');
+      return;
+    }
     const clientSettings = getClientSettings();
-    if (!hasSubmittedByok(clientSettings)) {
-      showToast('warn', 'Please submit your own API key (BYOK) in Menu ▾ → Settings before using AI picks.');
+    let configured = hasConfiguredAiKeys();
+    if (!configured) {
+      const snap = await refreshServerSettings();
+      configured = Boolean(snap?.aiKeysConfigured);
+      setByokReady(configured);
+    }
+    if (!configured) {
+      showToast('warn', 'Please add an API key in Menu ▾ → Settings before using AI picks.');
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('lb-open-settings'));
       }
@@ -480,7 +534,7 @@ export function Builder({ heading }: { heading?: string }) {
     try {
       const q = new URLSearchParams({ limit: '100' });
       const r = await fetch(`/api/ai/picks?${q}`, {
-        headers: getClientAiHeaders(clientSettings),
+        headers: getClientPreferenceHeaders(clientSettings),
         signal: ctrl.signal,
       });
       clearTimeout(timer);
@@ -649,7 +703,7 @@ export function Builder({ heading }: { heading?: string }) {
         </div>
       )}
 
-      {/* Available Games: Expanded = down-scrollable list of all games; Collapsed = 1 card at a time with Prev/Next */}
+      {/* Available Games (Task 8): Collapsible, expanded by default, showing 1 card at a time in a swipeable/keyboard carousel */}
       <div id="available-games" className="glass mt-4 p-4 scroll-mt-20">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
@@ -659,9 +713,7 @@ export function Builder({ heading }: { heading?: string }) {
                 className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 font-mono text-xs font-semibold text-emerald-300"
                 aria-live="polite"
               >
-                {gamesExpanded
-                  ? `${byGame.length} game${byGame.length === 1 ? '' : 's'}`
-                  : `${carouselIndex + 1} / ${byGame.length}`}
+                {carouselIndex + 1} / {byGame.length}
               </span>
             )}
             {games.status === 'ok' && byGame.length === 0 && (
@@ -670,7 +722,7 @@ export function Builder({ heading }: { heading?: string }) {
           </div>
 
           <div className="flex items-center gap-2">
-            {games.status === 'ok' && byGame.length > 0 && !gamesExpanded && (
+            {games.status === 'ok' && byGame.length > 0 && gamesExpanded && (
               <div className="flex items-center gap-1">
                 <button
                   type="button"
@@ -710,87 +762,76 @@ export function Builder({ heading }: { heading?: string }) {
           </p>
         )}
 
-        <div className="mt-3">
-          {games.status === 'ok' && bypass && (
-            <div
-              className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100"
-              role="status"
-            >
-              <span>
-                Filters bypassed: showing all {shownGames} upcoming game{shownGames === 1 ? '' : 's'} with their full market list.
-              </span>
-              <button
-                type="button"
-                className="btn-ghost ml-auto h-7 px-2.5 py-0 text-xs"
-                onClick={() => setBypass(false)}
-              >
-                Back to my filters
-              </button>
-            </div>
-          )}
-
-          {games.status === 'loading' && (
-            <p className="py-8 text-center text-sm text-slate-400">Loading games…</p>
-          )}
-
-          {games.status === 'error' && (
-            <div
-              className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200"
-              role="alert"
-            >
-              <p className="font-semibold">{games.error}</p>
-              {games.httpStatus > 0 && (
-                <p className="mt-1 text-xs text-red-300">
-                  HTTP {games.httpStatus}
-                  {games.details.upstream ? ` · ${games.details.upstream}` : ''}
-                </p>
-              )}
-              {games.details.bodySnippet && (
-                <p className="mt-1 break-all font-mono text-[11px] text-red-300/80">
-                  {games.details.bodySnippet}
-                </p>
-              )}
-            </div>
-          )}
-
-          {games.status === 'ok' && pool.length === 0 && (
-            games.data.count === 0 ? (
-              <ZeroDataBanner
-                bookmaker={bookmaker}
-                leaguesCount={leagues.length}
-                withinHours={withinHours}
-                activeCardsCount={Object.values(cards).filter((c) => c.on).length}
-                onResetFilters={() => {
-                  setWithinHours(null);
-                  setLeagues([]);
-                  setCards(defaultCards);
-                }}
-                onSwitchBookmaker={(b) => chooseBookmaker(b)}
-                onRefreshCompleted={() => {
-                  setBookmaker((b) => b);
-                }}
-              />
-            ) : (
-              <p className="py-6 text-center text-sm text-slate-400">
-                Every matching game is already in your slip.
-              </p>
-            )
-          )}
-
-          {games.status === 'ok' && byGame.length > 0 && (
-            gamesExpanded ? (
-              /* Expanded view: down-scrollable card list to the last game */
+        {gamesExpanded && (
+          <div className="mt-3">
+            {games.status === 'ok' && bypass && (
               <div
-                aria-label="Available games list"
-                className="max-h-[42rem] space-y-3 overflow-y-auto pr-1"
+                className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100"
+                role="status"
               >
-                {byGame.map((rows) => {
-                  const g = rows[0];
-                  return <GameCard key={g.gameId} rows={rows} onAdd={handleRequestAdd} />;
-                })}
+                <span>
+                  Filters bypassed: showing all {shownGames} upcoming game{shownGames === 1 ? '' : 's'} with their full market list.
+                </span>
+                <button
+                  type="button"
+                  className="btn-ghost ml-auto h-7 px-2.5 py-0 text-xs"
+                  onClick={() => setBypass(false)}
+                >
+                  Back to my filters
+                </button>
               </div>
-            ) : (
-              /* Collapsed view: reduced to 1 card at a time with Prev/Next scroll feature */
+            )}
+
+            {games.status === 'loading' && (
+              <p className="py-8 text-center text-sm text-slate-400">Loading games…</p>
+            )}
+
+            {games.status === 'error' && (
+              <div
+                className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200"
+                role="alert"
+              >
+                <p className="font-semibold">{games.error}</p>
+                {games.httpStatus > 0 && (
+                  <p className="mt-1 text-xs text-red-300">
+                    HTTP {games.httpStatus}
+                    {games.details.upstream ? ` · ${games.details.upstream}` : ''}
+                  </p>
+                )}
+                {games.details.bodySnippet && (
+                  <p className="mt-1 break-all font-mono text-[11px] text-red-300/80">
+                    {games.details.bodySnippet}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {games.status === 'ok' && pool.length === 0 && (
+              games.data.count === 0 ? (
+                <ZeroDataBanner
+                  bookmaker={bookmaker}
+                  leaguesCount={leagues.length}
+                  withinHours={withinHours}
+                  activeCardsCount={Object.values(cards).filter((c) => c.on).length}
+                  onResetFilters={() => {
+                    setWithinHours(null);
+                    setLeagues([]);
+                    setCards(defaultCards());
+                  }}
+                  onSwitchBookmaker={(b) => chooseBookmaker(b)}
+                  onRefreshCompleted={() => {
+                    setBookmaker(bookmaker);
+                  }}
+                />
+              ) : (
+                <p className="py-6 text-center text-sm text-slate-400">
+                  Every matching game is already in your slip.
+                </p>
+              )
+            )}
+
+            {games.status === 'ok' && byGame.length > 0 && (
+              /* Expanded view (Task 8): 1 game card at a time in a horizontal scroll-snap carousel */
               <div
                 tabIndex={0}
                 onKeyDown={handleCarouselKeyDown}
@@ -819,9 +860,9 @@ export function Builder({ heading }: { heading?: string }) {
                   })}
                 </div>
               </div>
-            )
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Unsigned-in users ONLY get Random Picks; Signed-in users get AI & Batch Slip Generator + Random Picks */}

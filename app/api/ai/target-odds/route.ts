@@ -1,7 +1,7 @@
 import { loadAiSnapshot } from '@/lib/run-ai.ts';
 import { pickTargetOddsTiers, type AccumulatorSlip, type TargetResult } from '@/lib/ai-picks.ts';
-import { getStore } from '@/lib/server.ts';
 import { filterPicks, parseLeagues } from '@/lib/pick-filter.ts';
+import { requireAiAccess } from '@/lib/ai-auth.ts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -29,10 +29,12 @@ const serialize = (r: TargetResult) => ({
 
 /**
  * GET /api/ai/target-odds?target=20&bookmaker=sportybet
- * Closest slip to the requested total odds, for each risk tier:
- * lower (Safe only), average (Safe + Balanced), higher (all tiers).
+ * Requires signed-in session (401) and user-stored API key (400 keys_required).
  */
 export async function GET(req: Request) {
+  const access = await requireAiAccess(req, { requireAiKey: true });
+  if (!access.ok) return access.response;
+
   const url = new URL(req.url);
   const target = Number(url.searchParams.get('target') || 20);
   const bookmaker = url.searchParams.get('bookmaker');

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import {
   MAX_LEGS,
+  addLeg,
   defaultSlipName,
   emptySlip,
   greyMarket,
@@ -20,7 +21,15 @@ import type { SportyCodeResult } from '@/lib/codegen/sportybet.ts';
 import { BETPAWA_STEPS, BETPAWA_WARNING, type BetPawaScriptResult } from '@/lib/codegen/betpawa.ts';
 import type { Failure } from '@/lib/result.ts';
 import { upsertLocalSavedSlip } from '@/lib/saved-slips.ts';
+import { aiPickToRow } from '@/lib/ai-rows.ts';
+import type { AgentResponse, LegFlag, SwapProposal } from '@/lib/ai-agent.ts';
+import {
+  getClientPreferenceHeaders,
+  hasConfiguredAiKeys,
+  refreshServerSettings,
+} from '@/lib/client-settings.ts';
 import { useAuth } from './auth-context';
+import { useFilters } from './filter-context';
 import { useStoredSlip } from './use-slips';
 
 type CodegenOutcome =
@@ -32,6 +41,13 @@ const KIND_LABEL: Record<MarketKind, string> = {
   double_chance: 'Double chance',
   over_under: 'Over/Under',
   btts: 'Both teams to score',
+};
+
+const SEVERITY_STYLE: Record<LegFlag['severities'][number], string> = {
+  stale: 'border-rose-500/40 bg-rose-500/15 text-rose-200',
+  correlated: 'border-amber-500/40 bg-amber-500/15 text-amber-200',
+  weak: 'border-orange-500/40 bg-orange-500/15 text-orange-200',
+  unverified: 'border-slate-500/40 bg-slate-500/15 text-slate-300',
 };
 
 const fmtKickoff = (ms: number) =>
@@ -55,6 +71,7 @@ export function BetslipModal({
   triggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const { user, openAuth, codegenRequiresSignIn } = useAuth();
+  const { filterState } = useFilters();
   const [slip, setSlip] = useStoredSlip();
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -67,11 +84,28 @@ export function BetslipModal({
   const [removeCount, setRemoveCount] = useState('1');
   const [toolMarket, setToolMarket] = useState('');
 
+  // Task 13: AI Review & Swaps state
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiReview, setAiReview] = useState<AgentResponse | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [lockedGames, setLockedGames] = useState<Record<string, boolean>>({});
+  const [excludePickIds, setExcludePickIds] = useState<string[]>([]);
+
   // Reset transient codegen state when legs change
   useEffect(() => {
     setOutcome(null);
     setCopied(null);
   }, [slip.legs.length]);
+
+  // Clear AI review on sign-out
+  useEffect(() => {
+    if (!user) {
+      setAiReview(null);
+      setAiError(null);
+      setExcludePickIds([]);
+      setLockedGames({});
+    }
+  }, [user]);
 
   // Scroll lock preserving exact scrollY + focus trap + Escape + mobile back button
   useEffect(() => {
@@ -183,6 +217,152 @@ export function BetslipModal({
         .filter((l) => `${l.marketKind}:${l.line ?? ''}` === toolSel.key)
         .every((l) => slip.greyed.includes(l.gameId))
     : false;
+
+  const flagByGame = new Map<string, LegFlag>();
+  for (const f of aiReview?.flags ?? []) {
+    flagByGame.set(f.gameId, f);
+  }
+
+  async function persistSlipOnServer(nextSlip: typeof slip) {
+    if (!user || nextSlip.legs.length === 0) return;
+    const b = slipBookmaker(nextSlip);
+    if (!b) return;
+    const t = slipTotals(nextSlip);
+    const totalOdds = t.totalOdds.ok ? t.totalOdds.total : nextSlip.legs.reduce((a, l) => a * l.odds, 1);
+    const combinedImplied = t.combined.ok ? t.combined.probability : null;
+    const name = nextSlip.name || defaultSlipName();
+    try {
+      const r = await fetch('/api/slips/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: nextSlip.id,
+          name,
+          bookmaker: b,
+          legs: nextSlip.legs,
+          totalOdds,
+          combinedImplied,
+        }),
+      });
+      const j = await r.json().catch(() => null);
+      if (j?.ok && j.slip) upsertLocalSavedSlip(j.slip);
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  async function handleRunAiReview(extraExcluded: string[] = []) {
+    setAiError(null);
+    if (!user) {
+      onClose();
+      openAuth('login');
+      return;
+    }
+    let ready = hasConfiguredAiKeys();
+    if (!ready) {
+      const snap = await refreshServerSettings();
+      ready = Boolean(snap?.aiKeysConfigured);
+    }
+    if (!ready) {
+      setAiError('Save an API key in Menu ▾ → Settings to run AI review.');
+      return;
+    }
+    if (slip.legs.length === 0) return;
+
+    setAiBusy(true);
+    try {
+      const mergedExclude = [...new Set([...excludePickIds, ...extraExcluded])];
+      const lockedGameIds = Object.entries(lockedGames)
+        .filter(([, isLocked]) => isLocked)
+        .map(([gid]) => gid);
+
+      const res = await fetch('/api/ai/agent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getClientPreferenceHeaders(),
+        },
+        body: JSON.stringify({
+          mode: 'inspect_slip',
+          filterState,
+          lockedGameIds,
+          excludeIds: mergedExclude,
+          slipLegs: slip.legs.map((l) => ({
+            gameId: l.gameId,
+            home: l.home,
+            away: l.away,
+            pick: l.pick,
+            odds: l.odds,
+            marketKind: l.marketKind,
+            marketNativeId: l.marketNativeId,
+            outcomeNativeId: l.outcomeNativeId,
+            specifier: l.specifier,
+          })),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setAiError(data?.error ?? `AI review failed (HTTP ${res.status})`);
+        return;
+      }
+      const agentRes = data as AgentResponse;
+      setAiReview(agentRes);
+      if (Array.isArray(agentRes.seenPickIds) && agentRes.seenPickIds.length > 0) {
+        setExcludePickIds((prev) => [...new Set([...prev, ...agentRes.seenPickIds])]);
+      }
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function handleAcceptSwap(swap: SwapProposal) {
+    const newRow = aiPickToRow(swap.inPick);
+    if (!newRow) {
+      setNotice({ tone: 'warn', text: 'Could not convert replacement pick into slip leg.' });
+      return;
+    }
+    const afterRemove = removeLeg(slip, swap.outGameId);
+    const added = addLeg(afterRemove, newRow);
+    if (!added.ok) {
+      setNotice({ tone: 'warn', text: added.error });
+      return;
+    }
+    const nextSlip = {
+      ...added.slip,
+      id: slip.id || `saved-${Date.now()}`,
+      name: slip.name || defaultSlipName(),
+    };
+    setSlip(nextSlip);
+    void persistSlipOnServer(nextSlip);
+
+    setExcludePickIds((prev) => [...new Set([...prev, swap.inPickId, swap.outPickId])]);
+    setAiReview((prev) =>
+      prev
+        ? {
+            ...prev,
+            swaps: prev.swaps.filter((s) => s.inPickId !== swap.inPickId),
+          }
+        : prev,
+    );
+    setNotice({
+      tone: 'info',
+      text: `Swapped out ${swap.outLeg.home} v ${swap.outLeg.away} for ${swap.inPick.home} v ${swap.inPick.away} (@${swap.oddsAfter.toFixed(2)}).`,
+    });
+  }
+
+  function handleRejectSwap(swap: SwapProposal) {
+    setExcludePickIds((prev) => [...new Set([...prev, swap.inPickId])]);
+    setAiReview((prev) =>
+      prev
+        ? {
+            ...prev,
+            swaps: prev.swaps.filter((s) => s.inPickId !== swap.inPickId),
+          }
+        : prev,
+    );
+  }
 
   async function handleGenerateBookCode() {
     if (!user && codegenRequiresSignIn) {
@@ -355,37 +535,69 @@ export function BetslipModal({
               <ul className="divide-y divide-white/5">
                 {slip.legs.map((l) => {
                   const grey = slip.greyed.includes(l.gameId);
+                  const isLocked = Boolean(lockedGames[l.gameId]);
+                  const flag = flagByGame.get(l.gameId);
                   return (
                     <li
                       key={l.gameId}
-                      className={`flex items-center gap-2 py-2.5 ${grey ? 'opacity-40' : ''}`}
+                      className={`py-2.5 space-y-1.5 ${grey ? 'opacity-40' : ''}`}
                     >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-white">
-                          {l.home} v {l.away}
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-white">
+                            {l.home} v {l.away}
+                          </span>
+                          <span className="block text-xs text-slate-400">
+                            {l.pick} · {fmtKickoff(l.kickoff)}
+                            {l.implied !== null ? ` · implied ${(l.implied * 100).toFixed(1)}%` : ''}
+                          </span>
                         </span>
-                        <span className="block text-xs text-slate-400">
-                          {l.pick} · {fmtKickoff(l.kickoff)}
-                          {l.implied !== null ? ` · implied ${(l.implied * 100).toFixed(1)}%` : ''}
-                        </span>
-                      </span>
-                      <span className="odds text-sm">{l.odds.toFixed(2)}</span>
-                      <button
-                        type="button"
-                        className="btn-ghost px-2 py-1 text-xs"
-                        aria-pressed={grey}
-                        onClick={() => setSlip(toggleGrey(slip, l.gameId))}
-                      >
-                        {grey ? 'Restore' : 'Grey'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-ghost px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/10"
-                        aria-label={`Remove ${l.home} v ${l.away}`}
-                        onClick={() => setSlip(removeLeg(slip, l.gameId))}
-                      >
-                        ✕
-                      </button>
+                        <span className="odds text-sm">{l.odds.toFixed(2)}</span>
+                        {user && (
+                          <button
+                            type="button"
+                            className={`btn-ghost px-2 py-1 text-xs ${isLocked ? 'border-amber-500/40 bg-amber-500/15 text-amber-300' : ''}`}
+                            aria-pressed={isLocked}
+                            title={isLocked ? 'Locked from AI swaps' : 'Lock game against AI swaps'}
+                            onClick={() =>
+                              setLockedGames((prev) => ({ ...prev, [l.gameId]: !prev[l.gameId] }))
+                            }
+                          >
+                            {isLocked ? '🔒' : '🔓'}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn-ghost px-2 py-1 text-xs"
+                          aria-pressed={grey}
+                          onClick={() => setSlip(toggleGrey(slip, l.gameId))}
+                        >
+                          {grey ? 'Restore' : 'Grey'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/10"
+                          aria-label={`Remove ${l.home} v ${l.away}`}
+                          onClick={() => setSlip(removeLeg(slip, l.gameId))}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      {flag && flag.severities.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 pl-0.5 text-[10px]">
+                          {flag.severities.map((sev) => (
+                            <span
+                              key={sev}
+                              className={`rounded border px-1.5 py-0.5 font-semibold uppercase ${SEVERITY_STYLE[sev]}`}
+                            >
+                              {sev}
+                            </span>
+                          ))}
+                          {flag.reasons[0] && (
+                            <span className="text-slate-400">{flag.reasons[0]}</span>
+                          )}
+                        </div>
+                      )}
                     </li>
                   );
                 })}
@@ -449,7 +661,7 @@ export function BetslipModal({
                 </div>
               )}
 
-              {/* Task 6: Merged Book Code Generator inside Betslip */}
+              {/* Task 6 & Task 13: Book Code Generator + AI Review */}
               <div className="space-y-3 border-t border-white/10 pt-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -459,6 +671,14 @@ export function BetslipModal({
                     onClick={() => void handleGenerateBookCode()}
                   >
                     {busyCodegen ? 'Generating book code…' : 'Generate book code'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost text-xs border-cyan-500/40 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"
+                    disabled={aiBusy || slip.legs.length === 0}
+                    onClick={() => void handleRunAiReview()}
+                  >
+                    {aiBusy ? 'Reviewing…' : '🤖 AI review'}
                   </button>
                   {user && (
                     <button
@@ -476,11 +696,115 @@ export function BetslipModal({
                       setSlip(emptySlip());
                       setOutcome(null);
                       setNotice(null);
+                      setAiReview(null);
+                      setAiError(null);
                     }}
                   >
                     Clear slip
                   </button>
                 </div>
+
+                {/* Task 13: AI Review Error / Key CTA */}
+                {aiError && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+                    <span>{aiError}</span>
+                    {user && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          window.dispatchEvent(new Event('lb-open-settings'));
+                        }}
+                        className="btn-gold px-2.5 py-1 text-[11px] font-bold"
+                      >
+                        Open Settings
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Task 13: AI Review Results + Swap Cards */}
+                {aiReview && (
+                  <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/[0.06] p-3.5 space-y-3 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold text-cyan-200">🤖 AI Slip Review</span>
+                      <div className="flex items-center gap-2">
+                        {aiReview.llmUsed && aiReview.model && (
+                          <span className="text-[10px] text-slate-400">{aiReview.model}</span>
+                        )}
+                        <button
+                          type="button"
+                          disabled={aiBusy}
+                          onClick={() => void handleRunAiReview()}
+                          className="text-[11px] text-cyan-300 hover:underline"
+                        >
+                          Refresh swaps
+                        </button>
+                      </div>
+                    </div>
+
+                    <p className="text-slate-200 leading-relaxed">{aiReview.summary}</p>
+                    {aiReview.llmWarning && (
+                      <p className="text-[11px] text-amber-300">
+                        Note: {aiReview.llmWarning} (showing deterministic check).
+                      </p>
+                    )}
+
+                    {aiReview.swaps.length > 0 ? (
+                      <div className="space-y-2 pt-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                          Suggested Swaps
+                        </p>
+                        {aiReview.swaps.map((swap) => (
+                          <div
+                            key={`${swap.outGameId}-${swap.inPickId}`}
+                            className="rounded-lg border border-white/10 bg-navy-950/70 p-2.5 space-y-2"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <p className="text-rose-300 line-through">
+                                  Out: {swap.outLeg.home} v {swap.outLeg.away} ({swap.outLeg.pick} @{swap.oddsBefore.toFixed(2)})
+                                </p>
+                                <p className="text-emerald-300 font-semibold">
+                                  In: {swap.inPick.home} v {swap.inPick.away} ({swap.inPick.marketKey.replace(/_/g, ' ')} @{swap.oddsAfter.toFixed(2)})
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <span className="block font-mono font-bold text-gold-400">
+                                  New total: {swap.newTotalOdds.toFixed(2)}x
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  {swap.inPick.evaluation.label} · fit {swap.inPick.fitScore.toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-[11px] text-slate-400">{swap.reason}</p>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleRejectSwap(swap)}
+                                className="btn-ghost px-2.5 py-1 text-[11px]"
+                              >
+                                Reject
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleAcceptSwap(swap)}
+                                className="btn-emerald px-2.5 py-1 text-[11px] font-semibold"
+                              >
+                                Accept Swap
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-400">
+                        No swaps suggested under current unlocked legs and active filters.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Book Code Generator Output */}
                 {outcome && 'transportError' in outcome && (

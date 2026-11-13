@@ -1,29 +1,23 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AiPick } from '@/lib/ai-picks.ts';
-import { removeLeg, type Slip as BuilderSlip } from '@/lib/slip.ts';
-import { useStoredSlip } from '../components/use-slips';
-import { useAuth } from '../components/auth-context';
-import { CoverageStrip, CriteriaList, PickDataLine, type CoverageData } from '../components/data-status';
-import type { LeagueItem } from '../components/league-checklist';
+import type { AiPick, TargetTier } from '@/lib/ai-picks.ts';
+import type { AgentResponse } from '@/lib/ai-agent.ts';
+import { applyFilterState } from '@/lib/filter-state.ts';
+import { addLeg, defaultSlipName, emptySlip, removeLeg, type Slip as BuilderSlip } from '@/lib/slip.ts';
+import { aiPickToRow } from '@/lib/ai-rows.ts';
+import { upsertLocalSavedSlip } from '@/lib/saved-slips.ts';
 import { planAdd } from '@/lib/add-picks.ts';
 import {
-  getClientAiHeaders,
-  getClientSettings,
-  hasSubmittedByok,
+  getClientPreferenceHeaders,
+  hasConfiguredAiKeys,
   onSettingsChanged,
+  refreshServerSettings,
 } from '@/lib/client-settings.ts';
-
-const MARKETS: { key: string; label: string }[] = [
-  { key: '', label: 'All markets' },
-  { key: 'home_win', label: 'Home Win' },
-  { key: 'away_win', label: 'Away Win' },
-  { key: 'over_0_5', label: 'Over 0.5' },
-  { key: 'over_1_5', label: 'Over 1.5' },
-  { key: 'under_3_5', label: 'Under 3.5' },
-  { key: 'under_4_5', label: 'Under 4.5' },
-];
+import { useAuth } from '../components/auth-context';
+import { CoverageStrip, CriteriaList, PickDataLine, type CoverageData } from '../components/data-status';
+import { FilterSummaryBadge, useFilters } from '../components/filter-context';
+import { useStoredSlip } from '../components/use-slips';
 
 const TIER_CHIP: Record<string, string> = {
   safe: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
@@ -163,16 +157,22 @@ function PickCard({ pick, slip, onAdd, onRemove }: {
 
 export default function AiPicksPage() {
   const { user, openAuth } = useAuth();
+  const { filterState, openFiltersSheet } = useFilters();
   const [picks, setPicks] = useState<AiPick[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedMarket, setSelectedMarket] = useState('');
-  const [selectedTier, setSelectedTier] = useState('');
-  const [minOdds, setMinOdds] = useState('');
-  const [maxOdds, setMaxOdds] = useState('');
+  const [selectedTier, setSelectedTier] = useState<'' | 'safe' | 'balanced' | 'value'>('');
   const [coverageData, setCoverageData] = useState<CoverageData | null>(null);
-  const [, setLeagues] = useState<LeagueItem[]>([]);
   const [byokReady, setByokReady] = useState<boolean>(false);
+
+  // Task 13: "Ask AI for N picks" bar
+  const [askCount, setAskCount] = useState('5');
+  const [askTier, setAskTier] = useState<TargetTier>('average');
+  const [askTargetOdds, setAskTargetOdds] = useState('');
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentResult, setAgentResult] = useState<AgentResponse | null>(null);
+  const [agentError, setAgentError] = useState<string | null>(null);
+  const [agentAppliedNotice, setAgentAppliedNotice] = useState<string | null>(null);
 
   const [slip, setSlip] = useStoredSlip();
 
@@ -189,8 +189,11 @@ export default function AiPicksPage() {
       setLoading(false);
       return;
     }
-    const s = getClientSettings();
-    const ready = hasSubmittedByok(s);
+    let ready = hasConfiguredAiKeys();
+    if (!ready) {
+      const snap = await refreshServerSettings();
+      ready = Boolean(snap?.aiKeysConfigured);
+    }
     setByokReady(ready);
     if (!ready) {
       setPicks([]);
@@ -202,15 +205,22 @@ export default function AiPicksPage() {
       setLoading(true);
       setError(null);
       const res = await fetch('/api/ai/picks', {
-        headers: getClientAiHeaders(s),
+        headers: getClientPreferenceHeaders(),
+        cache: 'no-store',
       });
-      if (!res.ok) throw new Error('Failed to fetch AI picks data');
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        if (res.status === 400 && data?.code === 'keys_required') {
+          setByokReady(false);
+          setPicks([]);
+          return;
+        }
+        throw new Error(data?.error ?? `Failed to fetch AI picks (HTTP ${res.status})`);
+      }
       setPicks(data.picks ?? []);
       setCoverageData(data.coverage ?? null);
-      setLeagues(data.leagues ?? []);
-    } catch (err: any) {
-      setError(err.message ?? 'An unknown error occurred');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setLoading(false);
     }
@@ -223,39 +233,147 @@ export default function AiPicksPage() {
     });
   }, [loadPicks]);
 
+  // Task 9: Route AI Picks filtering through canonical applyFilterState()
   const filteredPicks = useMemo(() => {
-    return picks.filter((p) => {
-      if (selectedMarket && p.marketKey !== selectedMarket) return false;
-      if (selectedTier && p.tier !== selectedTier) return false;
-      if (minOdds && p.odds < parseFloat(minOdds)) return false;
-      if (maxOdds && p.odds > parseFloat(maxOdds)) return false;
-      return true;
+    return applyFilterState(picks, filterState, {
+      tier: selectedTier || undefined,
+      pastGraceMs: 5 * 60_000,
     });
-  }, [picks, selectedMarket, selectedTier, minOdds, maxOdds]);
+  }, [picks, filterState, selectedTier]);
+
+  const persistSlip = useCallback(
+    async (nextSlip: BuilderSlip) => {
+      if (!user || nextSlip.legs.length === 0) return;
+      const b = nextSlip.legs[0]?.bookmaker ?? filterState.bookmaker;
+      const totalOdds = nextSlip.legs.reduce((a, l) => a * l.odds, 1);
+      const name = nextSlip.name || defaultSlipName();
+      try {
+        const r = await fetch('/api/slips/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: nextSlip.id,
+            name,
+            bookmaker: b,
+            legs: nextSlip.legs,
+            totalOdds,
+            combinedImplied: null,
+          }),
+        });
+        const j = await r.json().catch(() => null);
+        if (j?.ok && j.slip) upsertLocalSavedSlip(j.slip);
+      } catch {
+        /* ignore */
+      }
+    },
+    [user, filterState.bookmaker],
+  );
 
   const handleAddPick = useCallback(
     (pick: AiPick): string | null => {
-      if (!hasSubmittedByok()) {
+      if (!byokReady) {
         openSettings();
-        return 'Please submit your own API key (BYOK) in Settings first.';
+        return 'Please save your API key in Settings first.';
       }
-      const base = slip.legs.some((l) => l.gameId === pick.gameId) ? removeLeg(slip, pick.gameId) : slip;
+      const base = slip.legs.some((l) => l.gameId === pick.gameId)
+        ? removeLeg(slip, pick.gameId)
+        : slip.legs.length === 0
+          ? { id: `saved-${Date.now()}`, name: defaultSlipName(), legs: [], greyed: [] }
+          : slip;
       const { slip: nextSlip, report } = planAdd([pick], base, 1);
       if (report.added === 0) {
         return report.skipped[0]?.reason ?? "Couldn't add this pick to the slip";
       }
-      setSlip(nextSlip);
+      const finalSlip = {
+        ...nextSlip,
+        id: nextSlip.id || `saved-${Date.now()}`,
+        name: nextSlip.name || defaultSlipName(),
+      };
+      setSlip(finalSlip);
+      void persistSlip(finalSlip);
       return null;
     },
-    [slip, setSlip]
+    [slip, setSlip, byokReady, persistSlip],
   );
 
   const handleRemovePick = useCallback(
     (pick: AiPick) => {
       setSlip(removeLeg(slip, pick.gameId));
     },
-    [slip, setSlip]
+    [slip, setSlip],
   );
+
+  async function handleAskAiForNPicks() {
+    setAgentError(null);
+    setAgentAppliedNotice(null);
+    const n = Math.max(1, Math.min(25, Number.parseInt(askCount, 10) || 5));
+    const parsedTarget = askTargetOdds.trim() ? Number.parseFloat(askTargetOdds) : undefined;
+    if (parsedTarget !== undefined && (!Number.isFinite(parsedTarget) || parsedTarget <= 1)) {
+      setAgentError('Target odds must be greater than 1.');
+      return;
+    }
+
+    setAgentBusy(true);
+    try {
+      const res = await fetch('/api/ai/agent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getClientPreferenceHeaders(),
+        },
+        body: JSON.stringify({
+          mode: 'pick_n',
+          n,
+          tier: askTier,
+          targetOdds: parsedTarget,
+          filterState,
+          slipLegs: slip.legs.map((l) => ({
+            gameId: l.gameId,
+            home: l.home,
+            away: l.away,
+            pick: l.pick,
+            odds: l.odds,
+            marketKind: l.marketKind,
+          })),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setAgentError(data?.error ?? `Request failed (HTTP ${res.status})`);
+        return;
+      }
+      setAgentResult(data as AgentResponse);
+    } catch (e) {
+      setAgentError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
+  function applyAgentPicks(replaceExisting: boolean) {
+    if (!agentResult || agentResult.picks.length === 0) return;
+    let working: BuilderSlip = replaceExisting
+      ? { id: `saved-${Date.now()}`, name: defaultSlipName(), legs: [], greyed: [] }
+      : slip.legs.length === 0
+        ? { id: `saved-${Date.now()}`, name: defaultSlipName(), legs: [], greyed: [] }
+        : { ...slip, id: slip.id || `saved-${Date.now()}`, name: slip.name || defaultSlipName() };
+
+    let addedCount = 0;
+    for (const p of agentResult.picks) {
+      const row = aiPickToRow(p);
+      if (!row) continue;
+      const res = addLeg(working, row);
+      if (res.ok) {
+        working = res.slip;
+        addedCount += 1;
+      }
+    }
+    setSlip(working);
+    void persistSlip(working);
+    setAgentAppliedNotice(
+      `Added ${addedCount} AI pick${addedCount === 1 ? '' : 's'} to "${working.name}".`,
+    );
+  }
 
   if (!user) {
     return (
@@ -263,7 +381,7 @@ export default function AiPicksPage() {
         <div className="glass rounded-xl border border-white/10 p-6 text-center space-y-3">
           <h1 className="font-display text-2xl font-bold text-white">Sign in required</h1>
           <p className="text-sm text-slate-400">
-            Unsigned-in users can only use the Builder, Filters, and Random Picks. Sign in and submit your BYOK key to use AI Picks.
+            Unsigned-in users can use the Builder, Filters, and Random Picks. Sign in and save an API key in Settings to use AI Picks.
           </p>
           <button type="button" onClick={() => openAuth('login')} className="btn-emerald text-xs">
             Sign in
@@ -275,91 +393,183 @@ export default function AiPicksPage() {
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
-      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold text-white">AI Recommended Picks</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Algorithmic football market analysis verified against historical trend data
+            Filtered by your unified Builder criteria and verified against recent team metrics.
           </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterSummaryBadge />
+          <button
+            type="button"
+            onClick={openFiltersSheet}
+            className="btn-ghost px-3 py-1.5 text-xs border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+          >
+            🎚️ Edit Filters
+          </button>
         </div>
       </header>
 
       {!byokReady ? (
         <div className="glass rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 text-center space-y-3">
           <p className="text-sm font-medium text-amber-200">
-            🔑 Please submit your own API key (BYOK) in Menu ▾ → Settings before using AI Picks.
+            🔑 Save an AI API key in Menu ▾ → Settings to unlock AI Picks and the Pick-N Agent.
           </p>
           <button type="button" onClick={openSettings} className="btn-gold text-xs">
-            Submit BYOK in Settings
+            Open Settings
           </button>
         </div>
       ) : (
         <>
           {coverageData && <CoverageStrip coverage={coverageData} />}
 
-          <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Market Filter</label>
-              <select
-                value={selectedMarket}
-                onChange={(e) => setSelectedMarket(e.target.value)}
-                className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          {/* Task 13: Ask AI for N Picks Agent Bar */}
+          <section className="glass mb-6 rounded-xl border border-gold-500/30 bg-gradient-to-br from-gold-500/10 via-navy-900/70 to-navy-950 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="font-display text-base font-bold text-gold-300">
+                  🤖 Ask AI for N Picks
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Selects unique fixtures strictly matching your active Unified Filters.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-slate-300 flex items-center gap-1.5">
+                  Tier:
+                  <select
+                    value={selectedTier}
+                    onChange={(e) => setSelectedTier(e.target.value as '' | 'safe' | 'balanced' | 'value')}
+                    className="field h-8 py-0 text-xs"
+                    aria-label="Filter list by risk tier"
+                  >
+                    <option value="">All Tiers</option>
+                    <option value="safe">Safe</option>
+                    <option value="balanced">Balanced</option>
+                    <option value="value">Value</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-xs text-slate-300">
+                Picks (N)
+                <input
+                  type="number"
+                  min={1}
+                  max={25}
+                  value={askCount}
+                  onChange={(e) => setAskCount(e.target.value)}
+                  className="field mt-1 w-20 h-8 text-xs text-center font-mono"
+                />
+              </label>
+
+              <label className="text-xs text-slate-300">
+                Risk Profile
+                <select
+                  value={askTier}
+                  onChange={(e) => setAskTier(e.target.value as TargetTier)}
+                  className="field mt-1 h-8 py-0 text-xs"
+                >
+                  <option value="lower">Safe</option>
+                  <option value="average">Balanced</option>
+                  <option value="higher">Value</option>
+                </select>
+              </label>
+
+              <label className="text-xs text-slate-300">
+                Target Odds (optional)
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="e.g. 12.0"
+                  value={askTargetOdds}
+                  onChange={(e) => setAskTargetOdds(e.target.value.replace(/[^\d.]/g, ''))}
+                  className="field mt-1 w-28 h-8 text-xs font-mono"
+                />
+              </label>
+
+              <button
+                type="button"
+                disabled={agentBusy}
+                onClick={() => void handleAskAiForNPicks()}
+                className="btn-gold h-8 px-4 text-xs font-bold"
               >
-                {MARKETS.map((m) => (
-                  <option key={m.key} value={m.key}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
+                {agentBusy ? 'Selecting picks…' : 'Ask AI for N picks'}
+              </button>
             </div>
 
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Risk Tier</label>
-              <select
-                value={selectedTier}
-                onChange={(e) => setSelectedTier(e.target.value)}
-                className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              >
-                <option value="">All Tiers</option>
-                <option value="safe">Safe</option>
-                <option value="balanced">Balanced</option>
-                <option value="value">Value</option>
-              </select>
-            </div>
+            {agentError && (
+              <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                {agentError}
+              </p>
+            )}
 
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Min Odds</label>
-              <input
-                type="number"
-                step="0.05"
-                placeholder="e.g. 1.20"
-                value={minOdds}
-                onChange={(e) => setMinOdds(e.target.value)}
-                className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Max Odds</label>
-              <input
-                type="number"
-                step="0.05"
-                placeholder="e.g. 3.00"
-                value={maxOdds}
-                onChange={(e) => setMaxOdds(e.target.value)}
-                className="w-full rounded-lg bg-slate-900 border border-white/10 px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              />
-            </div>
+            {agentResult && (
+              <div className="rounded-xl border border-cyan-500/30 bg-navy-950/70 p-3.5 space-y-2.5 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-cyan-200">
+                    {agentResult.picks.length} pick{agentResult.picks.length === 1 ? '' : 's'} selected
+                    {agentResult.shortfall > 0 && ` (shortfall: ${agentResult.shortfall})`}
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {agentResult.picks.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => applyAgentPicks(false)}
+                          className="btn-emerald h-7 px-3 py-0 text-xs font-semibold"
+                        >
+                          Add to slip
+                        </button>
+                        {slip.legs.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => applyAgentPicks(true)}
+                            className="btn-ghost h-7 px-3 py-0 text-xs"
+                          >
+                            Replace active slip
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+                <p className="text-slate-200">{agentResult.summary}</p>
+                {agentAppliedNotice && (
+                  <p className="text-emerald-300 font-medium">{agentAppliedNotice}</p>
+                )}
+                {agentResult.picks.length > 0 && (
+                  <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3 pt-1">
+                    {agentResult.picks.map((p) => (
+                      <li key={p.id} className="rounded border border-white/10 bg-white/[0.03] px-2.5 py-1.5">
+                        <span className="font-medium text-white">{p.home} v {p.away}</span>{' '}
+                        <span className="text-slate-400">· {p.marketKey.replace(/_/g, ' ')}</span>{' '}
+                        <strong className="text-gold-400">@{p.odds.toFixed(2)}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </section>
 
           {loading ? (
-            <div className="py-12 text-center text-slate-400">Loading AI picks...</div>
+            <div className="py-12 text-center text-slate-400">Loading AI picks…</div>
           ) : error ? (
             <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 text-center text-rose-300">
               {error}
             </div>
           ) : filteredPicks.length === 0 ? (
-            <div className="py-12 text-center text-slate-400">No picks matched your active filters.</div>
+            <div className="glass rounded-xl border border-white/10 py-12 text-center space-y-3">
+              <p className="text-slate-300">No picks matched your current Unified Filters.</p>
+              <button type="button" onClick={openFiltersSheet} className="btn-emerald text-xs">
+                Adjust Unified Filters
+              </button>
+            </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {filteredPicks.map((pick) => (

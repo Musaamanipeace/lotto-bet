@@ -1,8 +1,9 @@
 import { loadAiSnapshot } from '@/lib/run-ai.ts';
-import { getStore } from '@/lib/server.ts';
 import { filterPicks } from '@/lib/pick-filter.ts';
 import { swapInSlip, type SwapScope } from '@/lib/alternatives.ts';
 import type { TargetTier } from '@/lib/ai-picks.ts';
+import { requireAiAccess } from '@/lib/ai-auth.ts';
+import { requireJson } from '@/lib/session.ts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -11,11 +12,15 @@ const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is st
 
 /**
  * POST /api/ai/swap
- * { pickIds, replaceIds?, weakest?, lockedGameIds?, excludeIds?, leagues?, scope?, strict?, tier?, band?, seed? }
- * Swaps some legs of one slip for equal-or-better picks (any market by default). Send every pick you were
- * already offered in `excludeIds` and repeated swaps never hand the same pick back.
+ * Requires signed-in session (401) and user-stored API key (400 keys_required).
  */
 export async function POST(req: Request) {
+  const bad = requireJson(req);
+  if (bad) return bad;
+
+  const access = await requireAiAccess(req, { requireAiKey: true });
+  if (!access.ok) return access.response;
+
   let b: Record<string, unknown>;
   try { b = (await req.json()) as Record<string, unknown>; } catch { return Response.json({ ok: false, error: 'Body must be JSON' }, { status: 400 }); }
 

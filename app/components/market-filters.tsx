@@ -28,6 +28,7 @@ import {
 } from '@/lib/template-store.ts';
 import { BOOKMAKER_LABEL, type Bookmaker } from '@/lib/types.ts';
 import { useAuth } from './auth-context';
+import { useFilters } from './filter-context';
 import { LeagueChecklist, type LeagueItem } from './league-checklist';
 
 /** Full class names on purpose: Tailwind only generates classes it can read literally in these files. */
@@ -178,20 +179,7 @@ function OddsRange({
 const chip = (on: boolean, accent: CardId) =>
   `rounded-lg border px-2 py-1 text-xs font-semibold transition ${on ? ACCENT[accent].chipOn : 'border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/10 hover:text-slate-100'}`;
 
-export function MarketFilters({
-  bookmaker = 'sportybet',
-  onBookmakerChange,
-  withinHours = null,
-  onWithinHoursChange,
-  leagues = [],
-  onLeaguesChange,
-  availableLeagues = null,
-  leagueList = null,
-  cards,
-  onChange,
-  goalLines,
-  qualifying,
-}: {
+export function MarketFilters(props: {
   bookmaker?: Bookmaker;
   onBookmakerChange?: (b: Bookmaker) => void;
   withinHours?: number | null;
@@ -200,12 +188,28 @@ export function MarketFilters({
   onLeaguesChange?: (l: string[]) => void;
   availableLeagues?: string[] | null;
   leagueList?: LeagueItem[] | null;
-  cards: CardsState;
-  onChange: (next: CardsState) => void;
-  goalLines: number[];
-  qualifying: number | null;
+  cards?: CardsState;
+  onChange?: (next: CardsState) => void;
+  goalLines?: number[];
+  qualifying?: number | null;
+  inModal?: boolean;
 }) {
   const { user } = useAuth();
+  const ctx = useFilters();
+
+  const bookmaker = props.bookmaker ?? ctx.filterState.bookmaker;
+  const onBookmakerChange = props.onBookmakerChange ?? ctx.setBookmaker;
+  const withinHours = props.withinHours !== undefined ? props.withinHours : ctx.filterState.withinHours;
+  const onWithinHoursChange = props.onWithinHoursChange ?? ctx.setWithinHours;
+  const leagues = props.leagues ?? ctx.filterState.leagues;
+  const onLeaguesChange = props.onLeaguesChange ?? ctx.setLeagues;
+  const availableLeagues = props.availableLeagues !== undefined ? props.availableLeagues : ctx.availableLeagues;
+  const leagueList = props.leagueList !== undefined ? props.leagueList : ctx.leagueList;
+  const cards = props.cards ?? ctx.filterState.cards;
+  const onChange = props.onChange ?? ctx.setCards;
+  const goalLines = props.goalLines ?? ctx.goalLines;
+  const qualifying = props.qualifying !== undefined ? props.qualifying : ctx.qualifyingCount;
+
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [collapsedCards, setCollapsedCards] = useState<Record<string, boolean>>({});
   const [templates, setTemplates] = useState<FilterTemplate[]>(DEFAULT_TEMPLATES);
@@ -217,7 +221,20 @@ export function MarketFilters({
   const leaguesRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
-    setTemplates(getLocalTemplates());
+    if (!user) {
+      setTemplates(DEFAULT_TEMPLATES);
+    } else {
+      setTemplates(getLocalTemplates());
+      fetch('/api/templates', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => {
+          if (j?.ok && Array.isArray(j.templates)) {
+            setTemplates(j.templates);
+          }
+        })
+        .catch(() => {});
+    }
+
     const offApplied = onTemplateApplied((tpl) => {
       setSelectedTemplateId(tpl.id);
       if (tpl.bookmaker) onBookmakerChange?.(tpl.bookmaker);
@@ -227,7 +244,7 @@ export function MarketFilters({
       setNotice(`Applied template: "${tpl.name}"`);
       setTimeout(() => setNotice(null), 3000);
     });
-    const offChanged = onTemplatesChanged((next) => setTemplates(next));
+    const offChanged = onTemplatesChanged((next) => setTemplates(user ? next : DEFAULT_TEMPLATES));
     return () => {
       offApplied();
       offChanged();
@@ -284,36 +301,55 @@ export function MarketFilters({
   }
 
   async function handleSaveNewTemplate() {
-    if (!newTemplateName.trim()) return;
-    const tpl = saveLocalTemplate({
+    if (!newTemplateName.trim() || !user) return;
+    const payload = {
       name: newTemplateName.trim(),
       description: newTemplateDesc.trim() || undefined,
       bookmaker,
       withinHours: withinHours ?? null,
       leagues: Array.isArray(leagues) ? [...leagues] : [],
       cards,
-    });
+    };
+    let saved: FilterTemplate = saveLocalTemplate(payload);
 
-    fetch('/api/templates', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(tpl),
-    }).catch(() => {});
+    try {
+      const r = await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json().catch(() => null);
+      if (r.ok && j?.ok && j.template) {
+        saved = j.template;
+      }
+    } catch {
+      /* fallback to local cache */
+    }
 
-    setTemplates(getLocalTemplates());
-    setSelectedTemplateId(tpl.id);
+    setTemplates((prev) => [
+      ...prev.filter((t) => t.isDefault),
+      saved,
+      ...prev.filter((t) => !t.isDefault && t.id !== saved.id),
+    ]);
+    setSelectedTemplateId(saved.id);
     setSaveModalOpen(false);
     setNewTemplateName('');
     setNewTemplateDesc('');
-    setNotice(`Saved template: "${tpl.name}"`);
+    setNotice(`Saved template: "${saved.name}"`);
     setTimeout(() => setNotice(null), 3000);
   }
 
-  function handleDeleteCurrentTemplate() {
-    if (!selectedTemplateId) return;
-    deleteLocalTemplate(selectedTemplateId);
-    setTemplates(getLocalTemplates());
+  async function handleDeleteCurrentTemplate() {
+    if (!selectedTemplateId || !user) return;
+    const targetId = selectedTemplateId;
+    deleteLocalTemplate(targetId);
+    setTemplates((prev) => prev.filter((t) => t.id !== targetId));
     setSelectedTemplateId('');
+    fetch('/api/templates', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: targetId }),
+    }).catch(() => {});
     setNotice('Template deleted');
     setTimeout(() => setNotice(null), 2500);
   }
@@ -763,3 +799,58 @@ export function MarketFilters({
     </div>
   );
 }
+
+/** Global unified filter sheet/modal opened from Menu -> Filters or #filters shortcut on any route (Task 9). */
+export function FiltersModal() {
+  const { filtersSheetOpen, closeFiltersSheet } = useFilters();
+
+  useEffect(() => {
+    if (!filtersSheetOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeFiltersSheet();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [filtersSheetOpen, closeFiltersSheet]);
+
+  if (!filtersSheetOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-4 backdrop-blur-sm"
+      onClick={closeFiltersSheet}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Unified Market Filters"
+    >
+      <div
+        className="glass max-h-[90vh] w-full max-w-5xl overflow-hidden bg-navy-900/95 shadow-2xl flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <span aria-hidden>🎚️</span>
+            <h2 className="font-display text-base font-bold text-white">Unified Filters</h2>
+          </div>
+          <button
+            type="button"
+            onClick={closeFiltersSheet}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white"
+            aria-label="Close filters"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
+          <MarketFilters inModal />
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-white/10 bg-navy-950/70 px-5 py-3">
+          <button type="button" onClick={closeFiltersSheet} className="btn-emerald px-4 py-1.5 text-xs font-semibold">
+            Apply & Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

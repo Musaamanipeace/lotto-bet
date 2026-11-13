@@ -1,9 +1,8 @@
 import { loadAiSnapshot } from '@/lib/run-ai.ts';
-import { getStore } from '@/lib/server.ts';
 import { filterPicks, parseCsv, parseLeagues } from '@/lib/pick-filter.ts';
 import { generateAlternatives, type SwapScope } from '@/lib/alternatives.ts';
-import type { TargetTier } from '@/lib/ai-picks.ts';
-import type { AiPick } from '@/lib/ai-picks.ts';
+import type { TargetTier, AiPick } from '@/lib/ai-picks.ts';
+import { requireAiAccess } from '@/lib/ai-auth.ts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -16,12 +15,12 @@ const int = (v: string | null, d: number, lo: number, hi: number) => {
 
 /**
  * GET /api/ai/alternatives?target=500&tol=0.1  (or min=100&max=1000)
- *   &count=50&minDiff=2&tier=higher&scope=any|same_market&strict=0|1&bookmaker=sportybet
- *   &leagues=A,B&locked=gameId1,gameId2&seed=1
- * Many different slips inside the odds band. "Load more" = the same call with a larger count
- * (deterministic: the first slips stay the same). Picks are sent once in `pickIndex`.
+ * Requires signed-in session (401) and user-stored API key (400 keys_required).
  */
 export async function GET(req: Request) {
+  const access = await requireAiAccess(req, { requireAiKey: true });
+  if (!access.ok) return access.response;
+
   const url = new URL(req.url);
   const q = url.searchParams;
 
@@ -49,7 +48,6 @@ export async function GET(req: Request) {
   const leagues = parseLeagues(q.get('leagues'));
   let bookmaker = q.get('bookmaker');
   if (!bookmaker) {
-    // A slip never mixes bookmakers, so use the one with the larger pool.
     const counts = new Map<string, number>();
     for (const p of filterPicks(snap.picks, { leagues })) counts.set(p.bookmaker, (counts.get(p.bookmaker) ?? 0) + 1);
     bookmaker = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;

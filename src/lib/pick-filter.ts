@@ -1,5 +1,5 @@
-
 import type { AiPick } from './ai-picks.ts';
+import { applyFilters } from './filter-state.ts';
 
 export const UNKNOWN_LEAGUE = 'Unknown league';
 
@@ -17,24 +17,14 @@ export type PickFilter = {
   withinHours?: number | null;
 };
 
-/** Applies market / bookmaker / league / kickoff-time filters. Empty or missing leagues means all leagues. */
+/** Applies market / bookmaker / league / kickoff-time filters via unified applyFilters(). */
 export function filterPicks(picks: AiPick[], f: PickFilter): AiPick[] {
-  const leagues = f.leagues?.length ? new Set(f.leagues) : null;
-  const hours = f.withinHours;
-  const now = Date.now();
-
-  const cutoff =
-    hours != null && Number.isFinite(hours) && hours >= 0
-      ? now + hours * 60 * 60 * 1000
-      : null;
-
-  return picks.filter(
-    (p) =>
-      (!f.market || p.marketKey === f.market) &&
-      (!f.bookmaker || p.bookmaker === f.bookmaker) &&
-      (!leagues || leagues.has(leagueName(p.league))) &&
-      (cutoff === null || (p.kickoff >= now && p.kickoff <= cutoff)),
-  );
+  return applyFilters(picks, {
+    market: f.market,
+    bookmaker: f.bookmaker,
+    leagues: f.leagues,
+    withinHours: f.withinHours,
+  });
 }
 
 /**

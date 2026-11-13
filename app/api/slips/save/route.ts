@@ -1,5 +1,5 @@
 import { currentUser, requireJson, jsonError } from '@/lib/session.ts';
-import { saveSlip } from '@/lib/saved-slips.ts';
+import { saveSlipDb } from '@/lib/saved-slips.ts';
 import type { Bookmaker } from '@/lib/types.ts';
 import type { PickRow } from '@/lib/filters.ts';
 
@@ -9,6 +9,8 @@ export async function POST(req: Request) {
   const bad = requireJson(req);
   if (bad) return bad;
   const user = await currentUser(req);
+  if (!user) return jsonError('Sign in to save slips', 401);
+
   let body: {
     id?: string;
     name?: string;
@@ -28,9 +30,9 @@ export async function POST(req: Request) {
   if (typeof body.totalOdds !== 'number' || body.totalOdds <= 1) {
     return jsonError('totalOdds must be a number greater than 1', 400);
   }
-  const slip = saveSlip({
+  const slip = await saveSlipDb({
     id: typeof body.id === 'string' && body.id ? body.id : undefined,
-    userId: user?.id ?? null,
+    userId: user.id,
     name: body.name ?? '',
     bookmaker: body.bookmaker,
     legs: body.legs,

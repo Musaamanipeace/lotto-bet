@@ -5,16 +5,19 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from './auth-context';
 import { AccountModal } from './account-modal';
 import { BetslipModal } from './betslip-modal';
+import { useFilters } from './filter-context';
+import { FiltersModal } from './market-filters';
 import { SettingsModal } from './settings-modal';
+import { ShortcutsBar } from './shortcuts-bar';
 import { useStoredSlip } from './use-slips';
 
-/** Unsigned-in users only have access to the basic Builder, Filters, and Available Games. */
+/** Unsigned-in users only have access to Builder, Filters, Available Games, and non-AI Settings. */
 const GUEST_MENU: { label: string; href: string }[] = [
   { label: 'Builder', href: '/' },
   { label: 'Available Games', href: '/#available-games' },
 ];
 
-/** Signed-in users unlock all features plus BYOK Settings. */
+/** Signed-in users unlock all routes. */
 const USER_MENU: { label: string; href: string }[] = [
   { label: 'Builder', href: '/' },
   { label: 'Available Games', href: '/#available-games' },
@@ -29,13 +32,27 @@ const USER_MENU: { label: string; href: string }[] = [
 
 export function TopBar() {
   const { user, loading, sessionError, openAuth, signOut } = useAuth();
+  const { openFiltersSheet } = useFilters();
   const pathname = usePathname();
   const [slip] = useStoredSlip();
   const [open, setOpen] = useState(false);
   const [betslipOpen, setBetslipOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState<number>(56);
   const betslipTriggerRef = useRef<HTMLButtonElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+
+  // Measure fixed header (including safe-area-inset-top and signed-in shortcuts bar) so content never hides underneath
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const update = () => setHeaderHeight(Math.ceil(el.getBoundingClientRect().height));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [user, sessionError]);
 
   // Betslip popup and menu are collapsed on load and after navigation (Task 5)
   useEffect(() => {
@@ -43,26 +60,19 @@ export function TopBar() {
     setOpen(false);
   }, [pathname]);
 
-  // Close settings/account modals immediately if user signs out
+  // Close account modal immediately if user signs out
   useEffect(() => {
     if (!user) {
-      setSettingsOpen(false);
       setAccountOpen(false);
     }
   }, [user]);
 
-  // Allow signed-in components to open BYOK Settings via custom event
+  // Open Settings via custom event for BOTH signed-in users and guests (Task 12)
   useEffect(() => {
-    const onOpenSettings = () => {
-      if (user) {
-        setSettingsOpen(true);
-      } else {
-        openAuth('login');
-      }
-    };
+    const onOpenSettings = () => setSettingsOpen(true);
     window.addEventListener('lb-open-settings', onOpenSettings);
     return () => window.removeEventListener('lb-open-settings', onOpenSettings);
-  }, [user, openAuth]);
+  }, []);
 
   const legCount = slip.legs.length;
   const menuItems = user ? USER_MENU : GUEST_MENU;
@@ -71,6 +81,7 @@ export function TopBar() {
     <>
       {/* Fixed static top header for mobile & desktop with safe-area-inset-top padding (Task 4) */}
       <header
+        ref={headerRef}
         className="fixed inset-x-0 top-0 z-40 border-b border-white/10 bg-navy-950/90 backdrop-blur-md"
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
@@ -191,26 +202,42 @@ export function TopBar() {
                         {m.label}
                       </Link>
                     ))}
-                    {/* Settings is reachable ONLY from the menu and ONLY for signed-in users (Task 5 + BYOK) */}
-                    {user && (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setOpen(false);
-                          setSettingsOpen(true);
-                        }}
-                        className="block w-full text-left rounded-lg px-3 py-2 text-sm text-cyan-300 hover:bg-white/10 border-t border-white/10 mt-1"
-                      >
-                        ⚙️ Settings (BYOK Keys)
-                      </button>
-                    )}
+
+                    {/* Unified Filters sheet trigger reachable from any route (Task 9) */}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setOpen(false);
+                        openFiltersSheet();
+                      }}
+                      className="block w-full text-left rounded-lg px-3 py-2 text-sm text-emerald-300 hover:bg-white/10"
+                    >
+                      🎚️ Filters
+                    </button>
+
+                    {/* Settings is reachable ONLY from the menu — open to BOTH guests and signed-in users (Tasks 5 & 12) */}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setOpen(false);
+                        setSettingsOpen(true);
+                      }}
+                      className="block w-full text-left rounded-lg px-3 py-2 text-sm text-cyan-300 hover:bg-white/10 border-t border-white/10 mt-1"
+                    >
+                      ⚙️ Settings{user ? '' : ' (Preferences)'}
+                    </button>
                   </div>
                 </>
               )}
             </div>
           </div>
         </div>
+
+        {/* Signed-in customizable shortcuts bar (Task 11) */}
+        <ShortcutsBar />
+
         {sessionError && (
           <div className="border-t border-red-500/30 bg-red-500/10 px-4 py-1.5 text-center text-xs text-red-300" role="alert">
             {sessionError}
@@ -218,11 +245,11 @@ export function TopBar() {
         )}
       </header>
 
-      {/* Spacer matching fixed header height + safe-area-inset-top so no content is hidden under the header (Task 4) */}
+      {/* Spacer dynamically matching fixed header height + safe-area-inset-top + shortcuts bar (Task 4 + 11) */}
       <div
         aria-hidden="true"
         className="w-full shrink-0"
-        style={{ height: 'calc(3.5rem + env(safe-area-inset-top, 0px))' }}
+        style={{ height: `${headerHeight}px` }}
       />
 
       <BetslipModal
@@ -230,14 +257,13 @@ export function TopBar() {
         onClose={() => setBetslipOpen(false)}
         triggerRef={betslipTriggerRef}
       />
+      <FiltersModal />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       {user && (
-        <>
-          <AccountModal
-            open={accountOpen}
-            onClose={() => setAccountOpen(false)}
-          />
-          <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-        </>
+        <AccountModal
+          open={accountOpen}
+          onClose={() => setAccountOpen(false)}
+        />
       )}
     </>
   );

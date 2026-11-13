@@ -3,11 +3,15 @@ import { VERIFICATION, CRITERIA } from '@/lib/criteria.ts';
 import { configuredProviders } from '@/lib/stats.ts';
 import { getStore } from '@/lib/server.ts';
 import { storageProblem } from '@/lib/run-ai.ts';
+import { requireAiAccess } from '@/lib/ai-auth.ts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-export async function GET() {
+export async function GET(req: Request) {
+  const access = await requireAiAccess(req, { requireAiKey: false });
+  if (!access.ok) return access.response;
+
   const problem = storageProblem();
   if (problem) return Response.json({ ok: false, error: problem, details: { code: 'storage_not_configured' } }, { status: 503 });
   const snap = await getAiSnapshot().catch(() => null);

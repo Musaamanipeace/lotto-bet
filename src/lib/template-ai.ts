@@ -1,6 +1,7 @@
 import type { AiPick, TargetResult, TargetTier } from './ai-picks.ts';
 import { pickTargetOdds, TARGET_TIER_POOL } from './ai-picks.ts';
 import { ACCUMULATOR } from './criteria.ts';
+import { applyFilters, matchesCardsState } from './filter-state.ts';
 import type { CardsState } from './market-cards.ts';
 import type { FilterTemplate } from './template-store.ts';
 
@@ -8,74 +9,25 @@ import type { FilterTemplate } from './template-store.ts';
  * Checks whether an AI pick satisfies the market card rules and odds bounds of a template.
  */
 export function matchesTemplateCards(pick: AiPick, cards: CardsState): boolean {
-  const anyOn = Object.values(cards).some((c) => c.on);
-  if (!anyOn) return true; // No constraints enabled
-
-  switch (pick.marketKey) {
-    case 'home_win': {
-      const c = cards['1x2'];
-      return Boolean(c?.on && c.subs.includes('home') && pick.odds >= c.low && pick.odds <= c.high);
-    }
-    case 'away_win': {
-      const c = cards['1x2'];
-      return Boolean(c?.on && c.subs.includes('away') && pick.odds >= c.low && pick.odds <= c.high);
-    }
-    case 'double_chance_1x': {
-      const c = cards.dc;
-      return Boolean(c?.on && c.subs.includes('1X') && pick.odds >= c.low && pick.odds <= c.high);
-    }
-    case 'double_chance_12': {
-      const c = cards.dc;
-      return Boolean(c?.on && c.subs.includes('12') && pick.odds >= c.low && pick.odds <= c.high);
-    }
-    case 'over_0_5': {
-      const c = cards.over;
-      return Boolean(c?.on && c.subs.includes('0.5') && pick.odds >= c.low && pick.odds <= c.high);
-    }
-    case 'over_1_5': {
-      const c = cards.over;
-      return Boolean(c?.on && c.subs.includes('1.5') && pick.odds >= c.low && pick.odds <= c.high);
-    }
-    case 'under_3_5': {
-      const c = cards.under;
-      return Boolean(c?.on && c.subs.includes('3.5') && pick.odds >= c.low && pick.odds <= c.high);
-    }
-    case 'under_4_5': {
-      const c = cards.under;
-      return Boolean(c?.on && c.subs.includes('4.5') && pick.odds >= c.low && pick.odds <= c.high);
-    }
-    default:
-      return false;
-  }
+  return matchesCardsState(pick, cards);
 }
 
 /**
  * Filters ranked AI picks according to a template's bookmaker, kickoff window, leagues, and market cards.
- * Can override withinHours timeframe (e.g. 6h, 12h, 24h, 48h, 72h, or null for any time).
+ * Routes through the shared `applyFilters()` pipeline (Task 9).
  */
 export function filterAiPicksByTemplate(
   picks: AiPick[],
   template: FilterTemplate,
   overrideWithinHours?: number | null,
 ): AiPick[] {
-  const allowedLeagues = template.leagues?.length
-    ? new Set(template.leagues.map((l) => l.trim().toLowerCase()))
-    : null;
-
   const effectiveHours = overrideWithinHours !== undefined ? overrideWithinHours : template.withinHours;
-  const now = Date.now();
-  const maxKickoff =
-    typeof effectiveHours === 'number' && effectiveHours > 0
-      ? now + effectiveHours * 3600_000
-      : null;
-
-  return picks.filter((p) => {
-    if (p.bookmaker !== template.bookmaker) return false;
-    // Discard matches that already kicked off in the past (allow 5min clock leeway)
-    if (p.kickoff && p.kickoff < now - 5 * 60_000) return false;
-    if (maxKickoff !== null && p.kickoff > maxKickoff) return false;
-    if (allowedLeagues && (!p.league || !allowedLeagues.has(p.league.trim().toLowerCase()))) return false;
-    return matchesTemplateCards(p, template.cards);
+  return applyFilters(picks, {
+    bookmaker: template.bookmaker,
+    withinHours: effectiveHours,
+    leagues: template.leagues,
+    cards: template.cards,
+    pastGraceMs: 5 * 60_000,
   });
 }
 

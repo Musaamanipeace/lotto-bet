@@ -38,6 +38,15 @@ export function AccountModal({
 
     setTemplates(getLocalTemplates());
 
+    fetch('/api/templates', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j?.ok && Array.isArray(j.templates)) {
+          setTemplates(j.templates);
+        }
+      })
+      .catch(() => {});
+
     fetch('/api/slips/list', { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => {

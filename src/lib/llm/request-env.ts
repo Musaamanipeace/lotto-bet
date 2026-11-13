@@ -1,10 +1,9 @@
 /**
- * Builds the LLM environment for one request from the client's BYOK headers
- * (x-ai-provider, x-ai-model, x-gemini-key, x-openrouter-key, x-mistral-key).
+ * Builds the LLM environment for one request using server-side keys (plus optional non-secret
+ * provider/model selection headers: x-ai-provider, x-ai-model).
  *
- * The chosen model applies ONLY to the chosen provider. Failover providers keep their own defaults,
- * so falling over from Gemini to Mistral never sends Mistral a Gemini model name. The chosen provider
- * goes first and the rest of the order follows it, so one slow or overloaded provider is not the end.
+ * Security rule (Task 2): Client headers NEVER carry API keys. Keys live encrypted per user in
+ * `user_api_keys` (via `buildUserLlmEnv`) or in server environment variables (`base`).
  */
 import { ALL_PROVIDERS } from './providers.ts';
 import { DEFAULT_ORDER } from './index.ts';
@@ -16,25 +15,11 @@ const MODEL_VAR: Record<string, string> = {
   mistral: 'MISTRAL_MODEL',
 };
 
-const KEY_VAR: [string, string][] = [
-  ['x-gemini-key', 'GEMINI_API_KEY'],
-  ['x-openrouter-key', 'OPENROUTER_API_KEY'],
-  ['x-mistral-key', 'MISTRAL_API_KEY'],
-];
-
-/**
- * Returns true if the request includes at least one client-submitted BYOK API key header.
- */
-export function hasClientByokHeaders(headers: { get(name: string): string | null }): boolean {
-  return KEY_VAR.some(([header]) => Boolean(headers.get(header)?.trim()));
-}
-
-export function buildLlmEnv(headers: { get(name: string): string | null }, base: LlmEnv = {}): LlmEnv {
+export function buildLlmEnv(
+  headers: { get(name: string): string | null },
+  base: LlmEnv = {},
+): LlmEnv {
   const env: LlmEnv = { ...base };
-  for (const [header, name] of KEY_VAR) {
-    const v = headers.get(header)?.trim();
-    if (v) env[name] = v;
-  }
 
   const provider = headers.get('x-ai-provider')?.trim().toLowerCase();
   if (provider && ALL_PROVIDERS[provider]) {
@@ -42,7 +27,9 @@ export function buildLlmEnv(headers: { get(name: string): string | null }, base:
       .split(',')
       .map((s) => s.trim().toLowerCase())
       .filter((n) => n && ALL_PROVIDERS[n]);
-    env.LLM_PROVIDER_ORDER = [...new Set([provider, ...configured, ...Object.keys(ALL_PROVIDERS)])].join(',');
+    env.LLM_PROVIDER_ORDER = [
+      ...new Set([provider, ...configured, ...Object.keys(ALL_PROVIDERS)]),
+    ].join(',');
     const model = headers.get('x-ai-model')?.trim();
     if (model && model.length <= 200) env[MODEL_VAR[provider]] = model;
   }

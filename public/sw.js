@@ -17,7 +17,15 @@ const PRECACHE_URLS = [
   '/icons/apple-touch-icon.png',
 ];
 
-const USER_SPECIFIC_PATHS = ['/my-picks', '/saved-slips', '/results', '/community', '/chat'];
+const USER_SPECIFIC_PATHS = [
+  '/my-picks',
+  '/saved-slips',
+  '/results',
+  '/ai-picks',
+  '/chat',
+  '/community',
+  '/leagues',
+];
 
 function isStaticAsset(url) {
   return (

@@ -6,6 +6,7 @@ import { SESSION_COOKIE, userForToken } from '@/lib/auth.ts';
 import { getAuthStore } from '@/lib/auth-store.ts';
 import { AuthProvider } from './components/auth-context';
 import { AuthModal } from './components/auth-modal';
+import { FilterProvider } from './components/filter-context';
 import { Footer } from './components/footer';
 import { PwaRegister } from './components/pwa-register';
 import { TopBar } from './components/top-bar';
@@ -55,10 +56,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-dvh flex flex-col">
         <PwaRegister />
         <AuthProvider initialUser={initialUser}>
-          <TopBar />
-          <div className="flex-1">{children}</div>
-          <Footer />
-          <AuthModal />
+          <FilterProvider>
+            <TopBar />
+            <div className="flex-1">{children}</div>
+            <Footer />
+            <AuthModal />
+          </FilterProvider>
         </AuthProvider>
       </body>
     </html>

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { callLlm } from '../src/lib/llm/index.ts';
-import { buildLlmEnv, hasClientByokHeaders } from '../src/lib/llm/request-env.ts';
+import { buildLlmEnv } from '../src/lib/llm/request-env.ts';
 import { jsonResponse } from './fixtures.ts';
 
 const KEYS = { GEMINI_API_KEY: 'g', OPENROUTER_API_KEY: 'o', MISTRAL_API_KEY: 'm' };
@@ -68,13 +68,9 @@ test('failing over from the chosen provider sends the next provider ITS OWN defa
   assert.equal(r.attempts[0].provider, 'gemini', 'the Gemini failure stays visible');
 });
 
-test('headers: client BYOK key headers populate env, hasClientByokHeaders detects missing keys, unknown providers and oversized models are ignored', () => {
-  assert.equal(hasClientByokHeaders(new Headers({})), false);
-  assert.equal(hasClientByokHeaders(new Headers({ 'x-ai-provider': 'gemini' })), false);
-  assert.equal(hasClientByokHeaders(new Headers({ 'x-gemini-key': 'user-key' })), true);
-
-  const env = buildLlmEnv(new Headers({ 'x-gemini-key': 'user-key', 'x-ai-provider': 'nope', 'x-ai-model': 'x' }), {});
-  assert.equal(env.GEMINI_API_KEY, 'user-key');
+test('headers: client key headers are ignored, unknown providers and oversized models are ignored', () => {
+  const env = buildLlmEnv(new Headers({ 'x-gemini-key': 'spoofed-header-key', 'x-ai-provider': 'nope', 'x-ai-model': 'x' }), {});
+  assert.equal(env.GEMINI_API_KEY, undefined);
   assert.equal(env.LLM_PROVIDER_ORDER, undefined);
   assert.equal(env.GEMINI_MODEL, undefined);
   const big = buildLlmEnv(new Headers({ 'x-ai-provider': 'gemini', 'x-ai-model': 'm'.repeat(300) }), {});

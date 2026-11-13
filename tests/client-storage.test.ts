@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   ALL_USER_STORAGE_KEYS,
   STORAGE_KEYS,
-  clearAllUserStorage,
   hasAnyUserStorage,
   performFullSignOutCleanup,
   scopedStorageKey,
@@ -11,17 +10,18 @@ import {
   getActiveStorageUserId,
 } from '../src/lib/client-storage.ts';
 import {
+  applyServerSnapshot,
+  clearClientSecrets,
+  getClientPreferenceHeaders,
   getClientSettings,
+  hasConfiguredAiKeys,
   saveClientSettings,
-  getClientAiHeaders,
-  hasSubmittedByok,
 } from '../src/lib/client-settings.ts';
 import { readSlip, writeSlip } from '../src/lib/slip-store.ts';
 import { emptySlip, defaultSlipName } from '../src/lib/slip.ts';
 import { getLocalTemplates, saveLocalTemplate } from '../src/lib/template-store.ts';
 import { defaultCards } from '../src/lib/market-cards.ts';
 
-// Minimal in-memory localStorage mock for Node tests
 function createMemoryStorage() {
   const data = new Map<string, string>();
   return {
@@ -47,7 +47,20 @@ function createMemoryStorage() {
   };
 }
 
-describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
+function setupBrowserMocks() {
+  const mem = createMemoryStorage();
+  const sess = createMemoryStorage();
+  (globalThis as Record<string, unknown>).localStorage = mem;
+  (globalThis as Record<string, unknown>).sessionStorage = sess;
+  (globalThis as Record<string, unknown>).window = {
+    dispatchEvent: () => true,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+  return { mem, sess };
+}
+
+describe('client-storage & signOut cleanup (Task 1, Task 2, Task 12)', () => {
   it('exposes the expected registry of keys', () => {
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.SLIP));
     assert.ok(ALL_USER_STORAGE_KEYS.includes(STORAGE_KEYS.CLIENT_AI_SETTINGS));
@@ -59,27 +72,21 @@ describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
   });
 
   it('namespaces keys by active user ID and prevents User A data from leaking to User B', () => {
-    const mem = createMemoryStorage();
-    // @ts-expect-error – injecting mock into global
-    globalThis.localStorage = mem;
-    // @ts-expect-error
-    globalThis.sessionStorage = createMemoryStorage();
-    // @ts-expect-error
-    globalThis.window = globalThis;
+    setupBrowserMocks();
+    clearClientSecrets();
 
     setActiveStorageUserId('user-a');
     assert.equal(getActiveStorageUserId(), 'user-a');
     assert.equal(scopedStorageKey(STORAGE_KEYS.SLIP), 'lb_slip_v1:user-a');
 
-    // User A saves a slip and custom AI model settings
     writeSlip({
       id: 'slip-a',
       name: 'User A Slip',
       greyed: [],
       legs: [
         {
-          id: 'g1:1:1:',
           gameId: 'g1',
+          nativeEventId: 'ev1',
           home: 'Arsenal',
           away: 'Chelsea',
           league: 'EPL',
@@ -88,19 +95,21 @@ describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
           marketNativeId: '1',
           outcomeNativeId: '1',
           specifier: '',
-          selectionLabel: 'Arsenal',
-          marketLabel: '1X2',
+          marketKind: '1x2',
+          line: null,
+          outcomeKey: 'home',
+          pick: 'Arsenal',
           odds: 1.85,
-          impliedProbability: 0.51,
+          implied: 0.51,
         },
       ],
     });
-    saveClientSettings({ selectedModel: 'mistral-small-latest', timeoutSeconds: 45 });
+    saveClientSettings({ selectedModel: 'mistral-small-latest', provider: 'mistral', timeoutSeconds: 45 });
 
     assert.equal(readSlip().legs.length, 1);
     assert.equal(getClientSettings().selectedModel, 'mistral-small-latest');
 
-    // Switch to User B (without even clearing first, User B must not read User A's keys)
+    // Switch to User B (User B must not read User A's slip or preferences)
     setActiveStorageUserId('user-b');
     assert.equal(scopedStorageKey(STORAGE_KEYS.SLIP), 'lb_slip_v1:user-b');
     assert.equal(readSlip().legs.length, 0);
@@ -108,28 +117,21 @@ describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
   });
 
   it('performFullSignOutCleanup clears all registered keys, sessionStorage, IndexedDB, and SW caches', async () => {
-    const mem = createMemoryStorage();
-    const sess = createMemoryStorage();
-    // @ts-expect-error
-    globalThis.localStorage = mem;
-    // @ts-expect-error
-    globalThis.sessionStorage = sess;
+    const { mem, sess } = setupBrowserMocks();
 
     const deletedDbs: string[] = [];
-    // @ts-expect-error
-    globalThis.indexedDB = {
+    (globalThis as Record<string, unknown>).indexedDB = {
       databases: async () => [{ name: 'lb-local-db' }, { name: 'supabase-cache' }],
       deleteDatabase: (name: string) => {
         deletedDbs.push(name);
-        const req: any = {};
+        const req: { onsuccess?: () => void } = {};
         queueMicrotask(() => req.onsuccess?.());
         return req;
       },
     };
 
     const deletedCaches: string[] = [];
-    // @ts-expect-error
-    globalThis.caches = {
+    (globalThis as Record<string, unknown>).caches = {
       keys: async () => ['lotto-bet-static-v1', 'other-cache'],
       delete: async (k: string) => {
         deletedCaches.push(k);
@@ -137,7 +139,6 @@ describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
       },
     };
 
-    // Seed unscoped, user-scoped, legacy keys, and sessionStorage
     setActiveStorageUserId('user-a');
     for (const k of ALL_USER_STORAGE_KEYS) {
       mem.setItem(k, 'unscoped-val');
@@ -151,6 +152,7 @@ describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
 
     assert.equal(hasAnyUserStorage(), true);
 
+    clearClientSecrets();
     await performFullSignOutCleanup();
 
     assert.equal(getActiveStorageUserId(), null);
@@ -168,52 +170,57 @@ describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
     assert.equal(hasAnyUserStorage(), false);
   });
 
-  it('scopes client BYOK keys per user, detects missing BYOK, and wipes keys on sign-out', async () => {
-    const mem = createMemoryStorage();
-    // @ts-expect-error
-    globalThis.localStorage = mem;
+  it('never emits API keys in localStorage or headers and caches only non-secret status flags (Task 2)', async () => {
+    const { mem } = setupBrowserMocks();
+    clearClientSecrets();
     setActiveStorageUserId('user-a');
 
-    // Before submitting BYOK, hasSubmittedByok() is false and no x-*-key headers are sent
-    assert.equal(hasSubmittedByok(), false);
-    assert.equal('x-gemini-key' in getClientAiHeaders(), false);
+    assert.equal(hasConfiguredAiKeys(), false);
+    const headersInitial = getClientPreferenceHeaders();
+    assert.equal('x-gemini-key' in headersInitial, false);
+    assert.equal('x-openrouter-key' in headersInitial, false);
+    assert.equal('x-mistral-key' in headersInitial, false);
 
-    // User A submits their own BYOK key
-    saveClientSettings({
-      selectedModel: 'gemini-2.5-flash',
-      provider: 'gemini',
-      geminiApiKey: 'USER_A_GEMINI_KEY',
+    // Server returns masked status (no plaintext key)
+    applyServerSnapshot({
+      persistenceMode: 'postgres',
+      aiKeysConfigured: true,
+      keysConfigured: true,
+      preferences: { selectedModel: 'gemini-2.5-flash', provider: 'gemini', timeoutSeconds: 35 },
+      keys: {
+        gemini: { provider: 'gemini', isSet: true, last4: '9876' },
+        openrouter: { provider: 'openrouter', isSet: false, last4: null },
+        mistral: { provider: 'mistral', isSet: false, last4: null },
+        football_data: { provider: 'football_data', isSet: false, last4: null },
+        api_football: { provider: 'api_football', isSet: false, last4: null },
+      },
     });
 
-    assert.equal(hasSubmittedByok(), true);
-    const headersA = getClientAiHeaders();
-    assert.equal(headersA['x-gemini-key'], 'USER_A_GEMINI_KEY');
-    assert.equal(headersA['x-ai-model'], 'gemini-2.5-flash');
+    assert.equal(hasConfiguredAiKeys(), true);
+    const headersAfter = getClientPreferenceHeaders();
+    assert.equal(headersAfter['x-ai-model'], 'gemini-2.5-flash');
+    assert.equal(Object.keys(headersAfter).some((k) => k.includes('key')), false);
+    assert.equal(JSON.stringify([...mem._data.entries()]).includes('9876'), false);
 
-    // User B does not see User A's BYOK key
-    setActiveStorageUserId('user-b');
-    assert.equal(hasSubmittedByok(), false);
-    assert.equal(getClientSettings().geminiApiKey, '');
-    assert.equal('x-gemini-key' in getClientAiHeaders(), false);
-
-    // Sign-out wipes all stored BYOK keys
+    // Sign-out wipes cached server status & localStorage
+    clearClientSecrets();
     await performFullSignOutCleanup();
     setActiveStorageUserId('user-a');
-    assert.equal(hasSubmittedByok(), false);
-    assert.equal(getClientSettings().geminiApiKey, '');
+    assert.equal(hasConfiguredAiKeys(), false);
   });
 
-  it('prevents unsigned-in (guest) users from saving or reading BYOK settings', () => {
-    const mem = createMemoryStorage();
-    // @ts-expect-error
-    globalThis.localStorage = mem;
+  it('allows guests to change non-secret preferences in memory without writing to localStorage (Task 12)', () => {
+    const { mem } = setupBrowserMocks();
+    clearClientSecrets();
     setActiveStorageUserId(null);
 
     const saved = saveClientSettings({
-      geminiApiKey: 'SHOULD_NOT_SAVE_FOR_GUEST',
+      selectedModel: 'open-mistral-7b',
+      provider: 'mistral',
+      timeoutSeconds: 50,
     });
-    assert.equal(saved.geminiApiKey, '');
-    assert.equal(hasSubmittedByok(), false);
+    assert.equal(saved.selectedModel, 'open-mistral-7b');
+    assert.equal(hasConfiguredAiKeys(), false);
     assert.equal(mem.length, 0);
   });
 
@@ -226,15 +233,7 @@ describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
   });
 
   it('saves and restores market filters, selected leagues, timeframe, and bookmaker in a saved template', () => {
-    const mem = createMemoryStorage();
-    // @ts-expect-error
-    globalThis.localStorage = mem;
-    // @ts-expect-error
-    globalThis.window = {
-      dispatchEvent: () => true,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    };
+    setupBrowserMocks();
     setActiveStorageUserId('user-a');
 
     const selectedLeagues = ['Premier League', 'La Liga'];
@@ -246,7 +245,6 @@ describe('client-storage & signOut cleanup (Task 1 & Task 2)', () => {
       cards: defaultCards(),
     });
 
-    // Mutating the original array afterwards must not mutate the saved template
     selectedLeagues.push('Serie A');
 
     const loaded = getLocalTemplates().find((t) => t.id === tpl.id);

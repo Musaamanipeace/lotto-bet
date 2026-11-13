@@ -7,15 +7,25 @@ import {
 } from './client-storage.ts';
 
 /**
- * Client-side AI settings (Bring Your Own Key — BYOK).
+ * Client-side NON-SECRET preferences & server settings cache (Tasks 2 & 12).
  *
- * Strictly for signed-in users:
- * - Unsigned-in (guest) users have no Settings panel, cannot save or read keys, and cannot use AI features.
- * - Signed-in users store their own BYOK keys ONLY in user-scoped browser localStorage
- *   (`lb_client_ai_settings_v1:<userId>`) — never in the database — and pass them via request headers.
- * - On sign-out, performFullSignOutCleanup() / clearAllUserStorage() wipes all stored keys.
- * - If a signed-in user has not submitted their BYOK key, AI actions do not execute and prompt them to submit.
+ * Security guarantees:
+ * - API keys are NEVER stored in browser memory/localStorage/sessionStorage/IndexedDB or sent via HTTP headers.
+ * - API keys are saved ONLY server-side, encrypted per user with AES-256-GCM (`/api/settings`).
+ * - Unsigned-in (guest) users can open Settings and change non-secret preferences (in-memory for page lifetime only)
+ *   and see a sign-in CTA to save API keys and use AI features.
+ * - Signed-in users load masked key statuses (`isSet`, `last4`) and non-secret preferences from `GET /api/settings`.
  */
+
+export type ApiKeyProvider = 'gemini' | 'openrouter' | 'mistral' | 'football_data' | 'api_football';
+
+export type MaskedKeyStatus = {
+  provider: ApiKeyProvider;
+  isSet: boolean;
+  last4: string | null;
+  keyId?: string;
+  updatedAt?: number;
+};
 
 export type FreeAiModel = {
   id: string;
@@ -99,37 +109,63 @@ export const SUPPORTED_FREE_MODELS: FreeAiModel[] = [
 export type ClientAiSettings = {
   selectedModel: string;
   provider: 'gemini' | 'openrouter' | 'mistral';
-  geminiApiKey: string;
-  openrouterApiKey: string;
-  mistralApiKey: string;
-  footballDataApiKey: string;
-  apiFootballKey: string;
   timeoutSeconds: number;
+};
+
+export type ClientSettingsSnapshot = {
+  preferences: ClientAiSettings;
+  aiKeysConfigured: boolean;
+  keysConfigured: boolean;
+  persistenceMode: 'postgres' | 'memory';
+  keys: Record<ApiKeyProvider, MaskedKeyStatus>;
 };
 
 export const DEFAULT_CLIENT_SETTINGS: ClientAiSettings = {
   selectedModel: 'gemini-2.5-flash',
   provider: 'gemini',
-  geminiApiKey: '',
-  openrouterApiKey: '',
-  mistralApiKey: '',
-  footballDataApiKey: '',
-  apiFootballKey: '',
   timeoutSeconds: 35,
 };
+
+const DEFAULT_KEYS: Record<ApiKeyProvider, MaskedKeyStatus> = {
+  gemini: { provider: 'gemini', isSet: false, last4: null },
+  openrouter: { provider: 'openrouter', isSet: false, last4: null },
+  mistral: { provider: 'mistral', isSet: false, last4: null },
+  football_data: { provider: 'football_data', isSet: false, last4: null },
+  api_football: { provider: 'api_football', isSet: false, last4: null },
+};
+
+// In-memory store for non-secret guest prefs (Task 12) + cached server key-status flags
+let guestMemorySettings: ClientAiSettings = { ...DEFAULT_CLIENT_SETTINGS };
+let serverSnapshotCache: ClientSettingsSnapshot | null = null;
+
+function notifyChanged(next: ClientAiSettings): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+    window.dispatchEvent(new CustomEvent('lb_settings_changed', { detail: next }));
+  }
+}
 
 export function getClientSettings(): ClientAiSettings {
   if (typeof window === 'undefined') return DEFAULT_CLIENT_SETTINGS;
   const userId = getActiveStorageUserId();
-  if (!userId) return DEFAULT_CLIENT_SETTINGS;
+  if (!userId) return { ...guestMemorySettings };
   try {
     const key = scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS, userId);
     const raw = localStorage.getItem(key);
-    if (!raw) return DEFAULT_CLIENT_SETTINGS;
-    const parsed = JSON.parse(raw);
+    if (!raw) return serverSnapshotCache?.preferences ?? DEFAULT_CLIENT_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<ClientAiSettings>;
     return {
-      ...DEFAULT_CLIENT_SETTINGS,
-      ...parsed,
+      selectedModel:
+        typeof parsed.selectedModel === 'string' && parsed.selectedModel.trim()
+          ? parsed.selectedModel
+          : DEFAULT_CLIENT_SETTINGS.selectedModel,
+      provider:
+        parsed.provider === 'gemini' || parsed.provider === 'openrouter' || parsed.provider === 'mistral'
+          ? parsed.provider
+          : DEFAULT_CLIENT_SETTINGS.provider,
+      timeoutSeconds:
+        typeof parsed.timeoutSeconds === 'number' && Number.isFinite(parsed.timeoutSeconds)
+          ? Math.min(120, Math.max(10, Math.round(parsed.timeoutSeconds)))
+          : DEFAULT_CLIENT_SETTINGS.timeoutSeconds,
     };
   } catch {
     return DEFAULT_CLIENT_SETTINGS;
@@ -138,42 +174,99 @@ export function getClientSettings(): ClientAiSettings {
 
 export function saveClientSettings(settings: Partial<ClientAiSettings>): ClientAiSettings {
   const userId = getActiveStorageUserId();
-  if (!userId) return DEFAULT_CLIENT_SETTINGS;
   const current = getClientSettings();
-  const next: ClientAiSettings = { ...current, ...settings };
+  const next: ClientAiSettings = {
+    selectedModel: settings.selectedModel ?? current.selectedModel,
+    provider: settings.provider ?? current.provider,
+    timeoutSeconds: settings.timeoutSeconds ?? current.timeoutSeconds,
+  };
+
+  if (!userId) {
+    // Guests hold non-secret preferences in memory for the page lifetime only (never persisted to localStorage)
+    guestMemorySettings = next;
+    notifyChanged(next);
+    return next;
+  }
+
   if (typeof window !== 'undefined') {
     try {
       const key = scopedStorageKey(STORAGE_KEYS.CLIENT_AI_SETTINGS, userId);
       localStorage.setItem(key, JSON.stringify(next));
-      if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
-        window.dispatchEvent(new CustomEvent('lb_settings_changed', { detail: next }));
-      }
     } catch {
       /* quota ignored */
     }
   }
+  if (serverSnapshotCache) {
+    serverSnapshotCache = { ...serverSnapshotCache, preferences: next };
+  }
+  notifyChanged(next);
   return next;
 }
 
-/**
- * Returns true only if a user is signed in AND has submitted at least one BYOK AI provider key.
- */
-export function hasSubmittedByok(customSettings?: ClientAiSettings): boolean {
-  if (!getActiveStorageUserId() && !customSettings) return false;
-  const s = customSettings || getClientSettings();
-  return Boolean(
-    s.geminiApiKey?.trim() ||
-      s.openrouterApiKey?.trim() ||
-      s.mistralApiKey?.trim(),
-  );
+export function getCachedServerSnapshot(): ClientSettingsSnapshot | null {
+  return serverSnapshotCache;
+}
+
+export function applyServerSnapshot(payload: {
+  persistenceMode?: 'postgres' | 'memory';
+  aiKeysConfigured?: boolean;
+  keysConfigured?: boolean;
+  keys?: Record<ApiKeyProvider, MaskedKeyStatus>;
+  preferences?: Partial<ClientAiSettings>;
+}): ClientSettingsSnapshot {
+  const prefs: ClientAiSettings = {
+    selectedModel: payload.preferences?.selectedModel || DEFAULT_CLIENT_SETTINGS.selectedModel,
+    provider:
+      payload.preferences?.provider === 'openrouter' || payload.preferences?.provider === 'mistral'
+        ? payload.preferences.provider
+        : 'gemini',
+    timeoutSeconds:
+      typeof payload.preferences?.timeoutSeconds === 'number'
+        ? payload.preferences.timeoutSeconds
+        : DEFAULT_CLIENT_SETTINGS.timeoutSeconds,
+  };
+  const snap: ClientSettingsSnapshot = {
+    persistenceMode: payload.persistenceMode === 'postgres' ? 'postgres' : 'memory',
+    aiKeysConfigured: Boolean(payload.aiKeysConfigured),
+    keysConfigured: Boolean(payload.keysConfigured),
+    keys: payload.keys ?? DEFAULT_KEYS,
+    preferences: prefs,
+  };
+  serverSnapshotCache = snap;
+  if (getActiveStorageUserId()) {
+    saveClientSettings(prefs);
+  }
+  return snap;
+}
+
+export async function refreshServerSettings(): Promise<ClientSettingsSnapshot | null> {
+  if (!getActiveStorageUserId()) {
+    serverSnapshotCache = null;
+    return null;
+  }
+  try {
+    const r = await fetch('/api/settings', { cache: 'no-store' });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j?.ok) return null;
+    return applyServerSnapshot(j);
+  } catch {
+    return null;
+  }
+}
+
+export function hasConfiguredAiKeys(): boolean {
+  if (!getActiveStorageUserId()) return false;
+  return Boolean(serverSnapshotCache?.aiKeysConfigured);
 }
 
 /**
- * Clears the in-memory view of secrets after logout.
- * The actual storage wipe is performed by clearAllUserStorage().
+ * Resets in-memory preferences & server snapshot cache on sign-out.
+ * Storage keys are wiped by performFullSignOutCleanup().
  */
 export function clearClientSecrets(): void {
-  // Storage is wiped by performFullSignOutCleanup() / clearAllUserStorage().
+  guestMemorySettings = { ...DEFAULT_CLIENT_SETTINGS };
+  serverSnapshotCache = null;
 }
 
 export function onSettingsChanged(cb: (settings: ClientAiSettings) => void): () => void {
@@ -186,17 +279,11 @@ export function onSettingsChanged(cb: (settings: ClientAiSettings) => void): () 
   return () => window.removeEventListener('lb_settings_changed', handler);
 }
 
-/** Formats client BYOK settings into headers for thin-proxy API routes */
-export function getClientAiHeaders(customSettings?: ClientAiSettings): Record<string, string> {
+/** Non-secret preference headers only — NEVER transmits API keys */
+export function getClientPreferenceHeaders(customSettings?: ClientAiSettings): Record<string, string> {
   const s = customSettings || getClientSettings();
-  const headers: Record<string, string> = {
+  return {
     'x-ai-provider': s.provider,
     'x-ai-model': s.selectedModel,
   };
-  if (s.geminiApiKey?.trim()) headers['x-gemini-key'] = s.geminiApiKey.trim();
-  if (s.openrouterApiKey?.trim()) headers['x-openrouter-key'] = s.openrouterApiKey.trim();
-  if (s.mistralApiKey?.trim()) headers['x-mistral-key'] = s.mistralApiKey.trim();
-  if (s.footballDataApiKey?.trim()) headers['x-football-data-key'] = s.footballDataApiKey.trim();
-  if (s.apiFootballKey?.trim()) headers['x-api-football-key'] = s.apiFootballKey.trim();
-  return headers;
 }

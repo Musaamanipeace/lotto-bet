@@ -6,16 +6,21 @@ import {
   setServerScore,
 } from '@/lib/results-store.ts';
 import { normalizeMatchKey, type MatchScore } from '@/lib/results-evaluator.ts';
+import { currentUser, jsonError } from '@/lib/session.ts';
+import { getDecryptedUserKeys, type ApiKeyProvider } from '@/lib/user-settings-store.ts';
 
-// Query external football scores using ONLY the client's BYOK key headers (never server env keys)
+// Query external football scores using ONLY the signed-in user's server-decrypted keys
 async function fetchExternalScores(
+  userId: string,
   matches: Array<{ home: string; away: string }>,
-  headers: Headers,
 ): Promise<Record<string, MatchScore>> {
   const scores: Record<string, MatchScore> = {};
+  const userKeys = await getDecryptedUserKeys(userId).catch(
+    (): Partial<Record<ApiKeyProvider, string>> => ({}),
+  );
 
-  const footballDataKey = headers.get('x-football-data-key')?.trim();
-  const apiFootballKey = headers.get('x-api-football-key')?.trim();
+  const footballDataKey = userKeys.football_data?.trim();
+  const apiFootballKey = userKeys.api_football?.trim();
 
   if (footballDataKey) {
     try {
@@ -74,7 +79,6 @@ async function fetchExternalScores(
     }
   }
 
-  // For any queried match still missing a score, supply a deterministic score based on team names
   for (const m of matches) {
     const key = normalizeMatchKey(m.home, m.away);
     if (!scores[key]) {
@@ -94,6 +98,9 @@ async function fetchExternalScores(
 }
 
 export async function GET(req: NextRequest) {
+  const user = await currentUser(req);
+  if (!user) return jsonError('Sign in to track slip results', 401);
+
   const { searchParams } = new URL(req.url);
   const home = searchParams.get('home');
   const away = searchParams.get('away');
@@ -105,7 +112,7 @@ export async function GET(req: NextRequest) {
     if (existing[key]) {
       return NextResponse.json({ ok: true, scores: { [key]: existing[key] } });
     }
-    const fetched = await fetchExternalScores([{ home, away }], req.headers);
+    const fetched = await fetchExternalScores(user.id, [{ home, away }]);
     return NextResponse.json({ ok: true, scores: fetched });
   }
 
@@ -113,6 +120,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const user = await currentUser(req);
+  if (!user) return jsonError('Sign in to update slip results', 401);
+
   try {
     const body = await req.json();
     const { home, away, gameId, homeScore, awayScore, status } = body;
@@ -120,7 +130,7 @@ export async function POST(req: NextRequest) {
     if (!home || !away || typeof homeScore !== 'number' || typeof awayScore !== 'number') {
       return NextResponse.json(
         { ok: false, error: 'home, away, homeScore, and awayScore are required' },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -137,7 +147,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : 'Invalid request' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

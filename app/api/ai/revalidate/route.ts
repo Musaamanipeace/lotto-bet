@@ -2,16 +2,23 @@ import { loadAiSnapshot } from '@/lib/run-ai.ts';
 import { getStore } from '@/lib/server.ts';
 import { readGames } from '@/lib/read-games.ts';
 import { revalidatePicks } from '@/lib/revalidate.ts';
+import { requireAiAccess } from '@/lib/ai-auth.ts';
+import { requireJson } from '@/lib/session.ts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /**
  * POST /api/ai/revalidate { pickIds }
- * Re-checks picks against the latest odds before they go on a betslip. Reports price changes,
- * suspended outcomes and dropped markets; never updates silently.
+ * Requires signed-in session (401).
  */
 export async function POST(req: Request) {
+  const bad = requireJson(req);
+  if (bad) return bad;
+
+  const access = await requireAiAccess(req, { requireAiKey: false });
+  if (!access.ok) return access.response;
+
   let b: { pickIds?: unknown };
   try { b = (await req.json()) as { pickIds?: unknown }; } catch { return Response.json({ ok: false, error: 'Body must be JSON' }, { status: 400 }); }
   const ids = Array.isArray(b.pickIds) ? b.pickIds.filter((x): x is string => typeof x === 'string').slice(0, 500) : [];

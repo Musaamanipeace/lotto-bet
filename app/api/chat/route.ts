@@ -1,49 +1,33 @@
-import { requireJson, jsonError, currentUser } from '@/lib/session.ts';
+import { requireJson, jsonError } from '@/lib/session.ts';
+import { requireAiAccess } from '@/lib/ai-auth.ts';
 import { callLlm } from '@/lib/llm/index.ts';
-import { buildLlmEnv, hasClientByokHeaders } from '@/lib/llm/request-env.ts';
 import { getAiSnapshot } from '@/lib/ai-store.ts';
+import { applyFilterState, normalizeFilterState, type FilterState } from '@/lib/filter-state.ts';
+import { toolPickN, toolSuggestSwaps, type AgentAction, type SlipLegSummary } from '@/lib/ai-agent.ts';
 
 export const dynamic = 'force-dynamic';
-// The LLM chain has its own 30s budget (see llm/types.ts); this keeps the host from cutting it off first.
 export const maxDuration = 60;
 
 const SYSTEM = `You are the Lotto Bet assistant. Hard rules:
 - Never say a slip will win, is likely to win, or is safe to win. "Safe" is only a tier name (lower risk relative to other tiers).
 - Only discuss picks that appear in the provided AI picks context. Never invent odds, teams, or stats.
 - Criteria verification and bookmaker implied probability are separate; never merge them into a win chance.
-- If the user asks to add/remove games, reply with a structured action block the app can run — do not claim you placed a bet.
-- If data is missing, say so clearly. No fabricated content.
-- Keep replies concise (2–6 sentences) unless listing picks.
-
-When suggesting actions, end with a single line in this exact format when applicable:
-ACTION: add_games n=<number> market=<market_key_or_any>
-ACTION: explain_pick id=<pick_id>
-ACTION: none
-`;
+- Keep replies concise (2–5 sentences).`;
 
 export async function POST(req: Request) {
   const bad = requireJson(req);
   if (bad) return bad;
 
-  const user = await currentUser(req);
-  if (!user) {
-    return jsonError('Sign in required to use AI Chat.', 401);
-  }
+  const access = await requireAiAccess(req, { requireAiKey: true });
+  if (!access.ok) return access.response;
 
-  // Enforce strict BYOK: if the client has not submitted their own API key via headers, refuse and tell them to submit.
-  if (!hasClientByokHeaders(req.headers)) {
-    return Response.json(
-      {
-        ok: false,
-        code: 'byok_required',
-        error: 'Please submit your own API key (BYOK) in Settings (Menu ▾ → Settings) before using AI features.',
-        message: 'Please submit your own API key (BYOK) in Settings (Menu ▾ → Settings) before using AI features.',
-      },
-      { status: 400 },
-    );
-  }
-
-  let body: { message?: string; slipSummary?: string; history?: { role: string; content: string }[] };
+  let body: {
+    message?: string;
+    slipSummary?: string;
+    slipLegs?: SlipLegSummary[];
+    filterState?: Partial<FilterState> | null;
+    history?: { role: string; content: string }[];
+  };
   try {
     body = await req.json();
   } catch {
@@ -53,10 +37,39 @@ export async function POST(req: Request) {
   if (!message) return jsonError('message is required', 400);
   if (message.length > 2000) return jsonError('message too long (max 2000)', 400);
 
-  // Read-only: chat never generates picks. If nothing is saved yet the model is told so.
   const snap = await getAiSnapshot().catch(() => null);
+  const filterState = normalizeFilterState(body.filterState);
+  const filteredPicks = snap ? applyFilterState(snap.picks, filterState, { pastGraceMs: 5 * 60_000 }) : [];
+  const snapIds = new Set((snap?.picks ?? []).map((p) => p.id));
 
-  const pickSample = (snap?.picks ?? [])
+  // Build deterministic structured actions when user asks to add picks or swap legs
+  const actions: AgentAction[] = [];
+  const slipLegs = Array.isArray(body.slipLegs) ? body.slipLegs : [];
+  const excludedGames = new Set(slipLegs.map((l) => l.gameId));
+  const numMatch = message.match(/\b(\d{1,2})\b/);
+
+  if (snap && /\b(swap|replace|weak|review)\b/i.test(message) && slipLegs.length > 0) {
+    const out = toolSuggestSwaps(slipLegs, snap.picks, filterState, { count: 3 });
+    for (const s of out.swaps) {
+      if (snapIds.has(s.inPickId)) actions.push(s);
+    }
+  } else if (snap && /\b(add|pick|build|suggest|select|give)\b/i.test(message) && filteredPicks.length > 0) {
+    const n = numMatch ? Math.min(20, Math.max(1, Number(numMatch[1]))) : 5;
+    const picked = toolPickN(snap.picks, filterState, { n, excludeGameIds: excludedGames });
+    const valid = picked.picks.filter((p) => snapIds.has(p.id));
+    if (valid.length > 0) {
+      actions.push({
+        type: 'add_picks',
+        picks: valid,
+        requested: n,
+        shortfall: Math.max(0, n - valid.length),
+        totalOdds: valid.reduce((a, p) => a * p.odds, 1),
+        tier: 'average',
+      });
+    }
+  }
+
+  const pickSample = filteredPicks
     .slice(0, 25)
     .map(
       (p) =>
@@ -65,12 +78,14 @@ export async function POST(req: Request) {
     .join('\n');
 
   const context = [
-    `User: ${user?.username ?? 'guest'}`,
-    `AI snapshot: ${snap ? `${snap.picks.length} picks (${snap.verifiedCount} Verified, ${snap.bestFitCount} Best fit)` : 'none — ask user to refresh games / regenerate AI'}`,
+    `User: ${access.user.username}`,
+    `Active filter bookmaker=${filterState.bookmaker}, withinHours=${filterState.withinHours ?? 'any'}, leagues=${filterState.leagues.length || 'all'}`,
+    `AI snapshot: ${snap ? `${filteredPicks.length} matching active filters (${snap.picks.length} total)` : 'none — ask user to refresh games / regenerate AI'}`,
     snap?.statsNote ? `Stats note: ${snap.statsNote}` : '',
     body.slipSummary ? `Current slip: ${body.slipSummary}` : 'Current slip: empty or unknown',
-    'Sample AI picks (closed set — only these IDs are valid):',
-    pickSample || '(no picks)',
+    actions.length > 0 ? `Prepared structured actions count: ${actions.length}` : '',
+    'Matching AI picks (closed set — only these IDs are valid):',
+    pickSample || '(no matching picks)',
   ]
     .filter(Boolean)
     .join('\n');
@@ -82,18 +97,25 @@ export async function POST(req: Request) {
 
   const prompt = `${context}\n\nConversation:\n${history}\nuser: ${message}\nassistant:`;
 
-  // Strictly use client BYOK headers (`base = {}`), never server API keys.
-  const env = buildLlmEnv(req.headers, {});
-
   const r = await callLlm(
     {
       system: SYSTEM,
       prompt,
     },
-    env,
+    access.env,
   );
 
   if (!r.ok) {
+    // If deterministic actions were prepared, still return ok with actions + warning rather than dropping actions
+    if (actions.length > 0) {
+      return Response.json({
+        ok: true,
+        reply: `Prepared ${actions.length} structured slip action(s) matching your active filters (LLM summary unavailable: ${r.error}).`,
+        actions,
+        action: actions[0] ?? null,
+        llmWarning: r.error,
+      });
+    }
     return Response.json(
       {
         ok: false,
@@ -106,33 +128,13 @@ export async function POST(req: Request) {
     );
   }
 
-  // Parse optional ACTION line
-  let action: { type: string; n?: number; market?: string; id?: string } | null = null;
-  const actionMatch = r.text.match(/ACTION:\s*(add_games|explain_pick|none)([^\n]*)/i);
-  if (actionMatch) {
-    const type = actionMatch[1].toLowerCase();
-    const rest = actionMatch[2] ?? '';
-    if (type === 'add_games') {
-      const n = Number((rest.match(/n=(\d+)/) || [])[1] || 0);
-      const market = (rest.match(/market=([a-z0-9_]+)/) || [])[1];
-      action = { type: 'add_games', n: n || undefined, market: market === 'any' ? undefined : market };
-    } else if (type === 'explain_pick') {
-      const id = (rest.match(/id=([^\s]+)/) || [])[1];
-      action = { type: 'explain_pick', id };
-    } else {
-      action = { type: 'none' };
-    }
-  }
-
-  const reply = r.text.replace(/\n?ACTION:.*$/im, '').trim();
-
   return Response.json({
     ok: true,
-    reply,
-    action,
+    reply: r.text.trim(),
+    actions,
+    action: actions[0] ?? null,
     provider: r.provider,
     model: r.model,
-    // Providers that failed before this one answered, so a fallback is never silent.
     attempts: r.attempts,
   });
 }

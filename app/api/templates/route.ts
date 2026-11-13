@@ -1,15 +1,44 @@
 import { currentUser, jsonError, requireJson } from '@/lib/session.ts';
 import { DEFAULT_TEMPLATES, type FilterTemplate } from '@/lib/template-store.ts';
+import { queryAsUser } from '@/lib/pg-store.ts';
 
 export const dynamic = 'force-dynamic';
 
-// In-memory per-user templates store (strictly scoped by authenticated userId)
+// In-memory per-user templates store fallback (strictly scoped by authenticated userId)
 const userTemplatesMap = new Map<string, FilterTemplate[]>();
+const usePg = () => Boolean(process.env.DATABASE_URL);
+
+async function loadCustomTemplates(userId: string): Promise<FilterTemplate[]> {
+  if (!usePg()) return userTemplatesMap.get(userId) ?? [];
+  const r = await queryAsUser<{ custom_templates: unknown }>(
+    userId,
+    `SELECT custom_templates FROM user_settings WHERE user_id = $1`,
+    [userId],
+  );
+  const raw = r.rows[0]?.custom_templates;
+  return Array.isArray(raw) ? (raw as FilterTemplate[]) : [];
+}
+
+async function saveCustomTemplates(userId: string, list: FilterTemplate[]): Promise<void> {
+  if (!usePg()) {
+    userTemplatesMap.set(userId, list);
+    return;
+  }
+  await queryAsUser(
+    userId,
+    `INSERT INTO user_settings (user_id, custom_templates, updated_at)
+     VALUES ($1, $2::jsonb, now())
+     ON CONFLICT (user_id) DO UPDATE SET
+       custom_templates = EXCLUDED.custom_templates,
+       updated_at = now()`,
+    [userId, JSON.stringify(list)],
+  );
+}
 
 export async function GET(req: Request) {
   try {
     const user = await currentUser(req);
-    const list = user ? (userTemplatesMap.get(user.id) ?? []) : [];
+    const list = user ? await loadCustomTemplates(user.id) : [];
     return Response.json({
       ok: true,
       templates: [...DEFAULT_TEMPLATES, ...list],
@@ -35,9 +64,9 @@ export async function POST(req: Request) {
 
     const newTemplate: FilterTemplate = {
       id: `tpl-${Date.now()}-${++serverTemplateClock}`,
-      name: body.name.trim(),
-      description: typeof body.description === 'string' ? body.description.trim() : undefined,
-      bookmaker: body.bookmaker || 'sportybet',
+      name: body.name.trim().slice(0, 60),
+      description: typeof body.description === 'string' ? body.description.trim().slice(0, 200) : undefined,
+      bookmaker: body.bookmaker === 'betpawa' ? 'betpawa' : 'sportybet',
       withinHours: body.withinHours !== undefined ? body.withinHours : null,
       leagues: Array.isArray(body.leagues) ? body.leagues : [],
       cards: body.cards,
@@ -46,8 +75,8 @@ export async function POST(req: Request) {
       isDefault: false,
     };
 
-    const cur = userTemplatesMap.get(user.id) ?? [];
-    userTemplatesMap.set(user.id, [newTemplate, ...cur.slice(0, 50)]);
+    const cur = await loadCustomTemplates(user.id);
+    await saveCustomTemplates(user.id, [newTemplate, ...cur.slice(0, 49)]);
 
     return Response.json({ ok: true, template: newTemplate });
   } catch (e) {
@@ -65,9 +94,9 @@ export async function DELETE(req: Request) {
     const id = body?.id;
     if (typeof id !== 'string') return jsonError('Template ID is required', 400);
 
-    const cur = userTemplatesMap.get(user.id) ?? [];
+    const cur = await loadCustomTemplates(user.id);
     const next = cur.filter((t) => t.id !== id && t.userId === user.id);
-    userTemplatesMap.set(user.id, next);
+    await saveCustomTemplates(user.id, next);
 
     return Response.json({ ok: true, deletedId: id });
   } catch (e) {

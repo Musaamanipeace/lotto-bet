@@ -5,7 +5,8 @@
 -- 1. Strict user-scoped RLS on all user-owned tables (slips, picks, community_posts, sessions, user_shortcuts)
 --    using `effective_user_id()` which supports both Supabase `auth.uid()` and Postgres `app.current_user_id`.
 --    No user-owned table is open to `anon`.
--- 2. Drop any API key / secret columns or tables from the database (all keys live strictly in server env vars).
+-- 2. Note: Earlier revision dropped `user_api_keys`; per updated Task 2, API keys are persisted encrypted
+--    per user in `user_api_keys` (see `007_user_api_keys.sql`), so this migration no longer drops them.
 -- 11. Create `user_shortcuts` table with allowlist CHECK constraint, 24-char label limit, and per-user RLS.
 
 -- ---------------------------------------------------------------------------
@@ -30,20 +31,6 @@ BEGIN
   RETURN COALESCE(uid, app_current_user_id());
 END;
 $$;
-
--- ---------------------------------------------------------------------------
--- Task 2: Remove any stored API keys / settings keys from the database
--- ⚠️ REQUIRES HUMAN APPROVAL BEFORE RUNNING
--- ---------------------------------------------------------------------------
-ALTER TABLE IF EXISTS users
-  DROP COLUMN IF EXISTS gemini_api_key,
-  DROP COLUMN IF EXISTS openrouter_api_key,
-  DROP COLUMN IF EXISTS mistral_api_key,
-  DROP COLUMN IF EXISTS football_data_api_key,
-  DROP COLUMN IF EXISTS api_football_key,
-  DROP COLUMN IF EXISTS settings_keys;
-
-DROP TABLE IF EXISTS user_api_keys;
 
 -- ---------------------------------------------------------------------------
 -- Task 11: user_shortcuts table with allowlist check & RLS
