@@ -1,4 +1,3 @@
-import { decryptUserApiKey, encryptUserApiKey, type EncryptedKeyRecord } from './key-crypto.ts';
 import { createDefaultFilterState, normalizeFilterState, type FilterState } from './filter-state.ts';
 import { DEFAULT_ORDER } from './llm/index.ts';
 import { ALL_PROVIDERS } from './llm/providers.ts';
@@ -6,6 +5,13 @@ import type { LlmEnv } from './llm/types.ts';
 import { ensureUserSettingsTables } from './pg-schema.ts';
 import { queryAsUser } from './pg-store.ts';
 import type { Bookmaker } from './types.ts';
+
+export function maskLast4(plaintext: string): string {
+  const clean = plaintext.trim();
+  if (!clean) return '';
+  if (clean.length <= 4) return '••••';
+  return clean.slice(-4);
+}
 
 export type ApiKeyProvider = 'gemini' | 'openrouter' | 'mistral' | 'football_data' | 'api_football';
 export const API_KEY_PROVIDERS: readonly ApiKeyProvider[] = [
@@ -51,16 +57,19 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   filterState: createDefaultFilterState('sportybet'),
 };
 
-type StoredEncryptedKey = EncryptedKeyRecord & {
+type StoredKeyRecord = {
   provider: ApiKeyProvider;
+  key: string;
+  last4: string;
+  keyId: string;
   updatedAt: number;
 };
 
 const g = globalThis as unknown as {
-  __lottoMemKeys?: Map<string, Map<ApiKeyProvider, StoredEncryptedKey>>;
+  __lottoMemKeys?: Map<string, Map<ApiKeyProvider, StoredKeyRecord>>;
   __lottoMemPrefs?: Map<string, UserPreferences>;
 };
-const memKeys = (g.__lottoMemKeys ??= new Map<string, Map<ApiKeyProvider, StoredEncryptedKey>>());
+const memKeys = (g.__lottoMemKeys ??= new Map<string, Map<ApiKeyProvider, StoredKeyRecord>>());
 const memPrefs = (g.__lottoMemPrefs ??= new Map<string, UserPreferences>());
 
 const usePg = () => Boolean(process.env.DATABASE_URL);
@@ -176,42 +185,48 @@ export async function setUserApiKey(
   provider: ApiKeyProvider,
   plaintextKey: string,
 ): Promise<MaskedKeyStatus> {
-  const enc = encryptUserApiKey(userId, plaintextKey);
+  const cleanUser = userId.trim();
+  const cleanKey = plaintextKey.trim();
+  if (!cleanUser) throw new Error('userId is required to save API key');
+  if (!cleanKey) throw new Error('API key cannot be empty');
+
+  const last4 = maskLast4(cleanKey);
+  const keyId = 'plain';
   const updatedAt = Date.now();
 
   if (!usePg()) {
-    const map = memKeys.get(userId) ?? new Map<ApiKeyProvider, StoredEncryptedKey>();
-    map.set(provider, { ...enc, provider, updatedAt });
-    memKeys.set(userId, map);
+    const map = memKeys.get(cleanUser) ?? new Map<ApiKeyProvider, StoredKeyRecord>();
+    map.set(provider, { provider, key: cleanKey, last4, keyId, updatedAt });
+    memKeys.set(cleanUser, map);
     return {
       provider,
       isSet: true,
-      last4: enc.last4,
-      keyId: enc.keyId,
+      last4,
+      keyId,
       updatedAt,
     };
   }
 
   await ensureUserSettingsTables();
   await queryAsUser(
-    userId,
+    cleanUser,
     `INSERT INTO user_api_keys (user_id, provider, ciphertext, iv, tag, last4, key_id, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+     VALUES ($1, $2, $3, '', '', $4, $5, now())
      ON CONFLICT (user_id, provider) DO UPDATE SET
        ciphertext = EXCLUDED.ciphertext,
-       iv = EXCLUDED.iv,
-       tag = EXCLUDED.tag,
+       iv = '',
+       tag = '',
        last4 = EXCLUDED.last4,
        key_id = EXCLUDED.key_id,
        updated_at = now()`,
-    [userId, provider, enc.ciphertext, enc.iv, enc.tag, enc.last4, enc.keyId],
+    [cleanUser, provider, cleanKey, last4, keyId],
   );
 
   return {
     provider,
     isSet: true,
-    last4: enc.last4,
-    keyId: enc.keyId,
+    last4,
+    keyId,
     updatedAt,
   };
 }
@@ -297,7 +312,7 @@ export async function getUserSettingsForClient(userId: string): Promise<UserSett
 }
 
 /**
- * Server-only helper: decrypts a user's stored API keys on the server using `userId` AAD.
+ * Server-only helper: loads a user's stored API keys on the server.
  * NEVER return these values to browser code or write them to logs.
  */
 export async function getDecryptedUserKeys(
@@ -309,11 +324,7 @@ export async function getDecryptedUserKeys(
     const map = memKeys.get(userId);
     if (!map) return out;
     for (const [provider, rec] of map.entries()) {
-      try {
-        out[provider] = decryptUserApiKey(userId, rec);
-      } catch {
-        /* ignore corrupted or mismatched AAD key */
-      }
+      if (rec.key) out[provider] = rec.key;
     }
     return out;
   }
@@ -322,26 +333,14 @@ export async function getDecryptedUserKeys(
   const r = await queryAsUser<{
     provider: ApiKeyProvider;
     ciphertext: string;
-    iv: string;
-    tag: string;
-    key_id: string;
   }>(
     userId,
-    `SELECT provider, ciphertext, iv, tag, key_id FROM user_api_keys WHERE user_id = $1`,
+    `SELECT provider, ciphertext FROM user_api_keys WHERE user_id = $1`,
     [userId],
   );
   for (const row of r.rows) {
     if (!API_KEY_PROVIDERS.includes(row.provider)) continue;
-    try {
-      out[row.provider] = decryptUserApiKey(userId, {
-        ciphertext: row.ciphertext,
-        iv: row.iv,
-        tag: row.tag,
-        keyId: row.key_id,
-      });
-    } catch {
-      /* ignore decryption failures */
-    }
+    if (row.ciphertext) out[row.provider] = row.ciphertext;
   }
   return out;
 }

@@ -8,7 +8,7 @@ import { BetslipModal } from './betslip-modal';
 import { useFilters } from './filter-context';
 import { FiltersModal } from './market-filters';
 import { SettingsModal } from './settings-modal';
-import { ShortcutsBar } from './shortcuts-bar';
+import { ShortcutsBar, ShortcutsModals, useShortcutsController } from './shortcuts-bar';
 import { useStoredSlip } from './use-slips';
 
 /** Unsigned-in users only have access to Builder, Filters, Available Games, and non-AI Settings. */
@@ -33,6 +33,7 @@ const USER_MENU: { label: string; href: string }[] = [
 export function TopBar() {
   const { user, loading, sessionError, openAuth, signOut } = useAuth();
   const { openFiltersSheet } = useFilters();
+  const shortcutsCtrl = useShortcutsController();
   const pathname = usePathname();
   const [slip] = useStoredSlip();
   const [open, setOpen] = useState(false);
@@ -236,7 +237,7 @@ export function TopBar() {
         </div>
 
         {/* Signed-in customizable shortcuts bar (Task 11) */}
-        <ShortcutsBar />
+        <ShortcutsBar ctrl={shortcutsCtrl} />
 
         {sessionError && (
           <div className="border-t border-red-500/30 bg-red-500/10 px-4 py-1.5 text-center text-xs text-red-300" role="alert">
@@ -252,6 +253,7 @@ export function TopBar() {
         style={{ height: `${headerHeight}px` }}
       />
 
+      <ShortcutsModals ctrl={shortcutsCtrl} />
       <BetslipModal
         open={betslipOpen}
         onClose={() => setBetslipOpen(false)}

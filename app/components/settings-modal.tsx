@@ -157,7 +157,7 @@ export function SettingsModal({
         kind: 'ok',
         text:
           Object.keys(apiKeysPayload).length > 0
-            ? 'Encrypted API keys & preferences saved to your account.'
+            ? 'API keys & preferences saved to your account.'
             : 'Preferences saved to your account.',
       });
       return true;
@@ -361,7 +361,7 @@ export function SettingsModal({
                 Sign in to save API keys and use AI
               </p>
               <p className="text-[11px] text-amber-100/80">
-                Your saved keys stay encrypted under your account and survive sign-out across devices.
+                Your saved keys stay tied to your account and survive sign-out across devices.
               </p>
             </div>
             <div className="flex gap-2">
@@ -392,7 +392,7 @@ export function SettingsModal({
         {/* Signed-in persistence mode banner when running without Postgres */}
         {user && snapshot?.persistenceMode === 'memory' && (
           <div className="border-b border-amber-500/30 bg-amber-500/10 px-5 py-2 text-[11px] text-amber-200">
-            ⚠️ Server is running in encrypted in-memory mode (no DATABASE_URL configured). Keys will reset if the server restarts.
+            ⚠️ Server is running in in-memory mode (no DATABASE_URL configured). Keys will reset if the server restarts.
           </div>
         )}
 
@@ -443,14 +443,14 @@ export function SettingsModal({
             </p>
           </div>
 
-          {/* Signed-in encrypted API keys */}
+          {/* Signed-in API keys */}
           {user && (
             <>
               <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3.5">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-semibold text-white">
-                      AI Provider Keys (Encrypted Server-Side)
+                      AI Provider Keys (Stored Server-Side)
                     </h3>
                     <p className="text-xs text-slate-400">
                       Only masked last-4 digits are displayed after saving. Raw keys are never sent back to the browser.

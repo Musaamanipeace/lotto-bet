@@ -5,15 +5,10 @@ import path from 'node:path';
 import { currentUser } from '../src/lib/session.ts';
 import { requireAiAccess } from '../src/lib/ai-auth.ts';
 import {
-  decryptUserApiKey,
-  encryptUserApiKey,
-  isEncryptionSecretConfigured,
-  maskLast4,
-} from '../src/lib/key-crypto.ts';
-import {
   buildUserLlmEnv,
   deleteUserApiKey,
   getUserSettingsForClient,
+  maskLast4,
   resetUserSettingsStoreForTests,
   saveUserPreferences,
   setUserApiKey,
@@ -80,42 +75,27 @@ function sampleAiPick(overrides: Partial<AiPick> = {}): AiPick {
   };
 }
 
-describe('Encrypted per-user API keys & settings (Tasks 2 & 12)', () => {
+describe('Per-user API keys & settings (Tasks 2 & 12)', () => {
   beforeEach(() => {
     resetUserSettingsStoreForTests();
-    process.env.KEY_ENCRYPTION_SECRET = 'test-master-secret-for-lotto-bet-32bytes!';
+    delete process.env.KEY_ENCRYPTION_SECRET;
     delete process.env.KEY_ENCRYPTION_SECRETS;
-    process.env.KEY_ENCRYPTION_KEY_ID = 'v1';
   });
 
-  it('encrypts with AES-256-GCM + userId AAD, prevents cross-user decryption, and supports key rotation', () => {
-    assert.equal(isEncryptionSecretConfigured(), true);
-    const enc = encryptUserApiKey('user-a', 'AIzaSySuperSecret9876');
-    assert.equal(enc.last4, '9876');
-    assert.equal(maskLast4('AIzaSySuperSecret9876'), '9876');
-    assert.notEqual(enc.ciphertext, 'AIzaSySuperSecret9876');
-
-    // Same user decrypts cleanly
-    assert.equal(decryptUserApiKey('user-a', enc), 'AIzaSySuperSecret9876');
-
-    // Wrong user AAD MUST fail authentication tag check
-    assert.throws(() => decryptUserApiKey('user-b', enc));
-
-    // Rotate active secret to v2 while retaining v1 for older rows
-    delete process.env.KEY_ENCRYPTION_SECRET;
-    process.env.KEY_ENCRYPTION_KEY_ID = 'v2';
-    process.env.KEY_ENCRYPTION_SECRETS = JSON.stringify({
-      v1: 'test-master-secret-for-lotto-bet-32bytes!',
-      v2: 'brand-new-rotated-secret-v2-32bytes!',
-    });
-
-    // Old v1 ciphertext still decrypts under v1 key
-    assert.equal(decryptUserApiKey('user-a', enc), 'AIzaSySuperSecret9876');
-
-    // New ciphertext encrypts under v2 and decrypts cleanly
-    const encV2 = encryptUserApiKey('user-a', 'sk-or-v1-rotated-1234');
-    assert.equal(encV2.keyId, 'v2');
-    assert.equal(decryptUserApiKey('user-a', encV2), 'sk-or-v1-rotated-1234');
+  it('saves and loads API keys without requiring KEY_ENCRYPTION_SECRET in any environment', async () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+    try {
+      assert.equal(maskLast4('AIzaSySuperSecret9876'), '9876');
+      const saved = await setUserApiKey('user-a', 'gemini', 'AIzaSySuperSecret9876');
+      assert.equal(saved.isSet, true);
+      assert.equal(saved.last4, '9876');
+      const envRes = await buildUserLlmEnv('user-a', { provider: 'gemini' });
+      assert.equal(envRes.hasAiKey, true);
+      assert.equal(envRes.env.GEMINI_API_KEY, 'AIzaSySuperSecret9876');
+    } finally {
+      (process.env as Record<string, string | undefined>).NODE_ENV = prevNodeEnv;
+    }
   });
 
   it('isolates per-user keys & preferences, never returns plaintext to client, and supports deletion', async () => {
