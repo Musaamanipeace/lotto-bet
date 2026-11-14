@@ -1,3 +1,4 @@
+import { ensureShortcutsTable } from './pg-schema.ts';
 import { queryAsUser } from './pg-store.ts';
 
 export const MAX_SHORTCUTS = 8;
@@ -73,7 +74,8 @@ export function validateShortcutInput(input: { label?: unknown; target?: unknown
 }
 
 // In-memory per-user fallback store
-const memShortcuts = new Map<string, UserShortcut[]>();
+const g = globalThis as unknown as { __lottoMemShortcuts?: Map<string, UserShortcut[]> };
+const memShortcuts = (g.__lottoMemShortcuts ??= new Map<string, UserShortcut[]>());
 let memSeq = 0;
 const usePg = () => Boolean(process.env.DATABASE_URL);
 
@@ -195,6 +197,7 @@ function rowToShortcut(r: PgShortcutRow): UserShortcut {
 export async function listShortcutsDb(userId: string | null): Promise<UserShortcut[]> {
   if (!userId) return [];
   if (!usePg()) return listShortcuts(userId);
+  await ensureShortcutsTable();
   const r = await queryAsUser<PgShortcutRow>(
     userId,
     `SELECT id, user_id, label, target, icon, position, (extract(epoch from created_at)*1000)::bigint AS created_ms
@@ -246,6 +249,7 @@ export async function updateShortcutDb(
   const labelRes = normalizeShortcutLabel(labelRaw);
   if (!labelRes.ok) return labelRes;
 
+  await ensureShortcutsTable();
   const r = await queryAsUser<PgShortcutRow>(
     userId,
     `UPDATE user_shortcuts
@@ -263,6 +267,7 @@ export async function deleteShortcutDb(userId: string | null, id: string): Promi
   if (!usePg()) return deleteShortcut(userId, id);
   if (!UUID_RE.test(id)) return false;
 
+  await ensureShortcutsTable();
   const r = await queryAsUser(
     userId,
     `DELETE FROM user_shortcuts WHERE id = $1 AND user_id = $2`,

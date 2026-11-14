@@ -7,6 +7,7 @@ import type { PickRow } from './filters.ts';
 import type { Bookmaker } from './types.ts';
 import { STORAGE_KEYS, scopedStorageKey } from './client-storage.ts';
 import { defaultSlipName } from './slip.ts';
+import { ensureSavedSlipsColumns } from './pg-schema.ts';
 import { queryAsUser, getPool } from './pg-store.ts';
 
 export type SavedSlip = {
@@ -202,6 +203,7 @@ function rowToSavedSlip(row: PgSlipRow): SavedSlip {
 export async function listSavedSlipsDb(userId: string | null): Promise<SavedSlip[]> {
   if (!userId) return [];
   if (!usePg()) return listSavedSlips(userId);
+  await ensureSavedSlipsColumns();
   const r = await queryAsUser<PgSlipRow>(
     userId,
     `SELECT id, user_id, name, destination, selections, total_odds, combined_implied,
@@ -227,6 +229,7 @@ export async function saveSlipDb(input: {
   if (!input.userId || !usePg()) {
     return saveSlip(input);
   }
+  await ensureSavedSlipsColumns();
   const slipName = input.name.trim() || defaultSlipName();
   const validUuid = input.id && UUID_RE.test(input.id) ? input.id : null;
 
@@ -289,6 +292,7 @@ export async function shareSlipDb(
   if (!userId) return null;
   if (!usePg()) return shareSlip(userId, id, note);
   if (!UUID_RE.test(id)) return null;
+  await ensureSavedSlipsColumns();
   const cleanNote = note?.trim() || null;
   const r = await queryAsUser<PgSlipRow>(
     userId,
@@ -306,6 +310,7 @@ export async function unshareSlipDb(userId: string | null, id: string): Promise<
   if (!userId) return false;
   if (!usePg()) return unshareSlip(userId, id);
   if (!UUID_RE.test(id)) return false;
+  await ensureSavedSlipsColumns();
   const r = await queryAsUser(
     userId,
     `UPDATE slips SET shared = false WHERE id = $1 AND user_id = $2`,
@@ -316,6 +321,7 @@ export async function unshareSlipDb(userId: string | null, id: string): Promise<
 
 export async function listCommunitySlipsDb(userId: string, limit = 50): Promise<SavedSlip[]> {
   if (!usePg()) return listCommunitySlips(limit);
+  await ensureSavedSlipsColumns();
   const r = await queryAsUser<PgSlipRow>(
     userId,
     `SELECT id, user_id, name, destination, selections, total_odds, combined_implied,

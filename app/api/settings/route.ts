@@ -49,6 +49,7 @@ export async function PUT(req: Request) {
 
   let body: {
     keys?: Partial<Record<ApiKeyProvider, string | null>>;
+    apiKeys?: Partial<Record<ApiKeyProvider, string | null>>;
     deleteProviders?: ApiKeyProvider[];
     preferences?: Partial<UserPreferences>;
   };
@@ -101,10 +102,17 @@ export async function PUT(req: Request) {
       }
     }
 
-    if (body.keys && typeof body.keys === 'object') {
+    const submittedKeys =
+      body.keys && typeof body.keys === 'object'
+        ? body.keys
+        : body.apiKeys && typeof body.apiKeys === 'object'
+          ? body.apiKeys
+          : null;
+
+    if (submittedKeys) {
       for (const provider of API_KEY_PROVIDERS) {
-        if (!(provider in body.keys)) continue;
-        const val = body.keys[provider];
+        if (!(provider in submittedKeys)) continue;
+        const val = submittedKeys[provider];
         if (val === null) {
           await deleteUserApiKey(user.id, provider);
           continue;

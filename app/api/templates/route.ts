@@ -1,15 +1,18 @@
 import { currentUser, jsonError, requireJson } from '@/lib/session.ts';
 import { DEFAULT_TEMPLATES, type FilterTemplate } from '@/lib/template-store.ts';
+import { ensureUserSettingsTables } from '@/lib/pg-schema.ts';
 import { queryAsUser } from '@/lib/pg-store.ts';
 
 export const dynamic = 'force-dynamic';
 
 // In-memory per-user templates store fallback (strictly scoped by authenticated userId)
-const userTemplatesMap = new Map<string, FilterTemplate[]>();
+const g = globalThis as unknown as { __lottoUserTemplatesMap?: Map<string, FilterTemplate[]> };
+const userTemplatesMap = (g.__lottoUserTemplatesMap ??= new Map<string, FilterTemplate[]>());
 const usePg = () => Boolean(process.env.DATABASE_URL);
 
 async function loadCustomTemplates(userId: string): Promise<FilterTemplate[]> {
   if (!usePg()) return userTemplatesMap.get(userId) ?? [];
+  await ensureUserSettingsTables();
   const r = await queryAsUser<{ custom_templates: unknown }>(
     userId,
     `SELECT custom_templates FROM user_settings WHERE user_id = $1`,
@@ -24,6 +27,7 @@ async function saveCustomTemplates(userId: string, list: FilterTemplate[]): Prom
     userTemplatesMap.set(userId, list);
     return;
   }
+  await ensureUserSettingsTables();
   await queryAsUser(
     userId,
     `INSERT INTO user_settings (user_id, custom_templates, updated_at)

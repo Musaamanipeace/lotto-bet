@@ -3,6 +3,7 @@ import { createDefaultFilterState, normalizeFilterState, type FilterState } from
 import { DEFAULT_ORDER } from './llm/index.ts';
 import { ALL_PROVIDERS } from './llm/providers.ts';
 import type { LlmEnv } from './llm/types.ts';
+import { ensureUserSettingsTables } from './pg-schema.ts';
 import { queryAsUser } from './pg-store.ts';
 import type { Bookmaker } from './types.ts';
 
@@ -55,8 +56,12 @@ type StoredEncryptedKey = EncryptedKeyRecord & {
   updatedAt: number;
 };
 
-const memKeys = new Map<string, Map<ApiKeyProvider, StoredEncryptedKey>>();
-const memPrefs = new Map<string, UserPreferences>();
+const g = globalThis as unknown as {
+  __lottoMemKeys?: Map<string, Map<ApiKeyProvider, StoredEncryptedKey>>;
+  __lottoMemPrefs?: Map<string, UserPreferences>;
+};
+const memKeys = (g.__lottoMemKeys ??= new Map<string, Map<ApiKeyProvider, StoredEncryptedKey>>());
+const memPrefs = (g.__lottoMemPrefs ??= new Map<string, UserPreferences>());
 
 const usePg = () => Boolean(process.env.DATABASE_URL);
 
@@ -104,6 +109,7 @@ export async function getUserPreferences(userId: string): Promise<UserPreference
   if (!usePg()) {
     return memPrefs.get(userId) ?? { ...DEFAULT_USER_PREFERENCES, filterState: createDefaultFilterState() };
   }
+  await ensureUserSettingsTables();
   const r = await queryAsUser<{
     selected_model: string;
     provider: AiProvider;
@@ -141,6 +147,7 @@ export async function saveUserPreferences(
     return next;
   }
 
+  await ensureUserSettingsTables();
   await queryAsUser(
     userId,
     `INSERT INTO user_settings (user_id, selected_model, provider, timeout_seconds, default_bookmaker, filter_state, updated_at)
@@ -185,6 +192,7 @@ export async function setUserApiKey(
     };
   }
 
+  await ensureUserSettingsTables();
   await queryAsUser(
     userId,
     `INSERT INTO user_api_keys (user_id, provider, ciphertext, iv, tag, last4, key_id, updated_at)
@@ -221,6 +229,7 @@ export async function deleteUserApiKey(
     return;
   }
 
+  await ensureUserSettingsTables();
   if (provider === 'all') {
     await queryAsUser(userId, `DELETE FROM user_api_keys WHERE user_id = $1`, [userId]);
   } else {
@@ -250,6 +259,7 @@ export async function getUserSettingsForClient(userId: string): Promise<UserSett
       }
     }
   } else {
+    await ensureUserSettingsTables();
     const r = await queryAsUser<{
       provider: ApiKeyProvider;
       last4: string;
@@ -308,6 +318,7 @@ export async function getDecryptedUserKeys(
     return out;
   }
 
+  await ensureUserSettingsTables();
   const r = await queryAsUser<{
     provider: ApiKeyProvider;
     ciphertext: string;

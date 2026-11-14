@@ -8,7 +8,7 @@ export type EncryptedKeyRecord = {
   keyId: string;
 };
 
-let devFallbackSecret: string | null = null;
+const gCrypto = globalThis as unknown as { __lottoDevFallbackSecret?: string };
 
 function resolveSecretMap(env: NodeJS.ProcessEnv = process.env): {
   activeKeyId: string;
@@ -60,10 +60,10 @@ function resolveSecretMap(env: NodeJS.ProcessEnv = process.env): {
         'KEY_ENCRYPTION_SECRET is required in production to encrypt or decrypt user API keys.',
       );
     }
-    if (!devFallbackSecret) {
-      devFallbackSecret = randomBytes(32).toString('hex');
+    if (!gCrypto.__lottoDevFallbackSecret) {
+      gCrypto.__lottoDevFallbackSecret = randomBytes(32).toString('hex');
     }
-    secrets[activeKeyId] = toKey(devFallbackSecret);
+    secrets[activeKeyId] = toKey(gCrypto.__lottoDevFallbackSecret);
   }
 
   return { activeKeyId, secrets };

@@ -25,7 +25,7 @@ DECLARE
 BEGIN
   BEGIN
     EXECUTE 'SELECT auth.uid()' INTO uid;
-  EXCEPTION WHEN undefined_function OR invalid_schema_name THEN
+  EXCEPTION WHEN OTHERS THEN
     uid := NULL;
   END;
   RETURN COALESCE(uid, app_current_user_id());

@@ -140,7 +140,7 @@ export function SettingsModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           preferences: prefs,
-          apiKeys: apiKeysPayload,
+          keys: apiKeysPayload,
         }),
       });
       const data = await res.json().catch(() => null);
