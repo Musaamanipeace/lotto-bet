@@ -1,0 +1,7 @@
+{
+  "name": "Lotto Bet",
+  "description": "Football betting slip builder with live odds and booking codes.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,65 @@
+import { loadAiSnapshot } from '@/lib/run-ai.ts';
+import { pickTargetOddsTiers, type AccumulatorSlip, type TargetResult } from '@/lib/ai-picks.ts';
+import { filterPicks, parseLeagues } from '@/lib/pick-filter.ts';
+import { requireAiAccess } from '@/lib/ai-auth.ts';
+
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
+const serializeSlip = (s: AccumulatorSlip | null) =>
+  s
+    ? {
+        id: s.id,
+        legCount: s.picks.length,
+        totalOdds: s.totalOdds,
+        combinedImpliedProbability: s.combinedImpliedProbability,
+        riskLabel: s.riskLabel,
+        coreCount: s.coreCount,
+        boosterCount: s.boosterCount,
+        picks: s.picks,
+      }
+    : null;
+
+const serialize = (r: TargetResult) => ({
+  slip: serializeSlip(r.slip),
+  achieved: r.achieved,
+  gap: r.gap,
+  message: r.message ?? null,
+});
+
+/**
+ * GET /api/ai/target-odds?target=20&bookmaker=sportybet
+ * Requires signed-in session (401) and user-stored API key (400 keys_required).
+ */
+export async function GET(req: Request) {
+  const access = await requireAiAccess(req, { requireAiKey: true });
+  if (!access.ok) return access.response;
+
+  const url = new URL(req.url);
+  const target = Number(url.searchParams.get('target') || 20);
+  const bookmaker = url.searchParams.get('bookmaker');
+  const rawWithin = url.searchParams.get('withinHours');
+  const withinHours = rawWithin !== null && rawWithin !== '' ? Number(rawWithin) : null;
+
+  if (!Number.isFinite(target) || target <= 1) {
+    return Response.json({ ok: false, error: 'target must be a number greater than 1' }, { status: 400 });
+  }
+
+  const r = await loadAiSnapshot();
+  if (!r.ok) return Response.json(r, { status: 400 });
+
+  const ranked = filterPicks(r.picks, {
+    bookmaker,
+    leagues: parseLeagues(url.searchParams.get('leagues')),
+    withinHours,
+  });
+
+  const t = pickTargetOddsTiers(ranked, target);
+  return Response.json({
+    ok: true,
+    target,
+    lower: serialize(t.lower),
+    average: serialize(t.average),
+    higher: serialize(t.higher),
+  });
+}
