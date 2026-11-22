@@ -91,6 +91,11 @@ export function evaluateLegOutcome(
     return { outcome: 'pending', reason: 'Awaiting match score' };
   }
 
+  // Placeholder scores (hash-based defaults) must never settle a leg as won or lost.
+  if (score.source === 'default') {
+    return { outcome: 'pending', reason: 'Awaiting real match score' };
+  }
+
   if (score.status === 'POSTPONED' || score.status === 'CANCELLED') {
     return { outcome: 'void', reason: `Match ${score.status.toLowerCase()}` };
   }

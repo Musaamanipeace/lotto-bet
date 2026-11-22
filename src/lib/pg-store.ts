@@ -83,7 +83,7 @@ export class PgStore implements Store {
       `SELECT id, bookmaker, native_event_id, home, away, (extract(epoch from kickoff)*1000)::bigint AS k, league, markets
        FROM games WHERE fetch_run_id = $1 AND bookmaker = $2 ORDER BY kickoff`, [runId, bookmaker]);
     return r.rows.map((x) => ({
-      id: x.id, bookmaker: x.bookmaker, nativeEventId: x.native_event_id, home: x.home, away: x.away,
+      id: x.id, sport: (x.sport ?? 'football') as import('./types.ts').Sport, bookmaker: x.bookmaker, nativeEventId: x.native_event_id, home: x.home, away: x.away,
       kickoff: Number(x.k), league: x.league, markets: x.markets, fetchRunId: runId,
     }));
   }

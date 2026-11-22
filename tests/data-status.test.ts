@@ -8,7 +8,7 @@ import type { Game } from '../src/lib/types.ts';
 
 function game(id: string, league: string, home: string, away: string, odds = 1.35): Game {
   return {
-    id: `sportybet:${id}`, bookmaker: 'sportybet', nativeEventId: id, home, away, kickoff: Date.parse('2026-11-02T15:00:00Z'),
+    id: `sportybet:${id}`, sport: 'football', bookmaker: 'sportybet', nativeEventId: id, home, away, kickoff: Date.parse('2026-11-02T15:00:00Z'),
     league, fetchRunId: 'r1',
     markets: [{
       bookmaker: 'sportybet', nativeId: 'm1', specifier: '', line: null, kind: '1x2', unavailableReason: null,

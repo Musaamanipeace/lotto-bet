@@ -51,7 +51,7 @@ test('remove N from a market removes the most recent N of that market only, and 
 
 test('implied probability on real rows: margin removed from the complete market; null if market has a suspended outcome', () => {
   const game = (suspended: boolean) => [{
-    id: 'sportybet:1', bookmaker: 'sportybet' as const, nativeEventId: '1', home: 'A', away: 'B', kickoff: 1, league: 'L', fetchRunId: null,
+    id: 'sportybet:1', sport: 'football' as const, bookmaker: 'sportybet' as const, nativeEventId: '1', home: 'A', away: 'B', kickoff: 1, league: 'L', fetchRunId: null,
     markets: [{ bookmaker: 'sportybet' as const, nativeId: '1', specifier: '', line: null, kind: '1x2' as const, unavailableReason: null, outcomes: [
       { bookmaker: 'sportybet' as const, nativeId: '1', desc: 'Home', odds: 2, isActive: true },
       { bookmaker: 'sportybet' as const, nativeId: '2', desc: 'Draw', odds: 4, isActive: true },

@@ -62,6 +62,7 @@ test('over and under markets strictly allow only 0.5, 1.5, 2.5, 3.5, 4.5, 5.5', 
 
   const testGame: Game = {
     id: 'sportybet:ou-lines',
+    sport: 'football',
     bookmaker: 'sportybet',
     nativeEventId: 'ou-lines',
     home: 'Arsenal',

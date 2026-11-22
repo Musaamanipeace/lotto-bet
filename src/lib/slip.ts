@@ -9,6 +9,8 @@ export const MAX_LEGS = 50;
 export type Slip = {
   legs: PickRow[];
   greyed: string[];
+  /** GameIds the agent locked (cannot be greyed). */
+  locked?: string[];
   /** Optional saved slip identifier when an active slip is auto-saved. */
   id?: string;
   /** Optional human-readable name (e.g. "Slip 8 Nov, 14:32"). */
@@ -77,6 +79,7 @@ export function removeFromMarket(slip: Slip, market: MarketSelector, n: number):
 }
 
 export function toggleGrey(slip: Slip, gameId: string): Slip {
+  if ((slip.locked ?? []).includes(gameId)) return slip;
   if (!slip.legs.some((l) => l.gameId === gameId)) return slip;
   const on = slip.greyed.includes(gameId);
   return { ...slip, greyed: on ? slip.greyed.filter((g) => g !== gameId) : [...slip.greyed, gameId] };

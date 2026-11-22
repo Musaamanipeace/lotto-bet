@@ -31,7 +31,9 @@ export type GameMatch = { sportyGameId: string; betpawaGameId: string; score: nu
 
 export function matchGames(sporty: Game[], betpawa: Game[], threshold: number = MATCHING.teamSimilarityThreshold) {
   const candidates: GameMatch[] = [];
+  // 6.3: cross-bookmaker matching only happens within the same sport.
   for (const s of sporty) for (const p of betpawa) {
+    if ((p.sport ?? 'football') !== (s.sport ?? 'football')) continue;
     const homeScore = teamSimilarity(s.home, p.home);
     const awayScore = teamSimilarity(s.away, p.away);
     if (homeScore >= threshold && awayScore >= threshold) {

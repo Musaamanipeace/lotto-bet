@@ -9,7 +9,7 @@ import { MemoryStore } from './memory-store.ts';
 const NOW = 1_000_000_000_000;
 const DAY = 86_400_000;
 const g = (b: 'sportybet' | 'betpawa', id: string, home: string, away: string, kickoff: number): Game => ({
-  id: `${b}:${id}`, bookmaker: b, nativeEventId: id, home, away, kickoff, league: 'L', markets: [], fetchRunId: null,
+  id: `${b}:${id}`, sport: 'football', bookmaker: b, nativeEventId: id, home, away, kickoff, league: 'L', markets: [], fetchRunId: null,
 });
 const good = (b: 'sportybet' | 'betpawa') => async () => ok({ games: [g(b, '1', 'Arsenal', 'Chelsea', NOW + DAY), g(b, '2', 'Old', 'Game', NOW - DAY), g(b, '3', 'Far', 'Future', NOW + 9 * DAY)], skipped: [] });
 

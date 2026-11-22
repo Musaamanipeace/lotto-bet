@@ -11,6 +11,7 @@ import {
   type Tier,
 } from './criteria.ts';
 import type { CriterionResult, Evaluation, PickLabel } from './evaluator.ts';
+import type { TargetRow } from './targeting.ts';
 
 export type AiPick = {
   id: string;
@@ -125,6 +126,34 @@ export function rankAiPicks(picks: AiPick[]): AiPick[] {
     if (a.fitScore !== b.fitScore) return b.fitScore - a.fitScore;
     return a.kickoff - b.kickoff;
   });
+}
+
+/**
+ * Fit score with the implied-probability weight removed, so per-leg
+ * targeting can rank candidates without the market's bias.
+ */
+export function fitScoreWithoutImplied(p: AiPick): number {
+  return p.fitScore - FIT_SCORE_WEIGHTS.impliedProbability * Math.min(1, Math.max(0, p.impliedProbability));
+}
+
+/** Convert an AiPick into a row the targeting module can work on. */
+export function toTargetRow(p: AiPick): TargetRow {
+  return {
+    id: p.id,
+    gameId: p.gameId,
+    bookmaker: p.bookmaker,
+    home: p.home,
+    away: p.away,
+    odds: p.odds,
+    impliedProbability: p.impliedProbability,
+    coverage: p.evaluation.dataCoverage,
+    fitBiasFree: fitScoreWithoutImplied(p),
+    fitScore: p.fitScore,
+    leaguePriority: leaguePriorityIndex(p.league),
+    label: p.evaluation.label,
+    tier: p.tier,
+    pick: p,
+  };
 }
 
 export type RiskLabel = 'lower risk' | 'higher risk';

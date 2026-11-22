@@ -110,7 +110,7 @@ export function parseBetPawaResponse(
       for (const m of Array.isArray(e.markets) ? e.markets : []) {
         markets.push(...parseBetPawaMarket(m, id, skipped));
       }
-      games.push({ id: `${B}:${id}`, bookmaker: B, nativeEventId: id, home, away, kickoff: start, league, markets, fetchRunId: fetchRunId ?? null });
+      games.push({ id: `${B}:${id}`, sport: 'football', bookmaker: B, nativeEventId: id, home, away, kickoff: start, league, markets, fetchRunId: fetchRunId ?? null });
     }
   }
   return ok({ games, skipped });

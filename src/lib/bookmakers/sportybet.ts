@@ -98,6 +98,7 @@ export function parseSportyResponse(
       }
       games.push({
         id: `${B}:${id}`,
+        sport: 'football',
         bookmaker: B,
         nativeEventId: id,
         home: e.homeTeamName,

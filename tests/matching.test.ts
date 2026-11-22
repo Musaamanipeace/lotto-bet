@@ -4,7 +4,7 @@ import { matchGames, teamSimilarity } from '../src/lib/matching.ts';
 import type { Game } from '../src/lib/types.ts';
 
 const g = (bookmaker: 'sportybet' | 'betpawa', id: string, home: string, away: string): Game => ({
-  id: `${bookmaker}:${id}`, bookmaker, nativeEventId: id, home, away, kickoff: 0, league: null, markets: [], fetchRunId: null,
+  id: `${bookmaker}:${id}`, sport: 'football', bookmaker, nativeEventId: id, home, away, kickoff: 0, league: null, markets: [], fetchRunId: null,
 });
 
 test('similarity ignores case, accents and FC/CF noise', () => {

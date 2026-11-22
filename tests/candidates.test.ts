@@ -43,6 +43,7 @@ test('generateCandidates only emits banded mapped markets with implied', () => {
   const games: Game[] = [
     {
       id: 'sportybet:1',
+      sport: 'football',
       bookmaker: 'sportybet',
       nativeEventId: '1',
       home: 'A',

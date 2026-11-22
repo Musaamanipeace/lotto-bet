@@ -1,4 +1,4 @@
-import { pickNGames, pickTargetOdds, type AiPick, type TargetTier } from './ai-picks.ts';
+import { pickNGames, pickTargetOdds, toTargetRow, type AiPick, type TargetTier } from './ai-picks.ts';
 import { swapInSlip, type SwapScope } from './alternatives.ts';
 import type { Tier } from './criteria.ts';
 import { emptyStateCounts } from './data-state.ts';
@@ -7,6 +7,7 @@ import { callLlm } from './llm/index.ts';
 import type { LlmEnv } from './llm/types.ts';
 import { revalidatePicks, type RevalidateFlag } from './revalidate.ts';
 import type { Game } from './types.ts';
+import { selectPerLeg, targetSlip, targetSlipRange } from './targeting.ts';
 
 export type SlipLegSummary = {
   gameId: string;
@@ -66,6 +67,12 @@ export type AgentRequest = {
   tier?: TargetTier | Tier;
   n?: number;
   targetOdds?: number;
+  /** Targeted-odds instructions (v2): per-leg target or [min, max] range. */
+  legOdds?: number;
+  min?: number;
+  max?: number;
+  /** Targeted total legs when a total target is given. */
+  legs?: number;
   market?: string | null;
   slipLegs?: SlipLegSummary[];
   lockedGameIds?: string[];
@@ -73,6 +80,54 @@ export type AgentRequest = {
   scope?: SwapScope;
   strict?: boolean;
 };
+
+export type OddsInstruction = {
+  targetOdds?: number;
+  legOdds?: number;
+  min?: number;
+  max?: number;
+  legs?: number;
+};
+
+/**
+ * Extracts odds instructions from a chat message. The instruction always
+ * overrides the tier defaults: "20 odds" (total), "a 2.0 game" / "a 1.5 game"
+ * (per-leg), "between 1.4 and 1.6" / "1.4 to 1.6" (range), "3 games at 1.5"
+ * / "3 games around 1.5" (legs + per-leg).
+ */
+export function parseOddsInstruction(message: string): OddsInstruction {
+  const out: OddsInstruction = {};
+  const m = message.match(/\b(\d{1,3}(?:\.\d+)?)\s*(?:odds?|x)\b/i);
+  if (m && m[1] && Number(m[1]) > 1) out.targetOdds = Number(m[1]);
+
+  const range = message.match(/\b(?:between\s+)?([\d.]+)\s*(?:to|and)\s*([\d.]+)\b/i);
+  if (range && range[1] && range[2]) {
+    const a = Number(range[1]);
+    const b = Number(range[2]);
+    if (a < b && Number.isFinite(a) && Number.isFinite(b)) {
+      out.min = a;
+      out.max = b;
+    }
+  }
+
+  const perLeg = message.match(/\ba\s+([\d.]+)\s*(?:odds?\s*)?games?\b/i) ?? message.match(/\b(?:at|around|about)\s+([\d.]+)\b/i);
+  if (perLeg && perLeg[1] && Number.isFinite(Number(perLeg[1])) && Number(perLeg[1]) > 1) {
+    out.legOdds = Number(perLeg[1]);
+  }
+
+  const legs = message.match(/\b(\d{1,2})\s+games?\b/i);
+  if (legs && legs[1] && Number(legs[1]) >= 1) out.legs = Number(legs[1]);
+
+  // "a 2.0 game" style without the article: bare "2.0 game"
+  if (out.legOdds === undefined) {
+    const bare = message.match(/\b([\d.]+)\s+games?\b/i);
+    if (bare && bare[1] && Number.isFinite(Number(bare[1])) && Number(bare[1]) > 1) {
+      out.legOdds = Number(bare[1]);
+    }
+  }
+
+  return out;
+}
 
 export type AgentResponse = {
   ok: true;
@@ -123,10 +178,14 @@ export function toolPickN(
     n: number;
     tier?: TargetTier;
     targetOdds?: number;
+    legOdds?: number;
+    min?: number;
+    max?: number;
+    legs?: number;
     market?: string | null;
     excludeGameIds?: Set<string>;
   },
-): { picks: AiPick[]; requested: number; shortfall: number; totalOdds: number; poolCount: number } {
+): { picks: AiPick[]; requested: number; shortfall: number; totalOdds: number; poolCount: number; message?: string } {
   const tier: TargetTier = opts.tier ?? 'average';
   const requested = Math.max(1, Math.min(50, Math.floor(opts.n || 5)));
   const pool = toolListCandidates(snapshotPicks, filterState, {
@@ -134,15 +193,42 @@ export function toolPickN(
     excludeGameIds: opts.excludeGameIds,
   });
 
-  if (opts.targetOdds && Number.isFinite(opts.targetOdds) && opts.targetOdds > 1) {
-    const res = pickTargetOdds(pool, opts.targetOdds, tier);
-    const chosen = res.slip?.picks ?? [];
+  // Targeted-odds instructions (v2): honour the user's explicit odds instead of
+  // tier defaults. TARGET_TIER_POOL applies only when there is no instruction.
+  if (opts.legOdds !== undefined && opts.legOdds > 1) {
+    const r = selectPerLeg(pool.map(toTargetRow), opts.legOdds);
+    const picks = r.pick?.pick ? [r.pick.pick as AiPick] : [];
     return {
-      picks: chosen,
-      requested,
-      shortfall: Math.max(0, requested - chosen.length),
-      totalOdds: chosen.reduce((a, p) => a * p.odds, 1),
+      picks,
+      requested: 1,
+      shortfall: picks.length ? 0 : 1,
+      totalOdds: picks.reduce((a, p) => a * p.odds, 1),
       poolCount: pool.length,
+      message: r.message,
+    };
+  }
+  if (opts.min !== undefined && opts.max !== undefined) {
+    const r = targetSlipRange(pool.map(toTargetRow), opts.min, opts.max);
+    const picks = r.picks.map((t) => t.pick as AiPick).filter(Boolean);
+    return {
+      picks,
+      requested: picks.length,
+      shortfall: 0,
+      totalOdds: picks.reduce((a, p) => a * p.odds, 1),
+      poolCount: pool.length,
+      message: r.message,
+    };
+  }
+  if (opts.targetOdds && Number.isFinite(opts.targetOdds) && opts.targetOdds > 1) {
+    const r = targetSlip(pool.map(toTargetRow), opts.targetOdds, { legs: opts.legs });
+    const picks = r.picks.map((t) => t.pick as AiPick).filter(Boolean);
+    return {
+      picks,
+      requested: requested,
+      shortfall: Math.max(0, requested - picks.length),
+      totalOdds: r.achieved,
+      poolCount: pool.length,
+      message: r.message,
     };
   }
 
@@ -470,6 +556,10 @@ export async function runAiAgent(opts: {
       n: request.n || 5,
       tier,
       targetOdds: request.targetOdds,
+      legOdds: request.legOdds,
+      min: request.min,
+      max: request.max,
+      legs: request.legs,
       market: request.market,
       excludeGameIds,
     });
@@ -522,8 +612,33 @@ export async function runAiAgent(opts: {
     const numMatch = msg.match(/\b(\d{1,2})\b/);
     const wantsAdd = /\b(add|pick|build|give|suggest|select)\b/i.test(msg);
     const wantsSwap = /\b(swap|replace|review|weak|fix|improve)\b/i.test(msg);
+    const od = parseOddsInstruction(msg);
 
-    if (wantsSwap && (request.slipLegs?.length ?? 0) > 0) {
+    if ((od.legOdds !== undefined && od.legOdds > 1) || (od.min !== undefined && od.max !== undefined) || (od.targetOdds !== undefined && od.targetOdds > 1)) {
+      const picked = toolPickN(snapshotPicks, filterState, {
+        n: request.n || 5,
+        targetOdds: od.targetOdds,
+        legOdds: od.legOdds,
+        min: od.min,
+        max: od.max,
+        legs: od.legs,
+        excludeGameIds,
+      });
+      picks = picked.picks.filter((p) => snapIdSet.has(p.id));
+      shortfall = picked.shortfall;
+      if (picks.length > 0) {
+        actions.push({
+          type: 'add_picks',
+          picks,
+          requested: picked.requested,
+          shortfall,
+          totalOdds: picked.totalOdds,
+          tier: 'average',
+        });
+      }
+      deterministicSummary =
+        picked.message ?? `Targeted odds requested (achieved ${picked.totalOdds.toFixed(2)}x, ${picks.length} leg(s)).`;
+    } else if (wantsSwap && (request.slipLegs?.length ?? 0) > 0) {
       const inspected = toolInspectSlip(request.slipLegs ?? [], snapshotPicks, latestGames);
       flags = inspected.flags;
       const swapOut = toolSuggestSwaps(request.slipLegs ?? [], snapshotPicks, filterState, {

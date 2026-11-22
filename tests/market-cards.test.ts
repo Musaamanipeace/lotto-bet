@@ -11,7 +11,7 @@ const mk = (nativeId: string, kind: Market['kind'], line: number | null, outcome
   bookmaker: 'sportybet', nativeId, specifier: line === null ? '' : `total=${line}`, line, kind, unavailableReason: null, outcomes,
 });
 const game: Game = {
-  id: 'sportybet:1', bookmaker: 'sportybet', nativeEventId: '1', home: 'A', away: 'B', kickoff: 1_800_000_000_000, league: 'L', fetchRunId: null,
+  id: 'sportybet:1', sport: 'football', bookmaker: 'sportybet', nativeEventId: '1', home: 'A', away: 'B', kickoff: 1_800_000_000_000, league: 'L', fetchRunId: null,
   markets: [
     mk('1', '1x2', null, [out('1', 'Home', 1.4), out('2', 'Draw', 4.2), out('3', 'Away', 7.5)]),
     mk('10', 'double_chance', null, [out('9', '1X', 1.12), out('10', '12', 1.18), out('11', 'X2', 2.9)]),

@@ -319,6 +319,23 @@ export const FIT_SCORE_WEIGHTS = {
   lowDataProbabilityBoost: 0.15,
 } as const;
 
+/**
+ * Targeted-odds behaviour (v2). All provisional:
+ * - `legToleranceSteps`: relative widening steps applied when a per-leg
+ *   window is empty ("nothing within 1.50 +/- 8%; showing 1.62").
+ * - `totalTolerance`: allowed relative gap for total-odds targets.
+ * - `defaultLegRange`: [min, max] leg counts when the user gives no N.
+ * - `preferredLegOdds`: per-leg average window used to choose N for totals.
+ */
+export const TARGETING = {
+  legToleranceSteps: [0.08, 0.15, 0.30] as const,
+  totalTolerance: 0.05,
+  defaultLegRange: [2, 12] as const,
+  preferredLegOdds: [1.4, 2.2] as const,
+} as const;
+
+export type LegTolerance = (typeof TARGETING.legToleranceSteps)[number];
+
 /** Accumulator composition (design §4). */
 export const ACCUMULATOR = {
   /** Default mix: core % / booster %. */

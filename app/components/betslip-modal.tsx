@@ -31,6 +31,8 @@ import {
 import { useAuth } from './auth-context';
 import { useFilters } from './filter-context';
 import { useStoredSlip } from './use-slips';
+import { disparityOf } from '@/lib/disparity.ts';
+import { ModelInfoPopover } from './model-info-popover.tsx';
 
 type CodegenOutcome =
   | { destination: Destination; result: SportyCodeResult | BetPawaScriptResult | Failure; httpStatus: number }
@@ -41,6 +43,8 @@ const KIND_LABEL: Record<MarketKind, string> = {
   double_chance: 'Double chance',
   over_under: 'Over/Under',
   btts: 'Both teams to score',
+  match_winner: 'Match winner',
+  total: 'Total',
 };
 
 const SEVERITY_STYLE: Record<LegFlag['severities'][number], string> = {
@@ -90,6 +94,64 @@ export function BetslipModal({
   const [aiError, setAiError] = useState<string | null>(null);
   const [lockedGames, setLockedGames] = useState<Record<string, boolean>>({});
   const [excludePickIds, setExcludePickIds] = useState<string[]>([]);
+
+  // Section 5: model estimates, leg expansion, info popover state
+  type ModelLegEstimate = { gameId?: string; marketKey?: string | null; estimate?: Record<string, number>; reason?: string };
+  const [modelEstimates, setModelEstimates] = useState<ModelLegEstimate[]>([]);
+  const [expandedLeg, setExpandedLeg] = useState<string | null>(null);
+  const [legStats, setLegStats] = useState<Record<string, { home: Record<string, unknown>; away: Record<string, unknown> } | null>>({});
+  const [modelInfoOpen, setModelInfoOpen] = useState(false);
+
+  useEffect(() => {
+    if (slip.legs.length === 0) {
+      setModelEstimates([]);
+      return;
+    }
+    let alive = true;
+    fetch('/api/model/estimates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        legs: slip.legs.map((l) => ({ league: l.league, home: l.home, away: l.away, marketKey: l.marketKind, gameId: l.gameId })),
+      }),
+    })
+      .then((r) => r.json().catch(() => ({ ok: false, legs: [] })))
+      .then((j) => {
+        if (!alive || !j.ok || !Array.isArray(j.legs)) return;
+        setModelEstimates(j.legs);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [slip.legs]);
+
+  // Section 5: model probability of a leg's pick from the estimates endpoint.
+  function modelProbFor(l: { gameId: string; marketKind: MarketKind; outcomeKey: string | null }): number | null {
+    const est = modelEstimates.find((e) => e.gameId === l.gameId && e.marketKey !== undefined && e.marketKey !== null)
+      ?? modelEstimates.find((e) => e.gameId === l.gameId);
+    if (!est || !est.estimate) return null;
+    const est2 = est.estimate;
+    if (l.marketKind === '1x2') {
+      if (l.outcomeKey === 'home') return est2.home ?? null;
+      if (l.outcomeKey === 'draw') return est2.draw ?? null;
+      if (l.outcomeKey === 'away') return est2.away ?? null;
+    }
+    if (l.marketKind === 'double_chance') {
+      if (l.outcomeKey === '1X' || l.outcomeKey === '1x') return est2.dc1x ?? null;
+      if (l.outcomeKey === '12') return est2.dc12 ?? null;
+      if (l.outcomeKey === 'X2' || l.outcomeKey === 'x2') return est2.dcx2 ?? null;
+    }
+    if (l.marketKind === 'over_under') {
+      if (l.outcomeKey === 'over') return est2.over ?? null;
+      if (l.outcomeKey === 'under') return est2.under ?? null;
+    }
+    if (l.marketKind === 'btts') {
+      if (l.outcomeKey === 'yes') return est2.yes ?? null;
+      if (l.outcomeKey === 'no') return est2.no ?? null;
+    }
+    return null;
+  }
 
   // Reset transient codegen state when legs change
   useEffect(() => {
@@ -453,6 +515,29 @@ export function BetslipModal({
     }
   }
 
+  function toggleLegExpansion(gameId: string) {
+    setExpandedLeg((prev) => (prev === gameId ? null : gameId));
+    fetch(`/api/stats/fixture?gameId=${encodeURIComponent(gameId)}`)
+      .then((r) => r.json().catch(() => ({ ok: false })))
+      .then((j) => {
+        if (j.ok && !j.missing) setLegStats((prev) => ({ ...prev, [gameId]: { home: j.home, away: j.away } }));
+        else setLegStats((prev) => ({ ...prev, [gameId]: null }));
+      })
+      .catch(() => setLegStats((prev) => ({ ...prev, [gameId]: null })));
+  }
+
+  // Footer additions (Section 5): combined model probability + flagged count + info popover.
+  const activeSlip = slip.legs.filter((l) => !slip.greyed.includes(l.gameId));
+  const modelProbs = activeSlip.map((l) => modelProbFor(l));
+  const modelCombined =
+    activeSlip.length > 0 && modelProbs.every((p): p is number => p !== null)
+      ? modelProbs.reduce((a, b) => a * b, 1)
+      : null;
+  const flaggedCount = activeSlip.filter((l) => {
+    const d = disparityOf(modelProbFor(l), l.implied);
+    return d.flagged.notice || d.flagged.strong;
+  }).length;
+
   function handleRemoveN() {
     if (!toolSel) return;
     const r = removeFromMarket(slip, toolSel.selector, Number(removeCount));
@@ -537,19 +622,35 @@ export function BetslipModal({
                   const grey = slip.greyed.includes(l.gameId);
                   const isLocked = Boolean(lockedGames[l.gameId]);
                   const flag = flagByGame.get(l.gameId);
+                  const disp = disparityOf(modelProbFor(l), l.implied);
+                  const expanded = expandedLeg === l.gameId;
                   return (
                     <li
                       key={l.gameId}
                       className={`py-2.5 space-y-1.5 ${grey ? 'opacity-40' : ''}`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="min-w-0 flex-1">
+                        <span
+                          className="min-w-0 flex-1 cursor-pointer select-none"
+                          onClick={() => toggleLegExpansion(l.gameId)}
+                          title="Expand leg details"
+                        >
                           <span className="block truncate text-sm font-medium text-white">
                             {l.home} v {l.away}
                           </span>
                           <span className="block text-xs text-slate-400">
                             {l.pick} · {fmtKickoff(l.kickoff)}
                             {l.implied !== null ? ` · implied ${(l.implied * 100).toFixed(1)}%` : ''}
+                            {disp.points !== null &&
+                              ` · model ${disp.sign === 'positive' ? '+' : disp.sign === 'negative' ? '−' : ''}${Math.abs(disp.points).toFixed(1)}`}
+                            {disp.label && (
+                              <span className="ml-1.5 inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.2 text-[10px] font-bold text-amber-300">
+                                {disp.label}
+                              </span>
+                            )}
+                            {l.implied === null && disp.modelProbability !== null && (
+                              <span className="text-slate-500"> · {disp.reason}</span>
+                            )}
                           </span>
                         </span>
                         <span className="odds text-sm">{l.odds.toFixed(2)}</span>
@@ -598,6 +699,38 @@ export function BetslipModal({
                           )}
                         </div>
                       )}
+
+                      {expanded && legStats[l.gameId] && (
+                        <div className="space-y-1.5 rounded-lg bg-black/20 p-2 text-[11px] text-slate-300">
+                          {(['home', 'away'] as const).map((side) => {
+                            const info = legStats[l.gameId]?.[side];
+                            if (!info) return null;
+                            const rows = Object.entries(info);
+                            return (
+                              <div key={side}>
+                                <p className="font-semibold capitalize text-white">
+                                  {side}: {String((info as { name?: string }).name ?? '')}
+                                </p>
+                                <ul className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5">
+                                  {rows
+                                    .filter(([k]) => !['name'].includes(k))
+                                    .map(([k, v]) => (
+                                      <li key={k} className="flex justify-between gap-2">
+                                        <span className="text-slate-400 capitalize">{k.replace(/([A-Z])/g, ' $1').trim().toLowerCase()}</span>
+                                        <span className="font-mono text-slate-200">
+                                          {typeof v === 'number' ? Number(v.toFixed(2)) : String(v ?? '—')}
+                                        </span>
+                                      </li>
+                                    ))}
+                                </ul>
+                              </div>
+                            );
+                          })}
+                          {legStats[l.gameId] === null && (
+                            <p className="text-slate-500">Fixture stats unavailable.</p>
+                          )}
+                        </div>
+                      )}
                     </li>
                   );
                 })}
@@ -615,11 +748,26 @@ export function BetslipModal({
                   </dd>
                 </div>
                 <div className="flex items-center justify-between">
-                  <dt className="text-slate-400">Combined implied probability</dt>
+                  <dt className="text-slate-400 flex items-center gap-1.5">
+                    Combined implied probability
+                    <ModelInfoPopover />
+                  </dt>
                   <dd className="text-slate-200">
                     {totals.combined.ok ? `${(totals.combined.probability * 100).toFixed(2)}%` : 'unavailable'}
                   </dd>
                 </div>
+                {modelCombined !== null && (
+                  <div className="flex items-center justify-between">
+                    <dt className="text-slate-400">Combined model probability</dt>
+                    <dd className="text-slate-200">{(modelCombined * 100).toFixed(2)}%</dd>
+                  </div>
+                )}
+                {flaggedCount > 0 && (
+                  <div className="flex items-center justify-between">
+                    <dt className="text-slate-400">Flagged legs</dt>
+                    <dd className="text-slate-200">{flaggedCount}</dd>
+                  </div>
+                )}
               </dl>
 
               {/* Batch Market Tools inside Betslip */}

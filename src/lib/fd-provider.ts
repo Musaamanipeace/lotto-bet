@@ -12,6 +12,7 @@
 import { MATCHING } from './criteria.ts';
 import { competitionCodeFor } from './competitions.ts';
 import { teamSimilarity } from './matching.ts';
+import type { FdCache } from './fd-cache.ts';
 import { hit, miss, type MetricOutcome, type MetricRequest, type Side, type StatsProvider } from './stats-types.ts';
 
 const NAME = 'football-data.org';
@@ -41,6 +42,8 @@ export type FdDeps = {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   baseUrl?: string;
+  /** Optional shared cache so standings/matches survive across serverless instances. Default: in-memory. */
+  cache?: FdCache;
 };
 
 const HOUR = 3_600_000;
@@ -59,6 +62,7 @@ export class FootballDataProvider implements StatsProvider {
   private baseUrl: string;
   private standingsCache = new Map<string, { at: number; value: Standings | Fail }>();
   private matchesCache = new Map<number, { at: number; value: FdMatch[] | Fail }>();
+  private sharedCache: FdCache | undefined;
 
   constructor(env: NodeJS.ProcessEnv = process.env, deps: FdDeps = {}) {
     this.key = env.FOOTBALL_DATA_API_KEY;
@@ -99,7 +103,17 @@ export class FootballDataProvider implements StatsProvider {
     }
   }
 
+  /** Swap in a shared cache (used across serverless instances when provided). */
+  setCache(cache: FdCache | undefined): void {
+    this.sharedCache = cache;
+  }
+
   private async get(path: string): Promise<{ data: unknown } | Fail> {
+    const sharedKey = `fd:${this.baseUrl}:${path}`;
+    if (this.sharedCache) {
+      const hit = this.sharedCache.get<{ data: unknown }>(sharedKey);
+      if (hit) return hit.value;
+    }
     if (!this.key) return { fail: miss('not_fetched', 'FOOTBALL_DATA_API_KEY is not set.', NAME) as never };
     if (this.callsThisRun >= this.maxCallsPerRun) {
       return { fail: miss('not_fetched', `Per-run request budget reached (${this.maxCallsPerRun}); Big Five leagues are fetched first.`, NAME) as never };
@@ -120,13 +134,16 @@ export class FootballDataProvider implements StatsProvider {
     if (res.status === 404) return { fail: miss('not_covered', 'football-data.org has no data for this (HTTP 404).', NAME) as never };
     if (!res.ok) return { fail: miss('fetch_failed', `football-data.org returned HTTP ${res.status}.`, NAME) as never };
     try {
-      return { data: await res.json() };
+      const v = { data: await res.json() };
+      if (this.sharedCache) this.sharedCache.set(sharedKey, v);
+      return v;
     } catch {
       return { fail: miss('fetch_failed', 'football-data.org returned a response that is not valid JSON.', NAME) as never };
     }
   }
 
-  private async getStandings(code: string): Promise<Standings | Fail> {
+  /** Public: standings tables (HOME/AWAY/TOTAL) for the model (poisson-v1). */
+  async getStandings(code: string): Promise<Standings | Fail> {
     const hitCache = this.standingsCache.get(code);
     const ttl = hitCache && isFail(hitCache.value) ? 10 * 60_000 : 6 * HOUR;
     if (hitCache && this.now() - hitCache.at < ttl) return hitCache.value;

@@ -1,9 +1,10 @@
 import type { AiPick, TargetResult, TargetTier } from './ai-picks.ts';
-import { pickTargetOdds, TARGET_TIER_POOL } from './ai-picks.ts';
+import { pickTargetOdds, toTargetRow, TARGET_TIER_POOL } from './ai-picks.ts';
 import { ACCUMULATOR } from './criteria.ts';
 import { applyFilters, matchesCardsState } from './filter-state.ts';
 import type { CardsState } from './market-cards.ts';
 import type { FilterTemplate } from './template-store.ts';
+import { targetSlip } from './targeting.ts';
 
 /**
  * Checks whether an AI pick satisfies the market card rules and odds bounds of a template.
@@ -51,15 +52,32 @@ export function buildTemplateTargetOdds(
     };
   }
 
-  const result = pickTargetOdds(filtered, targetOdds, tier);
-  if (!result.slip) {
+  // Targeted odds: honour the instruction, not the tier pool.
+  const r = targetSlip(filtered.map(toTargetRow), targetOdds);
+  if (r.picks.length === 0) {
     return {
-      ...result,
-      message: result.message ?? `Could not assemble a slip matching target odds of ${targetOdds.toFixed(2)}x within template "${template.name}".`,
+      slip: null,
+      achieved: r.achieved,
+      gap: r.gap,
+      message: r.message ?? `Could not assemble a slip matching target odds of ${targetOdds.toFixed(2)}x within template "${template.name}".`,
     };
   }
 
-  return result;
+  return {
+    slip: {
+      id: `slip_target_${Date.now()}`,
+      picks: r.picks.map((t) => t.pick as AiPick),
+      totalOdds: r.achieved,
+      combinedImpliedProbability: r.picks.reduce((a, t) => a * (t.impliedProbability ?? 1), 1),
+      riskLabel: 'lower risk',
+      coreCount: r.picks.length,
+      boosterCount: 0,
+      createdAt: Date.now(),
+    },
+    achieved: r.achieved,
+    gap: r.gap,
+    message: r.message,
+  };
 }
 
 /**
@@ -91,6 +109,11 @@ export type TemplateAiAccaOptions = {
   withinHours?: number | null;
   tier?: TargetTier;
   excludedGameIds?: Set<string>;
+  /** Targeted-odds instructions (v2); override the tier pool when present. */
+  legOdds?: number | null;
+  min?: number | null;
+  max?: number | null;
+  legs?: number | null;
 };
 
 export type TemplateAiAccaResult = {
@@ -120,8 +143,15 @@ export function buildTemplateAiAcca(
     pool = pool.filter((p) => !excludedGameIds.has(p.gameId));
   }
 
+  const hasOddsInstruction =
+    (options.targetOdds !== null && options.targetOdds !== undefined && options.targetOdds > 1) ||
+    (options.legOdds !== null && options.legOdds !== undefined && options.legOdds > 1) ||
+    (options.min !== null && options.min !== undefined && options.max !== null && options.max !== undefined);
+
   const allowedTiers = new Set(TARGET_TIER_POOL[tier]);
-  pool = pool.filter((p) => allowedTiers.has(p.tier));
+  if (!hasOddsInstruction) {
+    pool = pool.filter((p) => allowedTiers.has(p.tier));
+  }
 
   if (pool.length === 0) {
     return {
@@ -137,40 +167,14 @@ export function buildTemplateAiAcca(
   // Case 1: Both Target Odds and Target Number of Games specified
   if (hasOdds && hasCount) {
     const maxLegs = Math.min(targetGamesCount, ACCUMULATOR.maxLegs);
-    const usedGames = new Set<string>();
-    const selected: AiPick[] = [];
-    let currentOdds = 1;
-
-    while (selected.length < maxLegs && currentOdds < targetOdds) {
-      let bestPick: AiPick | null = null;
-      let bestLogDistance = Infinity;
-
-      for (const p of pool) {
-        if (usedGames.has(p.gameId)) continue;
-        const nextOdds = currentOdds * p.odds;
-        const dist = Math.abs(Math.log(nextOdds / targetOdds));
-        if (dist < bestLogDistance) {
-          bestLogDistance = dist;
-          bestPick = p;
-        }
-      }
-
-      if (!bestPick) break;
-      selected.push(bestPick);
-      usedGames.add(bestPick.gameId);
-      currentOdds *= bestPick.odds;
-
-      // If we crossed target and adding more would worsen the log distance:
-      if (currentOdds >= targetOdds && selected.length >= maxLegs) break;
-    }
-
-    if (selected.length === 0) {
+    const r = targetSlip(pool.map(toTargetRow), targetOdds, { legs: targetGamesCount });
+    if (r.picks.length === 0) {
       return { picks: [], totalOdds: 1, message: `Could not build slip for ${targetOdds}x across ${maxLegs} games.` };
     }
-
     return {
-      picks: selected,
-      totalOdds: Math.round(currentOdds * 100) / 100,
+      picks: r.picks.map((t) => t.pick as AiPick),
+      totalOdds: Math.round(r.achieved * 100) / 100,
+      message: r.message,
     };
   }
 

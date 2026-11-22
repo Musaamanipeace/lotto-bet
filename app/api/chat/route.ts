@@ -4,6 +4,7 @@ import { callLlm } from '@/lib/llm/index.ts';
 import { getAiSnapshot } from '@/lib/ai-store.ts';
 import { applyFilterState, normalizeFilterState, type FilterState } from '@/lib/filter-state.ts';
 import { toolPickN, toolSuggestSwaps, type AgentAction, type SlipLegSummary } from '@/lib/ai-agent.ts';
+import { extractActions, type ValidatedAction } from '@/lib/agent-actions.ts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -13,6 +14,19 @@ const SYSTEM = `You are the Lotto Bet assistant. Hard rules:
 - Only discuss picks that appear in the provided AI picks context. Never invent odds, teams, or stats.
 - Criteria verification and bookmaker implied probability are separate; never merge them into a win chance.
 - Keep replies concise (2–5 sentences).`;
+
+const ACTION_SYSTEM = `You turn user requests into structured app actions. Reply ONLY with JSON: {"actions":[{"name":"...","args":{...}}]}. Only choose actions the user clearly asked for. Never invent names or values.`;
+
+/** Pulls the JSON object out of a possibly fenced/noisy LLM response. */
+function parseLooseJson(text: string): unknown {
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[0]);
+  } catch {
+    return null;
+  }
+}
 
 export async function POST(req: Request) {
   const bad = requireJson(req);
@@ -43,7 +57,7 @@ export async function POST(req: Request) {
   const snapIds = new Set((snap?.picks ?? []).map((p) => p.id));
 
   // Build deterministic structured actions when user asks to add picks or swap legs
-  const actions: AgentAction[] = [];
+  const actions: Array<AgentAction | ValidatedAction> = [];
   const slipLegs = Array.isArray(body.slipLegs) ? body.slipLegs : [];
   const excludedGames = new Set(slipLegs.map((l) => l.gameId));
   const numMatch = message.match(/\b(\d{1,2})\b/);
@@ -66,6 +80,29 @@ export async function POST(req: Request) {
         totalOdds: valid.reduce((a, p) => a * p.odds, 1),
         tier: 'average',
       });
+    }
+  }
+
+  // Structured actions via LLM JSON mode (Section 4): providers without tool
+  // calling return actions as JSON; invalid entries are dropped with a visible
+  // message and never executed.
+  let actionErrors: string[] = [];
+  if (snap && /\b(save|apply|delete|rename|clear|grey|lock|swap|template|book code|share)\b/i.test(message)) {
+    const jr = await callLlm(
+      {
+        system: ACTION_SYSTEM,
+        prompt: `User: ${message}\nActive filters: bookmaker=${filterState.bookmaker}, leagues=${filterState.leagues.length || 'all'}`,
+        json: true,
+      },
+      access.env,
+    );
+    if (jr.ok && jr.text.trim()) {
+      const { actions: newActions, errors } = extractActions(parseLooseJson(jr.text));
+      actions.push(...newActions);
+      actionErrors = errors;
+    } else {
+      const failMsg = !jr.ok ? (jr.error ?? 'unknown error') : 'empty response';
+      actionErrors = [`Structured action extraction failed: ${failMsg}`];
     }
   }
 
@@ -130,11 +167,12 @@ export async function POST(req: Request) {
 
   return Response.json({
     ok: true,
-    reply: r.text.trim(),
+    reply: actionErrors.length > 0 ? `${r.text.trim()}${actionErrors.map((e) => ` (${e})`).join(' ')}` : r.text.trim(),
     actions,
     action: actions[0] ?? null,
     provider: r.provider,
     model: r.model,
     attempts: r.attempts,
+    actionErrors,
   });
 }

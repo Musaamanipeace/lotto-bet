@@ -134,3 +134,11 @@ test('accumulator slip evaluation: all won vs 1 lost vs pending', () => {
   assert.equal(pendingResult.wonCount, 1);
   assert.equal(pendingResult.pendingCount, 1);
 });
+
+test("legs with a 'default' placeholder score stay pending and never settle won/lost", () => {
+  const leg = { home: 'Arsenal', away: 'Chelsea', pick: 'Chelsea Win', odds: 4.2, marketKind: '1x2' as const, outcomeKey: 'away' as const };
+  const score: MatchScore = { homeScore: 2, awayScore: 1, status: 'FT', updatedAt: 0, source: 'default' };
+  const res = evaluateLegOutcome(leg, score);
+  assert.equal(res.outcome, 'pending');
+  assert.match(res.reason, /awaiting/i);
+});

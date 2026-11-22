@@ -5,8 +5,13 @@ export const BOOKMAKER_LABEL: Record<Bookmaker, string> = {
   betpawa: 'betPawa',
 };
 
+export type Sport = 'football' | 'tennis' | 'basketball';
+
 /** Only kinds verified from live data are listed. Anything else is `null` (unavailable). */
-export type MarketKind = '1x2' | 'double_chance' | 'over_under' | 'btts';
+export type MarketKind = '1x2' | 'double_chance' | 'over_under' | 'btts' | 'match_winner' | 'total';
+
+/** Market periods: football FT; new-sports per-sport lines (foot球 FT, Q1–Q4, H1/H2). */
+export type MarketPeriod = 'ft' | 'q1' | 'q2' | 'q3' | 'q4' | 'h1' | 'h2' | null;
 
 export type Outcome = {
   bookmaker: Bookmaker;
@@ -27,12 +32,15 @@ export type Market = {
   /** Set whenever the market is present but cannot be used, with the reason. */
   unavailableReason: string | null;
   outcomes: Outcome[];
+  /** For new-sports markets: 'q1'..'q4' for quarters, 'h1'/'h2' for halves, null otherwise. */
+  period?: MarketPeriod;
 };
 
 export type Game = {
   /** `${bookmaker}:${nativeEventId}` so ids never collide across bookmakers. */
   id: string;
   bookmaker: Bookmaker;
+  sport: Sport;
   nativeEventId: string;
   home: string;
   away: string;

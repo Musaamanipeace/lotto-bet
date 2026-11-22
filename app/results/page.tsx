@@ -8,11 +8,9 @@ import {
   normalizeMatchKey,
   type EvaluatedSlip,
   type MatchScore,
-  type MatchStatus,
 } from '@/lib/results-evaluator.ts';
 import {
   getLocalScores,
-  recordScoreOverride,
   saveLocalScores,
   deterministicScore,
 } from '@/lib/results-store.ts';
@@ -63,16 +61,6 @@ export default function ResultsTrackerPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [collapsedSlips, setCollapsedSlips] = useState<Record<string, boolean>>({});
-
-  // Manual score edit modal state
-  const [editingMatch, setEditingMatch] = useState<{
-    home: string;
-    away: string;
-    gameId?: string;
-    homeScore: number;
-    awayScore: number;
-    status: MatchStatus;
-  } | null>(null);
 
   // Load slips and scores
   const loadData = useCallback(async () => {
@@ -199,49 +187,6 @@ export default function ResultsTrackerPage() {
   // Toggle collapse for a slip
   const toggleCollapse = (id: string) => {
     setCollapsedSlips((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  // Save manual score override
-  const handleSaveScore = async () => {
-    if (!editingMatch) return;
-    const { home, away, gameId, homeScore, awayScore, status } = editingMatch;
-
-    const recorded = recordScoreOverride({
-      gameId,
-      home,
-      away,
-      homeScore: Number(homeScore),
-      awayScore: Number(awayScore),
-      status,
-    });
-
-    // Update state immediately
-    const key = normalizeMatchKey(home, away);
-    setScores((prev) => ({
-      ...prev,
-      [key]: recorded,
-      ...(gameId ? { [gameId]: recorded } : {}),
-    }));
-
-    // Post to server backend
-    try {
-      await fetch('/api/slips/results', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          home,
-          away,
-          gameId,
-          homeScore: Number(homeScore),
-          awayScore: Number(awayScore),
-          status,
-        }),
-      });
-    } catch {
-      /* local save already succeeded */
-    }
-
-    setEditingMatch(null);
   };
 
   // Quick helper to seed demo slips for instant testing
@@ -602,7 +547,7 @@ export default function ResultsTrackerPage() {
                                   <span>
                                     {leg.home} <span className="text-slate-500">vs</span> {leg.away}
                                   </span>
-                                  <span className="rounded bg-white/5 px-1.5 py-0.2 text-[10px] text-slate-400">
+                                  <span className="rounded border border-sky-400/50 bg-sky-400/10 px-1.5 py-0.2 text-[10px] font-semibold text-sky-300">
                                     {leg.pick}
                                   </span>
                                 </div>
@@ -610,25 +555,6 @@ export default function ResultsTrackerPage() {
                                   <span>Odds: <strong className="text-gold-400 font-semibold">{Number(leg.odds).toFixed(2)}</strong></span>
                                   <span>•</span>
                                   <span>Result: <strong className="font-mono text-white">{scoreText}</strong></span>
-                                  {score?.source === 'manual' && (
-                                    <span className="text-[10px] text-cyan-400">(manual)</span>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setEditingMatch({
-                                        home: leg.home,
-                                        away: leg.away,
-                                        gameId: leg.gameId,
-                                        homeScore: score ? score.homeScore : 0,
-                                        awayScore: score ? score.awayScore : 0,
-                                        status: score ? score.status : 'FT',
-                                      })
-                                    }
-                                    className="text-[11px] text-cyan-400 hover:underline hover:text-cyan-300 ml-1"
-                                  >
-                                    ✎ Edit Score
-                                  </button>
                                 </div>
                               </div>
 
@@ -650,7 +576,6 @@ export default function ResultsTrackerPage() {
                                     ⏱ Pending
                                   </span>
                                 )}
-                                <p className="text-[10px] text-slate-500 mt-0.5">{leg.reason}</p>
                               </div>
                             </div>
                           );
@@ -664,108 +589,6 @@ export default function ResultsTrackerPage() {
           </div>
         )}
 
-        {/* Manual Score Edit Modal */}
-        {editingMatch && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-            <div className="glass w-full max-w-md rounded-2xl border border-white/20 bg-navy-950 p-6 shadow-2xl">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-display text-lg font-bold text-white">Manual Score Verification</h3>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    Verify or override score for {editingMatch.home} vs {editingMatch.away}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setEditingMatch(null)}
-                  className="rounded text-slate-400 hover:text-white"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="mt-4 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      {editingMatch.home} (Home)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="30"
-                      value={editingMatch.homeScore}
-                      onChange={(e) =>
-                        setEditingMatch({
-                          ...editingMatch,
-                          homeScore: Math.max(0, parseInt(e.target.value, 10) || 0),
-                        })
-                      }
-                      className="w-full rounded-lg border border-white/10 bg-navy-900 px-3 py-2 text-center font-mono text-lg font-bold text-white focus:border-emerald-500/60 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      {editingMatch.away} (Away)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="30"
-                      value={editingMatch.awayScore}
-                      onChange={(e) =>
-                        setEditingMatch({
-                          ...editingMatch,
-                          awayScore: Math.max(0, parseInt(e.target.value, 10) || 0),
-                        })
-                      }
-                      className="w-full rounded-lg border border-white/10 bg-navy-900 px-3 py-2 text-center font-mono text-lg font-bold text-white focus:border-emerald-500/60 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Match Status
-                  </label>
-                  <select
-                    value={editingMatch.status}
-                    onChange={(e) =>
-                      setEditingMatch({
-                        ...editingMatch,
-                        status: e.target.value as MatchStatus,
-                      })
-                    }
-                    className="w-full rounded-lg border border-white/10 bg-navy-900 px-3 py-2 text-xs text-white focus:border-emerald-500/60 focus:outline-none"
-                  >
-                    <option value="FT">Full Time (FT)</option>
-                    <option value="LIVE">Live / In Progress</option>
-                    <option value="POSTPONED">Postponed (Void leg)</option>
-                    <option value="CANCELLED">Cancelled (Void leg)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end gap-2 border-t border-white/10 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setEditingMatch(null)}
-                  className="btn-ghost text-xs h-8 px-3"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveScore}
-                  className="btn-emerald text-xs h-8 px-4"
-                >
-                  Save & Settle
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </main>
   );
