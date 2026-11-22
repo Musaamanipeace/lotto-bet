@@ -65,7 +65,7 @@ export class FootballDataProvider implements StatsProvider {
   private sharedCache: FdCache | undefined;
 
   constructor(env: NodeJS.ProcessEnv = process.env, deps: FdDeps = {}) {
-    this.key = env.FOOTBALL_DATA_API_KEY;
+    this.key = env.FOOTBALL_DATA_API_KEY ?? env.API_FOOTBALL_KEY;
     this.maxCallsPerRun = Number(env.FOOTBALL_DATA_MAX_CALLS_PER_RUN || 60);
     this.ratePerMin = Math.max(1, Number(env.FOOTBALL_DATA_RATE_PER_MIN || 9));
     this.fetchImpl = deps.fetch ?? fetch;

@@ -648,7 +648,7 @@ export function BetslipModal({
                                 {disp.label}
                               </span>
                             )}
-                            {l.implied === null && disp.modelProbability !== null && (
+                            {disp.modelProbability === null && disp.reason && (
                               <span className="text-slate-500"> · {disp.reason}</span>
                             )}
                           </span>
