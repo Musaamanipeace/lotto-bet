@@ -1,0 +1,24 @@
+name: Require linked issue in PRs
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  require-linked-issue:
+    name: PR closes an issue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR body has a closing keyword
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || "";
+            const hasClosingKeyword = /\b(close[sd]?|fix(e[sd]?|es)?|resolve[sd]?)\s*#\d+/i.test(body);
+            if (!hasClosingKeyword) {
+              core.setFailed("PR body must contain a closing keyword referencing an issue, e.g. `Closes #N`.");
+            }
