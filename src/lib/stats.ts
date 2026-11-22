@@ -6,6 +6,7 @@ import {
   type MetricRequest,
   type StatsProvider,
 } from './stats-types.ts';
+import { getDecryptedUserKeys } from './user-settings-store.ts';
 
 export { type MetricOutcome, type MetricRequest, type StatsProvider };
 
@@ -43,15 +44,37 @@ export const UNAVAILABLE_ON_FREE = new Set([
 
 let activeProviders: StatsProvider[] | null = null;
 
-/** Providers that are configured (have a key) or the fallback provider. */
-export function configuredProviders(env?: NodeJS.ProcessEnv): StatsProvider[] {
-  const currentEnv = env ?? process.env;
+/** Merge user-stored BYOK keys (server-decrypted) into a provider env. */
+function envWithStoredKeys(
+  env: NodeJS.ProcessEnv,
+  keys: Partial<Record<'football_data' | 'api_football', string>>,
+): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    FOOTBALL_DATA_API_KEY: keys.football_data ?? env.FOOTBALL_DATA_API_KEY,
+    API_FOOTBALL_KEY: keys.api_football ?? env.API_FOOTBALL_KEY,
+  };
+}
+
+function configureProviders(env: NodeJS.ProcessEnv): StatsProvider[] {
   const list: StatsProvider[] = [];
-
-  list.push(new FootballDataProvider(currentEnv));
-
+  list.push(new FootballDataProvider(env));
   activeProviders = list;
   return list;
+}
+
+/** Providers from env vars only (legacy / non-user path). */
+export function configuredProviders(env?: NodeJS.ProcessEnv): StatsProvider[] {
+  return configureProviders(envWithStoredKeys(env ?? process.env, {}));
+}
+
+/**
+ * Providers for a signed-in user: their server-decrypted BYOK keys
+ * (`user_api_keys`) override the env vars (BYOK with account-saved keys).
+ */
+export async function configuredProvidersForUser(userId: string, env?: NodeJS.ProcessEnv): Promise<StatsProvider[]> {
+  const keys = await getDecryptedUserKeys(userId);
+  return configureProviders(envWithStoredKeys(env ?? process.env, keys));
 }
 
 /**

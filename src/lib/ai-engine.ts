@@ -27,7 +27,8 @@ import {
   type CriterionResult,
   NO_STATS_PROVIDER_MESSAGE,
 } from './evaluator.ts';
-import { configuredProviders, fetchMetric, UNAVAILABLE_ON_FREE, type StatsProvider } from './stats.ts';
+import { configuredProviders, configuredProvidersForUser, fetchMetric, UNAVAILABLE_ON_FREE, type StatsProvider } from './stats.ts';
+import { getDecryptedUserKeys } from './user-settings-store.ts';
 import { emptyStateCounts, type CoverageData, type DataState } from './data-state.ts';
 import type { Game } from './types.ts';
 
@@ -163,10 +164,11 @@ export type GenerateOptions = {
   statsWaitMs?: number;
 };
 
-export async function generateAiPicks(games: Game[], opts: GenerateOptions = {}): Promise<AiEngineResult> {
-  const providers = configuredProviders();
+export async function generateAiPicks(games: Game[], opts: GenerateOptions = {}, userId?: string): Promise<AiEngineResult> {
+  const providers = userId ? await configuredProvidersForUser(userId) : configuredProviders();
   for (const p of providers) p.beginRun?.({ maxWaitMs: opts.statsWaitMs ?? 0 });
-  const hasKey = Boolean(process.env.FOOTBALL_DATA_API_KEY || process.env.API_FOOTBALL_KEY);
+  const stored = userId ? await getDecryptedUserKeys(userId) : {};
+  const hasKey = Boolean(stored.football_data || process.env.FOOTBALL_DATA_API_KEY || stored.api_football || process.env.API_FOOTBALL_KEY);
   const statsNote = !hasKey ? NO_STATS_PROVIDER_MESSAGE : null;
 
   const candidates = generateCandidates(games);

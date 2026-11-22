@@ -1,8 +1,10 @@
 import { jsonError, requireJson } from '@/lib/session.ts';
+import { currentUser } from '@/lib/session.ts';
 import { competitionCodeFor } from '@/lib/competitions.ts';
 import { FootballDataProvider } from '@/lib/fd-provider.ts';
 import { findTeamRow, leagueAverages, strengthForRow, type TableRowInput } from '@/lib/model/strengths.ts';
 import { estimateForMarket } from '@/lib/model/estimate.ts';
+import { getDecryptedUserKeys } from '@/lib/user-settings-store.ts';
 
 type LegIn = {
   gameId?: string;
@@ -41,6 +43,13 @@ export async function POST(req: Request) {
     return jsonError('Invalid JSON body', 400);
   }
   const legs = Array.isArray(body.legs) ? body.legs : [];
+  const user = await currentUser(req);
+  const storedKeys = user ? await getDecryptedUserKeys(user.id) : {};
+  const provider = new FootballDataProvider({
+    ...process.env,
+    FOOTBALL_DATA_API_KEY: storedKeys.football_data ?? process.env.FOOTBALL_DATA_API_KEY,
+    API_FOOTBALL_KEY: storedKeys.api_football ?? process.env.API_FOOTBALL_KEY,
+  });
 
   const out: EstimateOut[] = [];
   for (const leg of legs) {
