@@ -10,6 +10,11 @@
  *   node scripts/probe-markets-v2.mjs --betpawa=tennis:ID,basketball:ID
  *       Stage 2. Dumps betPawa's market types for the category ids you identified in stage 1.
  *
+ *   node scripts/probe-markets-v2.mjs --fixtures-only
+ *       Skips the long SportyBet market listing. Saves trimmed real feed responses as test fixtures
+ *       (probe-output/fixture-sportybet-<sport>-feed.json) using the exact market ids the app will request,
+ *       prints a short summary, then runs the betPawa category scan (or the stage 2 dump if --betpawa= is given).
+ *
  *   Add --all to print every market type instead of only the relevant-looking ones.
  *
  * Run it from your own machine in Kenya, like the app's other probe script. Output is also saved to
@@ -26,6 +31,7 @@ const PH = { 'x-pawa-brand': 'betpawa-kenya', 'x-pawa-language': 'en', devicetyp
 
 const args = process.argv.slice(2);
 const SHOW_ALL = args.includes('--all');
+const FIXTURES_ONLY = args.includes('--fixtures-only');
 const pawaArg = (args.find((a) => a.startsWith('--betpawa=')) ?? '').slice('--betpawa='.length);
 const PAWA_PICKS = Object.fromEntries(
   pawaArg.split(',').filter(Boolean).map((p) => p.split(':')).filter((p) => p.length === 2),
@@ -225,8 +231,58 @@ async function pawaDeep(sportName, cat) {
   out.markets = printBucket(`betPawa ${sportName} markets`, bucket, r.events.length);
 }
 
+
+// ---------- SportyBet fixtures (exact ids the app will request) ----------
+const FINAL_IDS = { football: '1,10,18,29', tennis: '186,189', basketball: '219,225,236,68,90' };
+async function saveFixture(sportName, sportId) {
+  console.log(`\n===== SportyBet fixture feed: ${sportName} (marketId=${FINAL_IDS[sportName]}) =====`);
+  const p = new URLSearchParams({ sportId, marketId: FINAL_IDS[sportName], pageSize: '30', pageNum: '1', timeline: '72', todayGames: 'false', _t: String(Date.now()) });
+  const r = await call(`${SPORTY}/api/ke/factsCenter/pcUpcomingEvents?${p}`, { headers: SH });
+  if (r.error || r.json?.bizCode !== 10000 || !Array.isArray(r.json?.data?.tournaments)) {
+    console.log(`Failed: ${r.error ?? `HTTP ${r.status}, bizCode ${r.json?.bizCode ?? 'n/a'}, body ${r.text?.slice(0, 160)}`}`);
+    report.sportybet[`${sportName}_fixture`] = { error: r.error ?? `HTTP ${r.status}` };
+    return;
+  }
+  const all = r.json.data.tournaments.flatMap((t) => t.events ?? []);
+  const perId = new Map();
+  for (const e of all) {
+    for (const m of Array.isArray(e.markets) ? e.markets : []) {
+      const k = String(m.id);
+      const o = perId.get(k) ?? { objects: 0, specs: new Set(), quarters: new Set(), outcomeIds: new Set(), events: new Set() };
+      o.objects++; o.events.add(e.eventId);
+      if (m.specifier) o.specs.add(m.specifier);
+      const q = /quarternr=(\d)/.exec(m.specifier ?? '');
+      if (q) o.quarters.add(q[1]);
+      for (const oc of Array.isArray(m.outcomes) ? m.outcomes : []) o.outcomeIds.add(String(oc.id));
+      perId.set(k, o);
+    }
+  }
+  console.log(`Events in feed page: ${all.length}`);
+  const summary = {};
+  for (const [id, o] of perId) {
+    const line = `id ${id}: ${o.objects} market objects in ${o.events.size} events, ${o.specs.size} distinct specifiers, outcome ids [${[...o.outcomeIds].join(',')}]${o.quarters.size ? `, quarters seen [${[...o.quarters].sort().join(',')}]` : ''}`;
+    console.log('  ' + line);
+    summary[id] = line;
+  }
+  const ids = FINAL_IDS[sportName].split(',');
+  for (const id of ids) if (!perId.has(id)) console.log(`  NOTE: requested id ${id} did not appear in any event in this page`);
+  let left = 5;
+  const trimmed = JSON.parse(JSON.stringify(r.json));
+  trimmed.data.tournaments = trimmed.data.tournaments
+    .map((t) => { const ev = (t.events ?? []).slice(0, left); left -= ev.length; return { ...t, events: ev }; })
+    .filter((t) => t.events.length);
+  mkdirSync('probe-output', { recursive: true });
+  const file = `probe-output/fixture-sportybet-${sportName}-feed.json`;
+  writeFileSync(file, JSON.stringify(trimmed, null, 2));
+  console.log(`Saved ${file}`);
+  report.sportybet[`${sportName}_fixture`] = { requestedIds: ids, summary, file };
+}
+
 // ---------- run ----------
-for (const [name, id] of Object.entries(SPORTS)) await probeSporty(name, id);
+for (const [name, id] of Object.entries(SPORTS)) {
+  if (!FIXTURES_ONLY) await probeSporty(name, id);
+  await saveFixture(name, id);
+}
 if (Object.keys(PAWA_PICKS).length) {
   for (const [name, cat] of Object.entries(PAWA_PICKS)) await pawaDeep(name, cat);
 } else {

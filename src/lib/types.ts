@@ -10,7 +10,7 @@ export type Sport = 'football' | 'tennis' | 'basketball';
 /** Only kinds verified from live data are listed. Anything else is `null` (unavailable). */
 export type MarketKind = '1x2' | 'double_chance' | 'over_under' | 'btts' | 'match_winner' | 'total';
 
-/** Market periods: football FT; new-sports per-sport lines (foot球 FT, Q1–Q4, H1/H2). */
+/** Market periods: football FT; new-sports per-sport lines (Football FT, Q1–Q4, H1/H2). */
 export type MarketPeriod = 'ft' | 'q1' | 'q2' | 'q3' | 'q4' | 'h1' | 'h2' | null;
 
 export type Outcome = {

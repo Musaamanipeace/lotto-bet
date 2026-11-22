@@ -1,0 +1,1531 @@
+{
+  "bizCode": 10000,
+  "message": "0#0",
+  "data": {
+    "totalNum": 212,
+    "tournaments": [
+      {
+        "id": "sr:tournament:2102",
+        "name": "Billie Jean King Cup",
+        "events": [
+          {
+            "eventId": "sr:match:76999628",
+            "gameId": "43164",
+            "productStatus": "0#0",
+            "estimateStartTime": 1795362600000,
+            "status": 0,
+            "matchStatus": "Not start",
+            "homeTeamId": "sr:competitor:225046",
+            "homeTeamName": "Burel, Clara",
+            "awayTeamName": "Hunter, Storm",
+            "awayTeamId": "sr:competitor:45835",
+            "sport": {
+              "id": "sr:sport:5",
+              "name": "Tennis",
+              "category": {
+                "id": "sr:category:74",
+                "name": "Billie Jean King Cup",
+                "tournament": {
+                  "id": "sr:tournament:2102",
+                  "name": "Billie Jean King Cup"
+                }
+              }
+            },
+            "totalMarketSize": 28,
+            "markets": [
+              {
+                "id": "186",
+                "product": 3,
+                "desc": "Winner",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Who will win the match.",
+                "title": "1,2",
+                "name": "Winner",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "4",
+                    "odds": "1.46",
+                    "probability": "0.6652000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Home"
+                  },
+                  {
+                    "id": "5",
+                    "odds": "2.82",
+                    "probability": "0.3348000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Away"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795358582000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=17.5",
+                "product": 3,
+                "desc": "Total games  17.5",
+                "status": 2,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.37",
+                    "probability": "0.7049000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 17.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "3.10",
+                    "probability": "0.2951000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 17.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795358582000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=18.5",
+                "product": 3,
+                "desc": "Total games  18.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.52",
+                    "probability": "0.6321000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 18.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "2.55",
+                    "probability": "0.3679000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 18.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795358582000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=19.5",
+                "product": 3,
+                "desc": "Total games  19.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.70",
+                    "probability": "0.5667000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 19.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "2.15",
+                    "probability": "0.4333000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 19.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795358582000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=20.5",
+                "product": 3,
+                "desc": "Total games  20.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 1,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.94",
+                    "probability": "0.4895000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 20.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.86",
+                    "probability": "0.5105000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 20.5"
+                  }
+                ],
+                "farNearOdds": 1,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795358582000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=21.5",
+                "product": 3,
+                "desc": "Total games  21.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.15",
+                    "probability": "0.4334000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 21.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.70",
+                    "probability": "0.5666000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 21.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795358582000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=22.5",
+                "product": 3,
+                "desc": "Total games  22.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.50",
+                    "probability": "0.3713000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 22.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.53",
+                    "probability": "0.6287000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 22.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795359297000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=23.5",
+                "product": 3,
+                "desc": "Total games  23.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.80",
+                    "probability": "0.3310000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 23.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.44",
+                    "probability": "0.6690000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 23.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795358582000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=24.5",
+                "product": 3,
+                "desc": "Total games  24.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.90",
+                    "probability": "0.3185000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 24.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.42",
+                    "probability": "0.6815000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 24.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795358582000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=25.5",
+                "product": 3,
+                "desc": "Total games  25.5",
+                "status": 1,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "3.20",
+                    "probability": "0.2833000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 25.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.35",
+                    "probability": "0.7167000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 25.5"
+                  }
+                ],
+                "farNearOdds": -1,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795358582000,
+                "banned": false
+              }
+            ],
+            "bookingStatus": "Booked",
+            "topTeam": false,
+            "fixtureVenue": {
+              "name": "Le Chaudron"
+            },
+            "giftGrabActivityResultVO": {
+              "activityEnabled": false,
+              "enabled": false
+            },
+            "ai": false,
+            "bgEvent": false,
+            "matchTrackerNotAllowed": false,
+            "eventSource": {
+              "preMatchSource": {
+                "sourceType": "BET_GENIUS",
+                "sourceId": "111111114719047"
+              },
+              "liveSource": {
+                "sourceType": "BET_GENIUS",
+                "sourceId": "111111114719047"
+              }
+            },
+            "containsPcbb": false,
+            "banned": false
+          },
+          {
+            "eventId": "sr:match:111111114719847",
+            "gameId": "17162",
+            "productStatus": "0#0",
+            "estimateStartTime": 1795372200000,
+            "status": 0,
+            "homeTeamId": "sr:competitor:11111111904263",
+            "homeTeamName": "Desirae Krawczyk/Taylor Townsend",
+            "awayTeamName": "Anna Bondar/Fanny Stollar",
+            "awayTeamId": "sr:competitor:11111111812092",
+            "sport": {
+              "id": "sr:sport:5",
+              "name": "Tennis",
+              "category": {
+                "id": "sr:category:74",
+                "name": "Billie Jean King Cup",
+                "tournament": {
+                  "id": "sr:tournament:2102",
+                  "name": "Billie Jean King Cup"
+                }
+              }
+            },
+            "totalMarketSize": 3,
+            "markets": [
+              {
+                "id": "186",
+                "product": 3,
+                "desc": "Winner",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Who will win the match.",
+                "title": "1,2",
+                "name": "Winner",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "4",
+                    "odds": "1.27",
+                    "probability": "0.7682000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Home"
+                  },
+                  {
+                    "id": "5",
+                    "odds": "4.00",
+                    "probability": "0.2318000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Away"
+                  }
+                ],
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795356314000,
+                "banned": false
+              }
+            ],
+            "bookingStatus": "Booked",
+            "topTeam": false,
+            "fixtureVenue": {},
+            "giftGrabActivityResultVO": {
+              "activityEnabled": false,
+              "enabled": false
+            },
+            "ai": false,
+            "bgEvent": true,
+            "matchTrackerNotAllowed": true,
+            "eventSource": {
+              "preMatchSource": {
+                "sourceType": "BET_GENIUS",
+                "sourceId": "111111114719847"
+              },
+              "liveSource": {
+                "sourceType": "BET_GENIUS",
+                "sourceId": "111111114719847"
+              }
+            },
+            "containsPcbb": false,
+            "banned": false
+          },
+          {
+            "eventId": "sr:match:76999882",
+            "gameId": "29784",
+            "productStatus": "0#0",
+            "estimateStartTime": 1795376400000,
+            "status": 0,
+            "matchStatus": "Not start",
+            "homeTeamId": "sr:competitor:373352",
+            "homeTeamName": "Gauff, Coco",
+            "awayTeamName": "Bondar, Anna",
+            "awayTeamId": "sr:competitor:150574",
+            "sport": {
+              "id": "sr:sport:5",
+              "name": "Tennis",
+              "category": {
+                "id": "sr:category:74",
+                "name": "Billie Jean King Cup",
+                "tournament": {
+                  "id": "sr:tournament:2102",
+                  "name": "Billie Jean King Cup"
+                }
+              }
+            },
+            "totalMarketSize": 24,
+            "markets": [
+              {
+                "id": "186",
+                "product": 3,
+                "desc": "Winner",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Who will win the match.",
+                "title": "1,2",
+                "name": "Winner",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "4",
+                    "odds": "1.05",
+                    "probability": "0.9275000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Home"
+                  },
+                  {
+                    "id": "5",
+                    "odds": "11.00",
+                    "probability": "0.0725000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Away"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795352552000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=15.5",
+                "product": 3,
+                "desc": "Total games  15.5",
+                "status": 1,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.25",
+                    "probability": "0.7736000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 15.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "4.00",
+                    "probability": "0.2264000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 15.5"
+                  }
+                ],
+                "farNearOdds": -1,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795321612000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=16.5",
+                "product": 3,
+                "desc": "Total games  16.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.48",
+                    "probability": "0.6465000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 16.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "2.65",
+                    "probability": "0.3535000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 16.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795349832000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=17.5",
+                "product": 3,
+                "desc": "Total games  17.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 1,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.86",
+                    "probability": "0.5122000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 17.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.94",
+                    "probability": "0.4878000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 17.5"
+                  }
+                ],
+                "farNearOdds": 1,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795356428000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=18.5",
+                "product": 3,
+                "desc": "Total games  18.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.20",
+                    "probability": "0.4247000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 18.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.67",
+                    "probability": "0.5753000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 18.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795349764000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=19.5",
+                "product": 3,
+                "desc": "Total games  19.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.75",
+                    "probability": "0.3405000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 19.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.45",
+                    "probability": "0.6595000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 19.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795357177000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=20.5",
+                "product": 3,
+                "desc": "Total games  20.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "3.45",
+                    "probability": "0.2605000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 20.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.31",
+                    "probability": "0.7395000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 20.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795357177000,
+                "banned": false
+              }
+            ],
+            "bookingStatus": "Booked",
+            "topTeam": false,
+            "fixtureVenue": {
+              "name": "Delray Beach Tennis Center"
+            },
+            "giftGrabActivityResultVO": {
+              "activityEnabled": false,
+              "enabled": false
+            },
+            "ai": false,
+            "bgEvent": false,
+            "matchTrackerNotAllowed": false,
+            "eventSource": {
+              "preMatchSource": {
+                "sourceType": "BET_GENIUS",
+                "sourceId": "111111114719851"
+              },
+              "liveSource": {
+                "sourceType": "BET_GENIUS",
+                "sourceId": "111111114719851"
+              }
+            },
+            "containsPcbb": false,
+            "banned": false
+          },
+          {
+            "eventId": "sr:match:76999894",
+            "gameId": "38184",
+            "productStatus": "0#0",
+            "estimateStartTime": 1795380600000,
+            "status": 0,
+            "matchStatus": "Not start",
+            "homeTeamId": "sr:competitor:261583",
+            "homeTeamName": "Li, Ann",
+            "awayTeamName": "Galfi, Dalma",
+            "awayTeamId": "sr:competitor:97995",
+            "sport": {
+              "id": "sr:sport:5",
+              "name": "Tennis",
+              "category": {
+                "id": "sr:category:74",
+                "name": "Billie Jean King Cup",
+                "tournament": {
+                  "id": "sr:tournament:2102",
+                  "name": "Billie Jean King Cup"
+                }
+              }
+            },
+            "totalMarketSize": 27,
+            "markets": [
+              {
+                "id": "186",
+                "product": 3,
+                "desc": "Winner",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Who will win the match.",
+                "title": "1,2",
+                "name": "Winner",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "4",
+                    "odds": "1.15",
+                    "probability": "0.8518000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Home"
+                  },
+                  {
+                    "id": "5",
+                    "odds": "5.75",
+                    "probability": "0.1482000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Away"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795353065000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=17.5",
+                "product": 3,
+                "desc": "Total games  17.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.37",
+                    "probability": "0.7049000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 17.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "3.10",
+                    "probability": "0.2951000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 17.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795352730000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=18.5",
+                "product": 3,
+                "desc": "Total games  18.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.55",
+                    "probability": "0.6155000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 18.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "2.45",
+                    "probability": "0.3845000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 18.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795353065000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=19.5",
+                "product": 3,
+                "desc": "Total games  19.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 1,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.82",
+                    "probability": "0.5221000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 19.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.98",
+                    "probability": "0.4779000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 19.5"
+                  }
+                ],
+                "farNearOdds": 1,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795355951000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=20.5",
+                "product": 3,
+                "desc": "Total games  20.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.05",
+                    "probability": "0.4598000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 20.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.78",
+                    "probability": "0.5402000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 20.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795352798000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=21.5",
+                "product": 3,
+                "desc": "Total games  21.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.35",
+                    "probability": "0.3959000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 21.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.60",
+                    "probability": "0.6041000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 21.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795357889000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=22.5",
+                "product": 3,
+                "desc": "Total games  22.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.80",
+                    "probability": "0.3291000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 22.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.44",
+                    "probability": "0.6709000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 22.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795340670000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=23.5",
+                "product": 3,
+                "desc": "Total games  23.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "3.10",
+                    "probability": "0.2962000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 23.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.37",
+                    "probability": "0.7038000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 23.5"
+                  }
+                ],
+                "farNearOdds": -1,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795352730000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=24.5",
+                "product": 3,
+                "desc": "Total games  24.5",
+                "status": 1,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "3.10",
+                    "probability": "0.2979000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 24.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.37",
+                    "probability": "0.7021000000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 24.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_GENIUS",
+                "lastOddsChangeTime": 1795352730000,
+                "banned": false
+              }
+            ],
+            "bookingStatus": "Booked",
+            "topTeam": false,
+            "fixtureVenue": {
+              "name": "Delray Beach Tennis Center"
+            },
+            "giftGrabActivityResultVO": {
+              "activityEnabled": false,
+              "enabled": false
+            },
+            "ai": false,
+            "bgEvent": false,
+            "matchTrackerNotAllowed": false,
+            "eventSource": {
+              "preMatchSource": {
+                "sourceType": "BET_GENIUS",
+                "sourceId": "111111114719850"
+              },
+              "liveSource": {
+                "sourceType": "BET_GENIUS",
+                "sourceId": "111111114719850"
+              }
+            },
+            "containsPcbb": false,
+            "banned": false
+          }
+        ],
+        "categoryName": "Billie Jean King Cup",
+        "categoryId": "sr:category:74"
+      },
+      {
+        "id": "sr:tournament:37563",
+        "name": "WTA 125K Colina, Chile Women Singles",
+        "events": [
+          {
+            "eventId": "sr:match:76682250",
+            "gameId": "23501",
+            "productStatus": "0#0",
+            "estimateStartTime": 1795381200000,
+            "status": 0,
+            "matchStatus": "Not start",
+            "homeTeamId": "sr:competitor:297588",
+            "homeTeamName": "Romero Gormaz, Leyre",
+            "awayTeamName": "Masarova, Rebeka",
+            "awayTeamId": "sr:competitor:124804",
+            "sport": {
+              "id": "sr:sport:5",
+              "name": "Tennis",
+              "category": {
+                "id": "sr:category:871",
+                "name": "WTA 125K",
+                "tournament": {
+                  "id": "sr:tournament:37563",
+                  "name": "WTA 125K Colina, Chile Women Singles"
+                }
+              }
+            },
+            "totalMarketSize": 27,
+            "markets": [
+              {
+                "id": "186",
+                "product": 3,
+                "desc": "Winner",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Who will win the match.",
+                "title": "1,2",
+                "name": "Winner",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "4",
+                    "odds": "2.10",
+                    "probability": "0.4407540000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Home"
+                  },
+                  {
+                    "id": "5",
+                    "odds": "1.68",
+                    "probability": "0.5592450000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Away"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_RADAR",
+                "lastOddsChangeTime": 1795355062000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=17.5",
+                "product": 3,
+                "desc": "Total games 17.5",
+                "status": 2,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.24",
+                    "probability": "0.7681025249",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 17.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "3.65",
+                    "probability": "0.2318982695",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 17.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_RADAR",
+                "lastOddsChangeTime": 1795319083000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=18.5",
+                "product": 3,
+                "desc": "Total games 18.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.29",
+                    "probability": "0.7358500165",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 18.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "3.25",
+                    "probability": "0.2641501527",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 18.5"
+                  }
+                ],
+                "farNearOdds": -1,
+                "sourceType": "BET_RADAR",
+                "lastOddsChangeTime": 1795355062000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=19.5",
+                "product": 3,
+                "desc": "Total games 19.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.46",
+                    "probability": "0.6455210000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 19.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "2.55",
+                    "probability": "0.3544790000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 19.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_RADAR",
+                "lastOddsChangeTime": 1795355062000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=20.5",
+                "product": 3,
+                "desc": "Total games 20.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.65",
+                    "probability": "0.5678950000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 20.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "2.10",
+                    "probability": "0.4321050000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 20.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_RADAR",
+                "lastOddsChangeTime": 1795355062000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=21.5",
+                "product": 3,
+                "desc": "Total games 21.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 1,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "1.82",
+                    "probability": "0.5088010000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 21.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.88",
+                    "probability": "0.4911990000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 21.5"
+                  }
+                ],
+                "farNearOdds": 1,
+                "sourceType": "BET_RADAR",
+                "lastOddsChangeTime": 1795355062000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=22.5",
+                "product": 3,
+                "desc": "Total games 22.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.10",
+                    "probability": "0.4339136415",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 22.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.65",
+                    "probability": "0.5660863588",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 22.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_RADAR",
+                "lastOddsChangeTime": 1795355062000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=23.5",
+                "product": 3,
+                "desc": "Total games 23.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.35",
+                    "probability": "0.3822020000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 23.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.52",
+                    "probability": "0.6177980000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 23.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_RADAR",
+                "lastOddsChangeTime": 1795355062000,
+                "banned": false
+              },
+              {
+                "id": "189",
+                "specifier": "total=24.5",
+                "product": 3,
+                "desc": "Total games 24.5",
+                "status": 0,
+                "group": "Main",
+                "groupId": "171124183549MGI11391522",
+                "marketGuide": "Predict whether the total number of games is over/under a given line. A tiebreak is regarded as a game.",
+                "title": "Over,Under",
+                "name": "Total Games",
+                "favourite": 0,
+                "outcomes": [
+                  {
+                    "id": "12",
+                    "odds": "2.45",
+                    "probability": "0.3669100000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Over 24.5"
+                  },
+                  {
+                    "id": "13",
+                    "odds": "1.49",
+                    "probability": "0.6330900000",
+                    "voidProbability": "0E-10",
+                    "isActive": 1,
+                    "desc": "Under 24.5"
+                  }
+                ],
+                "farNearOdds": 0,
+                "sourceType": "BET_RADAR",
+                "lastOddsChangeTime": 1795355062000,
+                "banned": false
+              }
+            ],
+            "bookingStatus": "Booked",
+            "topTeam": false,
+            "fixtureVenue": {
+              "name": "Centre Court"
+            },
+            "giftGrabActivityResultVO": {
+              "activityEnabled": false,
+              "enabled": false
+            },
+            "ai": false,
+            "bgEvent": false,
+            "matchTrackerNotAllowed": false,
+            "eventSource": {
+              "preMatchSource": {
+                "sourceType": "BET_RADAR",
+                "sourceId": "76682250"
+              },
+              "liveSource": {
+                "sourceType": "BET_RADAR",
+                "sourceId": "76682250"
+              }
+            },
+            "containsPcbb": false,
+            "banned": false
+          }
+        ],
+        "categoryName": "WTA 125K",
+        "categoryId": "sr:category:871"
+      }
+    ]
+  }
+}
