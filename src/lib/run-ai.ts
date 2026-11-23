@@ -12,7 +12,7 @@ import { generateAiPicks, type AiEngineResult } from './ai-engine.ts';
 import { saveAiSnapshot, getAiSnapshot, type AiSnapshot } from './ai-store.ts';
 import { fail, ok, type Result } from './result.ts';
 import type { Store } from './store.ts';
-import type { Bookmaker, Game } from './types.ts';
+import { SPORTS, type Game } from './types.ts';
 
 /**
  * Serverless instances do not share memory, so in production the games and picks must live in
@@ -33,9 +33,8 @@ export async function runAiGeneration(store: Store, env: NodeJS.ProcessEnv = pro
   const run = await store.latestRun();
   if (!run) return fail('No finished fetch run yet. Refresh games first.', { code: 'no_fetch_run' });
 
-  const bookmakers: Bookmaker[] = ['sportybet', 'betpawa'];
   const games: Game[] = [];
-  for (const b of bookmakers) games.push(...(await store.gamesForRun(run.id, b)));
+  for (const sport of SPORTS) games.push(...(await store.gamesForRun(run.id, sport)));
   if (games.length === 0) return fail('Latest run has no games. Refresh games first.', { code: 'no_games' });
 
   const wait = Number(env.AI_STATS_MAX_WAIT_MS);

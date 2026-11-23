@@ -1,7 +1,6 @@
 import type pg from 'pg';
-import type { GameMatch } from './matching.ts';
 import type { RunKind, RunRecord, RunResults, Store } from './store.ts';
-import type { Bookmaker, Game } from './types.ts';
+import type { Game, Sport } from './types.ts';
 
 let pool: pg.Pool | null = null;
 export async function getPool(): Promise<pg.Pool> {
@@ -53,20 +52,10 @@ export class PgStore implements Store {
     if (games.length === 0) return;
     const p = await getPool();
     await p.query(
-      `INSERT INTO games (id, fetch_run_id, bookmaker, native_event_id, home, away, kickoff, league, markets)
-       SELECT r.id, $1, r.bookmaker, r."nativeEventId", r.home, r.away, to_timestamp(r.kickoff / 1000.0), r.league, r.markets
-       FROM jsonb_to_recordset($2::jsonb) AS r(id text, bookmaker text, "nativeEventId" text, home text, away text, kickoff bigint, league text, markets jsonb)`,
+      `INSERT INTO games (id, fetch_run_id, sport, bookmaker, native_event_id, home, away, kickoff, league, markets)
+       SELECT r.id, $1, r.sport, r.bookmaker, r."nativeEventId", r.home, r.away, to_timestamp(r.kickoff / 1000.0), r.league, r.markets
+       FROM jsonb_to_recordset($2::jsonb) AS r(id text, sport text, bookmaker text, "nativeEventId" text, home text, away text, kickoff bigint, league text, markets jsonb)`,
       [runId, JSON.stringify(games)],
-    );
-  }
-  async saveMatches(runId: string, matches: GameMatch[]) {
-    if (matches.length === 0) return;
-    const p = await getPool();
-    await p.query(
-      `INSERT INTO game_matches (fetch_run_id, sporty_game_id, betpawa_game_id, score)
-       SELECT $1, r."sportyGameId", r."betpawaGameId", r.score
-       FROM jsonb_to_recordset($2::jsonb) AS r("sportyGameId" text, "betpawaGameId" text, score numeric)`,
-      [runId, JSON.stringify(matches)],
     );
   }
   async latestRun(): Promise<RunRecord | null> {
@@ -77,13 +66,13 @@ export class PgStore implements Store {
     const row = r.rows[0];
     return row ? { id: row.id, kind: row.kind, startedAt: Number(row.s), finishedAt: Number(row.f), results: row.results } : null;
   }
-  async gamesForRun(runId: string, bookmaker: Bookmaker): Promise<Game[]> {
+  async gamesForRun(runId: string, sport: Sport): Promise<Game[]> {
     const p = await getPool();
     const r = await p.query(
-      `SELECT id, bookmaker, native_event_id, home, away, (extract(epoch from kickoff)*1000)::bigint AS k, league, markets
-       FROM games WHERE fetch_run_id = $1 AND bookmaker = $2 ORDER BY kickoff`, [runId, bookmaker]);
+      `SELECT id, sport, bookmaker, native_event_id, home, away, (extract(epoch from kickoff)*1000)::bigint AS k, league, markets
+       FROM games WHERE fetch_run_id = $1 AND COALESCE(sport, 'football') = $2 ORDER BY kickoff`, [runId, sport]);
     return r.rows.map((x) => ({
-      id: x.id, sport: (x.sport ?? 'football') as import('./types.ts').Sport, bookmaker: x.bookmaker, nativeEventId: x.native_event_id, home: x.home, away: x.away,
+      id: x.id, sport: (x.sport ?? 'football') as Sport, bookmaker: x.bookmaker, nativeEventId: x.native_event_id, home: x.home, away: x.away,
       kickoff: Number(x.k), league: x.league, markets: x.markets, fetchRunId: runId,
     }));
   }

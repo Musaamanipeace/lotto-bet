@@ -1,5 +1,8 @@
+import type { Sport } from './types.ts';
+
 export type ErrorDetails = {
   bookmaker?: string;
+  sport?: Sport;
   upstream?: string;
   url?: string;
   httpStatus?: number;

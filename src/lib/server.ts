@@ -1,4 +1,3 @@
-import { fetchBetPawaGames } from './bookmakers/betpawa.ts';
 import { fetchSportyAllPages } from './bookmakers/sportybet.ts';
 import { checkCronAuth } from './cron-auth.ts';
 import { runPipeline } from './pipeline.ts';
@@ -7,6 +6,7 @@ import { getMemoryStore } from './memory-store.ts';
 import { runAiGeneration, storageProblem } from './run-ai.ts';
 import type { Store } from './store.ts';
 import type { RunKind } from './store.ts';
+import { SPORTS } from './types.ts';
 
 /**
  * Prefer Postgres when DATABASE_URL is set; otherwise use an in-process memory store
@@ -42,10 +42,9 @@ export async function handleRefresh(req: Request, kind: RunKind): Promise<Respon
     const r = await runPipeline({
       store,
       kind,
-      fetchers: {
-        sportybet: (fetchRunId) => fetchSportyAllPages({ fetchRunId, timelineHours: 168 }),
-        betpawa: (fetchRunId) => fetchBetPawaGames({ fetchRunId, take: 300 }),
-      },
+      fetchers: Object.fromEntries(
+        SPORTS.map((sport) => [sport, (fetchRunId: string) => fetchSportyAllPages({ fetchRunId, sport, timelineHours: 168 })]),
+      ) as Record<(typeof SPORTS)[number], (fetchRunId: string) => ReturnType<typeof fetchSportyAllPages>>,
     });
     if (!r.ok) return Response.json(r, { status: 500 });
 
@@ -68,7 +67,7 @@ export async function handleRefresh(req: Request, kind: RunKind): Promise<Respon
       ai = { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
 
-    const anyFailed = !r.results.sportybet.ok || !r.results.betpawa.ok;
+    const anyFailed = SPORTS.some((sport) => !r.results[sport].ok);
     return Response.json({ ...r, ai }, { status: anyFailed ? 502 : 200 });
   } catch (e) {
     return Response.json(

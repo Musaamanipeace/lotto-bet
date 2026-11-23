@@ -2,14 +2,12 @@
  * In-memory Store used when DATABASE_URL is not set (local/dev).
  * Survives for the lifetime of the Node process only.
  */
-import type { GameMatch } from './matching.ts';
 import type { RunKind, RunRecord, RunResults, Store } from './store.ts';
-import type { Bookmaker, Game } from './types.ts';
+import type { Game, Sport } from './types.ts';
 
 export class MemoryStore implements Store {
   private runs: RunRecord[] = [];
   private games = new Map<string, Game[]>();
-  private matches = new Map<string, GameMatch[]>();
   private clock = Date.now();
 
   async createRun(kind: RunKind): Promise<string> {
@@ -30,17 +28,13 @@ export class MemoryStore implements Store {
     this.games.set(runId, [...existing, ...games]);
   }
 
-  async saveMatches(runId: string, matches: GameMatch[]): Promise<void> {
-    this.matches.set(runId, matches);
-  }
-
   async latestRun(): Promise<RunRecord | null> {
     const done = this.runs.filter((r) => r.finishedAt !== null);
     return done.at(-1) ?? null;
   }
 
-  async gamesForRun(runId: string, bookmaker: Bookmaker): Promise<Game[]> {
-    return (this.games.get(runId) ?? []).filter((g) => g.bookmaker === bookmaker);
+  async gamesForRun(runId: string, sport: Sport): Promise<Game[]> {
+    return (this.games.get(runId) ?? []).filter((g) => g.sport === sport);
   }
 }
 

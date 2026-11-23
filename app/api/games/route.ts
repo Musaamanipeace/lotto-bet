@@ -3,8 +3,7 @@ import { getStore } from '@/lib/server.ts';
 import { readGames } from '@/lib/read-games.ts';
 import { runPipeline } from '@/lib/pipeline.ts';
 import { fetchSportyAllPages } from '@/lib/bookmakers/sportybet.ts';
-import { fetchBetPawaGames } from '@/lib/bookmakers/betpawa.ts';
-import type { Bookmaker, MarketKind } from '@/lib/types.ts';
+import { SPORTS, type MarketKind, type Sport } from '@/lib/types.ts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -15,7 +14,7 @@ const num = (v: string | null) => (v === null || v === '' || Number.isNaN(Number
 
 /**
  * If there is no finished run yet (fresh install / memory store), run the pipeline once
- * so the UI can show SportyBet (and betPawa) games without a manual refresh.
+ * so the UI can show football, tennis and basketball games without a manual refresh.
  */
 async function ensureData() {
   const store = getStore();
@@ -24,19 +23,19 @@ async function ensureData() {
   await runPipeline({
     store,
     kind: 'manual',
-    fetchers: {
-      sportybet: (fetchRunId) => fetchSportyAllPages({ fetchRunId, timelineHours: 168 }),
-      betpawa: (fetchRunId) => fetchBetPawaGames({ fetchRunId, take: 300 }),
-    },
+    fetchers: Object.fromEntries(
+      SPORTS.map((sport) => [sport, (fetchRunId: string) => fetchSportyAllPages({ fetchRunId, sport, timelineHours: 168 })]),
+    ) as Record<Sport, (fetchRunId: string) => ReturnType<typeof fetchSportyAllPages>>,
   });
 }
 
 export async function GET(req: Request) {
   const q = new URL(req.url).searchParams;
-  const b = q.get('bookmaker');
-  if (b !== null && b !== 'sportybet' && b !== 'betpawa') {
-    return Response.json({ ok: false, error: `Unknown bookmaker "${b}"`, details: {} }, { status: 400 });
+  const sportParam = q.get('sport');
+  if (sportParam !== null && !SPORTS.includes(sportParam as Sport)) {
+    return Response.json({ ok: false, error: `Unknown sport "${sportParam}"`, details: {} }, { status: 400 });
   }
+  const sport = (sportParam as Sport | null) ?? undefined;
   const gameId = q.get('gameId');
   const allMarkets = q.get('allMarkets') === '1' || q.get('allMarkets') === 'true';
   const rulesParam = q.get('rules');
@@ -47,7 +46,7 @@ export async function GET(req: Request) {
   try {
     // Auto-bootstrap on first request so SportyBet games appear without a prior cron/refresh.
     await ensureData();
-    const r = await readGames(getStore(), (b as Bookmaker | null) ?? undefined);
+    const r = await readGames(getStore(), sport);
     if (!r.ok) return Response.json(r, { status: r.details.httpStatus ?? 502 });
     const kind = q.get('market') as MarketKind | null;
     // Never offer games that have started or are about to: the stored snapshot can be hours old, and the original

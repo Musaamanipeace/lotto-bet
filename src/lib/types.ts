@@ -7,6 +7,9 @@ export const BOOKMAKER_LABEL: Record<Bookmaker, string> = {
 
 export type Sport = 'football' | 'tennis' | 'basketball';
 
+/** Every sport the refresh pipeline fetches, in request order. */
+export const SPORTS: Sport[] = ['football', 'tennis', 'basketball'];
+
 /** Only kinds verified from live data are listed. Anything else is `null` (unavailable). */
 export type MarketKind = '1x2' | 'double_chance' | 'over_under' | 'btts' | 'match_winner' | 'total';
 

@@ -1,12 +1,10 @@
 import { getStore } from '@/lib/server.ts';
-import type { Bookmaker } from '@/lib/types.ts';
 import { LEAGUE_PRIORITY } from '@/lib/criteria.ts';
+import { SPORTS } from '@/lib/types.ts';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const bookmaker = (url.searchParams.get('bookmaker') as Bookmaker | null) || null;
+export async function GET() {
   const run = await getStore().latestRun();
   if (!run) {
     return Response.json({
@@ -16,16 +14,15 @@ export async function GET(req: Request) {
     });
   }
 
-  const bookmakers: Bookmaker[] = bookmaker ? [bookmaker] : ['sportybet', 'betpawa'];
-  const counts = new Map<string, { name: string; count: number; nextKickoff: number | null; bookmakers: Set<string> }>();
+  const counts = new Map<string, { name: string; count: number; nextKickoff: number | null; sports: Set<string> }>();
 
-  for (const b of bookmakers) {
-    const games = await getStore().gamesForRun(run.id, b);
+  for (const sport of SPORTS) {
+    const games = await getStore().gamesForRun(run.id, sport);
     for (const g of games) {
       const name = g.league?.trim() || 'Unknown league';
-      const cur = counts.get(name) ?? { name, count: 0, nextKickoff: null, bookmakers: new Set() };
+      const cur = counts.get(name) ?? { name, count: 0, nextKickoff: null, sports: new Set<string>() };
       cur.count += 1;
-      cur.bookmakers.add(b);
+      cur.sports.add(sport);
       if (cur.nextKickoff === null || g.kickoff < cur.nextKickoff) cur.nextKickoff = g.kickoff;
       counts.set(name, cur);
     }
@@ -44,7 +41,7 @@ export async function GET(req: Request) {
       name: l.name,
       gameCount: l.count,
       nextKickoff: l.nextKickoff,
-      bookmakers: [...l.bookmakers],
+      sports: [...l.sports],
       priorityGroup: priorityIndex(l.name),
     }))
     .sort((a, b) => a.priorityGroup - b.priorityGroup || b.gameCount - a.gameCount || a.name.localeCompare(b.name));
