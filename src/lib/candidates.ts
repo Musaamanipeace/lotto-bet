@@ -57,6 +57,9 @@ export function generateCandidates(games: Game[], bookmaker?: Game['bookmaker'])
   const seen = new Set<string>(); // gameId:marketKey
 
   for (const row of rows) {
+    // Football criteria and the goals model are the only ones configured. New sports stay in the
+    // filterable games list / slip, but never enter criteria evaluation or Poisson estimates.
+    if ((row.sport ?? 'football') !== 'football') continue;
     if (row.implied === null) continue; // need margin-removed probability
     const marketKey = marketKeyFor(row);
     if (!marketKey) continue;

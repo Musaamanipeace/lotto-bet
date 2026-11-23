@@ -83,6 +83,7 @@ async function evaluateCandidate(c: RawCandidate, providers?: StatsProvider[]): 
       home: c.row.home,
       away: c.row.away,
       kickoff: c.row.kickoff,
+      sport: c.row.sport ?? 'football',
     }, providers);
 
     if (!metricRes.ok) {

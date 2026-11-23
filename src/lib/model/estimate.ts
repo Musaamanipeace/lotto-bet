@@ -36,7 +36,10 @@ export function estimateForMarket(
   marketKey: string,
   lamHome: number,
   lamAway: number,
+  sport: string = 'football',
 ): MarketEstimate | { reason: string } {
+  // The Poisson goals model only describes football; tennis/basketball legs are never estimated.
+  if (sport !== 'football') return { reason: `The goals model only supports football, not ${sport}.` };
   const m = scorelineMatrix(lamHome, lamAway);
   switch (marketKey) {
     case 'home_win':

@@ -1,4 +1,5 @@
 import type { MissingState } from './data-state.ts';
+import type { Sport } from './types.ts';
 
 export type Side = 'home' | 'away' | 'both';
 
@@ -14,6 +15,8 @@ export type MetricRequest = {
   side?: Side;
   /** Kickoff, epoch ms (used for rest days). */
   kickoff?: number;
+  /** Football-only providers return a miss for any other sport. */
+  sport?: Sport;
 };
 
 export type MetricOutcome =

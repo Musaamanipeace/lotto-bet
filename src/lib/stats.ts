@@ -85,6 +85,10 @@ export async function fetchMetric(
   req: MetricRequest,
   providers: StatsProvider[] = activeProviders ?? configuredProviders(),
 ): Promise<MetricOutcome> {
+  // Football-only criteria/stats: never query a football provider for tennis/basketball.
+  if (req.sport && req.sport !== 'football') {
+    return miss('not_offered', `Football stats do not apply to ${req.sport}; no criteria are configured for this sport`, 'stats');
+  }
   for (const p of providers) {
     if (!p.supports(req.metric)) continue;
     const r = await p.fetch(req);

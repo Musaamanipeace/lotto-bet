@@ -5,6 +5,7 @@ import { FootballDataProvider } from '@/lib/fd-provider.ts';
 import { findTeamRow, leagueAverages, strengthForRow, type TableRowInput } from '@/lib/model/strengths.ts';
 import { estimateForMarket } from '@/lib/model/estimate.ts';
 import { getDecryptedUserKeys } from '@/lib/user-settings-store.ts';
+import type { Sport } from '@/lib/types.ts';
 
 type LegIn = {
   gameId?: string;
@@ -12,6 +13,7 @@ type LegIn = {
   home?: string;
   away?: string;
   marketKey?: string;
+  sport?: Sport;
 };
 
 const echo = (gameId: string | undefined) => (gameId ? { gameId } : {});
@@ -53,6 +55,10 @@ export async function POST(req: Request) {
 
   const out: EstimateOut[] = [];
   for (const leg of legs) {
+    if (leg.sport && leg.sport !== 'football') {
+      out.push({ ...echo(leg.gameId), marketKey: null, reason: `The goals model only supports football, not ${leg.sport}.` });
+      continue;
+    }
     const marketKey = typeof leg.marketKey === 'string' ? leg.marketKey : null;
     const legId = typeof leg.gameId === 'string' ? leg.gameId : undefined;
     const league = typeof leg.league === 'string' ? leg.league : null;
