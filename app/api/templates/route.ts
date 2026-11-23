@@ -1,5 +1,6 @@
 import { currentUser, jsonError, requireJson } from '@/lib/session.ts';
 import { DEFAULT_TEMPLATES, type FilterTemplate } from '@/lib/template-store.ts';
+import { normalizeCardsState } from '@/lib/filter-state.ts';
 import { queryAsUser } from '@/lib/pg-store.ts';
 
 export const dynamic = 'force-dynamic';
@@ -69,7 +70,7 @@ export async function POST(req: Request) {
       bookmaker: body.bookmaker === 'betpawa' ? 'betpawa' : 'sportybet',
       withinHours: body.withinHours !== undefined ? body.withinHours : null,
       leagues: Array.isArray(body.leagues) ? body.leagues : [],
-      cards: body.cards,
+      cards: normalizeCardsState(body.cards),
       userId: user.id,
       createdAt: Date.now(),
       isDefault: false,

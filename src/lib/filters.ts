@@ -1,6 +1,6 @@
 import { impliedProbabilities } from './math.ts';
 import { outcomeKeyOf, type OutcomeKey } from './outcomes.ts';
-import type { Bookmaker, Game, Market, MarketKind, Outcome } from './types.ts';
+import type { Bookmaker, Game, Market, MarketKind, MarketPeriod, Outcome, Sport } from './types.ts';
 
 export const FT_LINE_MIN = 0.5;
 export const FT_LINE_MAX = 5.5;
@@ -18,7 +18,17 @@ export type MarketSelector = { kind: MarketKind; line?: number };
  * (over/under only; omitted = any) and its odds sit inside the optional range.
  * Submarkets: 1x2 -> home|draw|away, double_chance -> 1X|12|X2, over_under -> over|under, btts -> yes|no.
  */
-export type PickRule = { kind: MarketKind; subs?: string[]; lines?: number[]; oddsMin?: number; oddsMax?: number };
+export type PickRule = {
+  kind: MarketKind;
+  subs?: string[];
+  lines?: number[];
+  oddsMin?: number;
+  oddsMax?: number;
+  /** New-sports cards are scoped to a sport and a verified native market id, so colliding ids stay separate. */
+  sport?: Sport;
+  period?: MarketPeriod;
+  marketIds?: string[];
+};
 
 export const DOUBLE_CHANCE_SUBS = ['1X', '12', 'X2'] as const;
 
@@ -44,9 +54,12 @@ function subOf(m: Market, o: Outcome, key: OutcomeKey | null): string | null {
   return key; // 1x2: home|draw|away, btts: yes|no, over_under: over|under
 }
 
-function passesRules(rules: PickRule[], m: Market, sub: string | null, odds: number): boolean {
+function passesRules(rules: PickRule[], m: Market, sub: string | null, odds: number, sport: Sport): boolean {
   return rules.some((r) => {
     if (r.kind !== m.kind) return false;
+    if (r.sport && r.sport !== sport) return false;
+    if (r.marketIds && !r.marketIds.includes(m.nativeId)) return false;
+    if (r.period !== undefined && (m.period ?? null) !== r.period) return false;
     if (r.subs && (sub === null || !r.subs.includes(sub))) return false;
     if (r.lines && (m.line === null || !r.lines.includes(m.line))) return false;
     if (r.oddsMin !== undefined && odds < r.oddsMin) return false;
@@ -55,7 +68,9 @@ function passesRules(rules: PickRule[], m: Market, sub: string | null, odds: num
   });
 }
 
-const KINDS: MarketKind[] = ['1x2', 'double_chance', 'over_under', 'btts'];
+const KINDS: MarketKind[] = ['1x2', 'double_chance', 'over_under', 'btts', 'match_winner', 'total'];
+const SPORTS: Sport[] = ['football', 'tennis', 'basketball'];
+const PERIODS: MarketPeriod[] = ['ft', 'q1', 'q2', 'q3', 'q4', 'h1', 'h2'];
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
 
@@ -74,6 +89,9 @@ export function parseRules(json: string): PickRule[] | null {
     if (x.lines !== undefined) { if (!Array.isArray(x.lines) || !x.lines.every(finite)) return null; rule.lines = x.lines as number[]; }
     if (x.oddsMin !== undefined) { if (!finite(x.oddsMin)) return null; rule.oddsMin = x.oddsMin; }
     if (x.oddsMax !== undefined) { if (!finite(x.oddsMax)) return null; rule.oddsMax = x.oddsMax; }
+    if (x.sport !== undefined) { if (!SPORTS.includes(x.sport as Sport)) return null; rule.sport = x.sport as Sport; }
+    if (x.period !== undefined) { if (!PERIODS.includes(x.period as MarketPeriod)) return null; rule.period = x.period as MarketPeriod; }
+    if (x.marketIds !== undefined) { if (!strings(x.marketIds)) return null; rule.marketIds = x.marketIds; }
     out.push(rule);
   }
   return out;
@@ -95,6 +113,9 @@ export type PickRow = {
   gameId: string; nativeEventId: string; bookmaker: Bookmaker; home: string; away: string; kickoff: number; league: string | null;
   pick: string; odds: number;
   marketNativeId: string; outcomeNativeId: string; specifier: string; marketKind: MarketKind; line: number | null;
+  /** New sports carry their sport and period so guards and results can treat them differently. */
+  sport?: Sport;
+  period?: MarketPeriod;
   /** Canonical outcome (home/over/yes...), or null when this outcome is not identified. */
   outcomeKey: OutcomeKey | null;
   /**
@@ -104,10 +125,16 @@ export type PickRow = {
   implied: number | null;
 };
 
-/** A market is usable only if identified; full-time over/under only with a known line strictly in 0.5, 1.5, 2.5, 3.5, 4.5, 5.5. */
-function usable(m: Market): boolean {
+/**
+ * A market is usable only if identified. Football over/under is restricted to the six goal lines;
+ * tennis/basketball totals use their real .5 lines (games, points, quarter/half points).
+ */
+function usable(m: Market, sport: Sport): boolean {
   if (m.kind === null || m.unavailableReason !== null) return false;
-  if (m.kind === 'over_under') return isAllowedOverUnderLine(m.line);
+  if (m.kind === 'over_under') {
+    if (sport !== 'football') return typeof m.line === 'number' && Number.isFinite(m.line);
+    return isAllowedOverUnderLine(m.line);
+  }
   return true;
 }
 
@@ -120,7 +147,7 @@ export type MarketTextToken = { kind: 'number' | 'text'; value: string };
  * - Over/Under (strictly 0.5, 1.5, 2.5, 3.5, 4.5, 5.5): "Over 0.5" .. "Over 5.5", "Under 0.5" .. "Under 5.5"
  * - BTTS: "GG", "NG"
  */
-export function formatGameCardMarket(r: Pick<PickRow, 'marketKind' | 'outcomeKey' | 'pick' | 'line'>): string {
+export function formatGameCardMarket(r: Pick<PickRow, 'marketKind' | 'outcomeKey' | 'pick' | 'line' | 'sport'>): string {
   if (r.marketKind === '1x2') {
     if (r.outcomeKey === 'home') return '1';
     if (r.outcomeKey === 'draw') return 'x';
@@ -141,7 +168,8 @@ export function formatGameCardMarket(r: Pick<PickRow, 'marketKind' | 'outcomeKey
   }
 
   if (r.marketKind === 'over_under') {
-    const line = isAllowedOverUnderLine(r.line) ? r.line : null;
+    const nonFootballLine = r.sport && r.sport !== 'football' && typeof r.line === 'number' && Number.isFinite(r.line);
+    const line = isAllowedOverUnderLine(r.line) || nonFootballLine ? r.line : null;
     const side =
       r.outcomeKey === 'over' || /^over\b/i.test(r.pick.trim())
         ? 'Over'
@@ -195,6 +223,7 @@ function row(g: Game, m: Market, o: Outcome): PickRow {
     gameId: g.id, nativeEventId: g.nativeEventId, bookmaker: g.bookmaker, home: g.home, away: g.away, kickoff: g.kickoff, league: g.league,
     pick: m.kind === 'over_under' ? `${o.desc} ${m.line}` : o.desc, odds: o.odds,
     marketNativeId: m.nativeId, outcomeNativeId: o.nativeId, specifier: m.specifier, marketKind: m.kind!, line: m.line,
+    sport: g.sport, period: m.period ?? null,
     outcomeKey: outcomeKeyOf(g.bookmaker, m.kind!, o),
     implied: impliedOf(m, o),
   };
@@ -210,13 +239,13 @@ export function candidateRows(games: Game[], f: Filter = {}): PickRow[] {
     if (f.dateFrom !== undefined && g.kickoff < f.dateFrom) continue;
     if (f.dateTo !== undefined && g.kickoff > f.dateTo) continue;
     for (const m of g.markets) {
-      if (!usable(m)) continue;
+      if (!usable(m, g.sport)) continue;
       if (f.market && (m.kind !== f.market.kind || (f.market.line !== undefined && m.line !== f.market.line))) continue;
       for (const o of m.outcomes) {
         if (!o.isActive) continue;
         if (f.oddsMin !== undefined && o.odds < f.oddsMin) continue;
         if (f.oddsMax !== undefined && o.odds > f.oddsMax) continue;
-        if (f.rules && !passesRules(f.rules, m, subOf(m, o, outcomeKeyOf(g.bookmaker, m.kind!, o)), o.odds)) continue;
+        if (f.rules && !passesRules(f.rules, m, subOf(m, o, outcomeKeyOf(g.bookmaker, m.kind!, o)), o.odds, g.sport)) continue;
         out.push(row(g, m, o));
       }
     }

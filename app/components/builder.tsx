@@ -5,6 +5,7 @@ import type { PickRow } from '@/lib/filters.ts';
 import { aiPickToRow } from '@/lib/ai-rows.ts';
 import type { AiPick, TargetTier } from '@/lib/ai-picks.ts';
 import { GOAL_LINES_FALLBACK, cardsToRules, defaultCards } from '@/lib/market-cards.ts';
+import { normalizeCardsState } from '@/lib/filter-state.ts';
 import { randomPicks } from '@/lib/random-picks.ts';
 import {
   addLeg,
@@ -144,7 +145,7 @@ export function Builder({ heading }: { heading?: string }) {
       if (tpl.bookmaker) setBookmaker(tpl.bookmaker);
       setWithinHours(tpl.withinHours !== undefined ? tpl.withinHours : null);
       setLeagues(Array.isArray(tpl.leagues) ? [...tpl.leagues] : []);
-      if (tpl.cards) setCards(tpl.cards);
+      if (tpl.cards) setCards(normalizeCardsState(tpl.cards));
     });
   }, [setBookmaker, setWithinHours, setLeagues, setCards]);
 

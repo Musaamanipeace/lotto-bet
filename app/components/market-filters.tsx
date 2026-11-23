@@ -6,6 +6,8 @@ import {
   DC_CHOICES,
   GOAL_LINES_FALLBACK,
   MATCH_RESULT_CHOICES,
+  SIDE_CHOICES,
+  WINNER_CHOICES,
   allAvailableCards,
   isSolo,
   resetCard,
@@ -16,6 +18,7 @@ import {
   type CardsState,
 } from '@/lib/market-cards.ts';
 import { isAllowedOverUnderLine } from '@/lib/filters.ts';
+import { normalizeCardsState } from '@/lib/filter-state.ts';
 import {
   DEFAULT_TEMPLATES,
   deleteLocalTemplate,
@@ -38,6 +41,16 @@ const ACCENT: Record<CardId, { dot: string; title: string; edge: string; chipOn:
   over:  { dot: 'bg-sky-400',     title: 'text-sky-300',     edge: 'border-sky-400/40',     chipOn: 'border-sky-400 bg-sky-400 text-navy-950' },
   under: { dot: 'bg-rose-400',    title: 'text-rose-300',    edge: 'border-rose-400/40',    chipOn: 'border-rose-400 bg-rose-400 text-navy-950' },
   btts:  { dot: 'bg-orange-400',  title: 'text-orange-300',  edge: 'border-orange-400/40',  chipOn: 'border-orange-400 bg-orange-400 text-navy-950' },
+  tn_winner: { dot: 'bg-cyan-400', title: 'text-cyan-300', edge: 'border-cyan-400/40', chipOn: 'border-cyan-400 bg-cyan-400 text-navy-950' },
+  tn_total: { dot: 'bg-teal-400', title: 'text-teal-300', edge: 'border-teal-400/40', chipOn: 'border-teal-400 bg-teal-400 text-navy-950' },
+  bk_ml: { dot: 'bg-indigo-400', title: 'text-indigo-300', edge: 'border-indigo-400/40', chipOn: 'border-indigo-400 bg-indigo-400 text-navy-950' },
+  bk_total: { dot: 'bg-violet-400', title: 'text-violet-300', edge: 'border-violet-400/40', chipOn: 'border-violet-400 bg-violet-400 text-navy-950' },
+  bk_q1: { dot: 'bg-lime-400', title: 'text-lime-300', edge: 'border-lime-400/40', chipOn: 'border-lime-400 bg-lime-400 text-navy-950' },
+  bk_q2: { dot: 'bg-fuchsia-400', title: 'text-fuchsia-300', edge: 'border-fuchsia-400/40', chipOn: 'border-fuchsia-400 bg-fuchsia-400 text-navy-950' },
+  bk_q3: { dot: 'bg-amber-400', title: 'text-amber-300', edge: 'border-amber-400/40', chipOn: 'border-amber-400 bg-amber-400 text-navy-950' },
+  bk_q4: { dot: 'bg-pink-400', title: 'text-pink-300', edge: 'border-pink-400/40', chipOn: 'border-pink-400 bg-pink-400 text-navy-950' },
+  bk_h1: { dot: 'bg-yellow-400', title: 'text-yellow-300', edge: 'border-yellow-400/40', chipOn: 'border-yellow-400 bg-yellow-400 text-navy-950' },
+  bk_h2: { dot: 'bg-orange-400', title: 'text-orange-300', edge: 'border-orange-400/40', chipOn: 'border-orange-400 bg-orange-400 text-navy-950' },
 };
 
 const WITHIN_OPTIONS: { label: string; hours: number | null }[] = [
@@ -240,7 +253,7 @@ export function MarketFilters(props: {
       if (tpl.bookmaker) onBookmakerChange?.(tpl.bookmaker);
       onWithinHoursChange?.(tpl.withinHours !== undefined ? tpl.withinHours : null);
       onLeaguesChange?.(Array.isArray(tpl.leagues) ? [...tpl.leagues] : []);
-      onChange(tpl.cards);
+      onChange(normalizeCardsState(tpl.cards));
       setNotice(`Applied template: "${tpl.name}"`);
       setTimeout(() => setNotice(null), 3000);
     });
@@ -293,7 +306,7 @@ export function MarketFilters(props: {
       if (tpl.bookmaker) onBookmakerChange?.(tpl.bookmaker);
       onWithinHoursChange?.(tpl.withinHours !== undefined ? tpl.withinHours : null);
       onLeaguesChange?.(Array.isArray(tpl.leagues) ? [...tpl.leagues] : []);
-      onChange(tpl.cards);
+      onChange(normalizeCardsState(tpl.cards));
       notifyTemplateApplied(tpl);
       setNotice(`Applied template: "${tpl.name}"`);
       setTimeout(() => setNotice(null), 3000);
@@ -416,7 +429,31 @@ export function MarketFilters(props: {
         </button>
       ));
     }
-    return null;
+    if (def.id === 'tn_winner' || def.id === 'bk_ml') {
+      return WINNER_CHOICES.map((w) => (
+        <button
+          key={w.id}
+          type="button"
+          aria-pressed={c.subs.includes(w.id)}
+          title={w.note}
+          className={`${chip(c.subs.includes(w.id), def.id)} flex-1`}
+          onClick={() => pick(w.id)}
+        >
+          {w.label}
+        </button>
+      ));
+    }
+    return SIDE_CHOICES.map((s) => (
+      <button
+        key={s.id}
+        type="button"
+        aria-pressed={c.subs.includes(s.id)}
+        className={`${chip(c.subs.includes(s.id), def.id)} flex-1`}
+        onClick={() => pick(s.id)}
+      >
+        {s.label}
+      </button>
+    ));
   }
 
   return (

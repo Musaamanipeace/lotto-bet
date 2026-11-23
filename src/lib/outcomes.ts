@@ -7,6 +7,8 @@ export const OUTCOME_KEYS: OutcomeKey[] = ['home', 'draw', 'away', 'yes', 'no', 
 const SPORTY_BY_ID: Partial<Record<MarketKind, Record<string, OutcomeKey>>> = {
   '1x2': { '1': 'home', '2': 'draw', '3': 'away' },
   btts: { '74': 'yes', '76': 'no' },
+  // Tennis match winner (186) and basketball moneyline (219) are verified as 4=Home / 5=Away.
+  match_winner: { '4': 'home', '5': 'away' },
 };
 
 /**

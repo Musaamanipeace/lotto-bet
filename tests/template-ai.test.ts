@@ -8,6 +8,7 @@ import {
   templateSummary,
 } from '../src/lib/template-ai.ts';
 import { DEFAULT_TEMPLATES, type FilterTemplate } from '../src/lib/template-store.ts';
+import { normalizeCardsState } from '../src/lib/filter-state.ts';
 import type { AiPick } from '../src/lib/ai-picks.ts';
 
 function makePick(id: string, marketKey: AiPick['marketKey'], odds: number, tier: AiPick['tier'] = 'safe', overrides: Partial<AiPick> = {}): AiPick {
@@ -75,13 +76,13 @@ test('filters AI picks by bookmaker and league when specified in template', () =
     withinHours: 24,
     leagues: ['Premier League'],
     createdAt: Date.now(),
-    cards: {
+    cards: normalizeCardsState({
       dc: { on: false, low: 1.05, high: 2.0, subs: ['1X'] },
       '1x2': { on: true, low: 1.2, high: 2.0, subs: ['home'] },
       over: { on: false, low: 1.2, high: 2.0, subs: ['1.5'] },
       under: { on: false, low: 1.2, high: 2.0, subs: ['3.5'] },
       btts: { on: false, low: 1.2, high: 2.0, subs: ['yes'] },
-    },
+    }),
   };
 
   const picks: AiPick[] = [

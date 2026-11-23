@@ -3,11 +3,18 @@ import type { Tier } from './criteria.ts';
 import { CARDS, CARD_IDS, defaultCards, type CardId, type CardsState } from './market-cards.ts';
 import type { Bookmaker } from './types.ts';
 
+/**
+ * v1 saved states only knew the five football cards. v2 adds tennis and basketball cards,
+ * each with its own enabled flag and odds range. Normalisation always returns v2.
+ */
+export const FILTER_VERSION = 2;
+
 export type FilterState = {
   bookmaker: Bookmaker;
   withinHours: number | null;
   leagues: string[];
   cards: CardsState;
+  filterVersion: number;
 };
 
 export function createDefaultFilterState(bookmaker: Bookmaker = 'sportybet'): FilterState {
@@ -16,7 +23,17 @@ export function createDefaultFilterState(bookmaker: Bookmaker = 'sportybet'): Fi
     withinHours: null,
     leagues: [],
     cards: defaultCards(),
+    filterVersion: FILTER_VERSION,
   };
+}
+
+/** True for a saved shape that predates the tennis/basketball cards (or is missing any card). */
+export function isLegacyFilterState(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false;
+  const x = raw as Record<string, unknown>;
+  if (typeof x.filterVersion === 'number' && x.filterVersion >= FILTER_VERSION) return false;
+  const cards = x.cards;
+  return !cards || typeof cards !== 'object' || CARD_IDS.some((id) => !(id in (cards as Record<string, unknown>)));
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
@@ -68,8 +85,9 @@ export function normalizeFilterState(raw: unknown, fallbackBookmaker: Bookmaker 
   const leagues = Array.isArray(x.leagues)
     ? [...new Set(x.leagues.filter((l): l is string => typeof l === 'string' && l.trim().length > 0))]
     : [];
+  // normalizeCardsState fills in every card missing from an old saved shape with its current default.
   const cards = x.cards ? normalizeCardsState(x.cards) : def.cards;
-  return { bookmaker, withinHours, leagues, cards };
+  return { bookmaker, withinHours, leagues, cards, filterVersion: FILTER_VERSION };
 }
 
 /**

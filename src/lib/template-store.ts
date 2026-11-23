@@ -1,4 +1,5 @@
 import { type CardsState } from './market-cards.ts';
+import { normalizeCardsState } from './filter-state.ts';
 import type { Bookmaker } from './types.ts';
 import { STORAGE_KEYS, scopedStorageKey } from './client-storage.ts';
 
@@ -15,7 +16,8 @@ export type FilterTemplate = {
   isDefault?: boolean;
 };
 
-export const DEFAULT_TEMPLATES: FilterTemplate[] = [
+/** Football-only default presets; normalisation adds the tennis/basketball cards (off) on load. */
+const RAW_DEFAULT_TEMPLATES: Array<Omit<FilterTemplate, 'cards'> & { cards: Partial<CardsState> }> = [
   {
     id: 'tpl-safe-acca',
     name: 'Safe Accumulator',
@@ -103,6 +105,11 @@ export const DEFAULT_TEMPLATES: FilterTemplate[] = [
   },
 ];
 
+export const DEFAULT_TEMPLATES: FilterTemplate[] = RAW_DEFAULT_TEMPLATES.map((t) => ({
+  ...t,
+  cards: normalizeCardsState(t.cards),
+}));
+
 const LOCAL_STORAGE_KEY = STORAGE_KEYS.FILTER_TEMPLATES;
 const TEMPLATE_EVENT = 'lb-filter-template-applied';
 const TEMPLATES_CHANGED_EVENT = 'lb-filter-templates-changed';
@@ -119,6 +126,7 @@ export function getLocalTemplates(): FilterTemplate[] {
       bookmaker: u.bookmaker || 'sportybet',
       withinHours: u.withinHours !== undefined ? u.withinHours : null,
       leagues: Array.isArray(u.leagues) ? u.leagues : [],
+      cards: normalizeCardsState(u.cards),
     }));
     const combined = [
       ...DEFAULT_TEMPLATES,
@@ -139,7 +147,7 @@ export function saveLocalTemplate(template: Omit<FilterTemplate, 'id' | 'created
     bookmaker: template.bookmaker || 'sportybet',
     withinHours: template.withinHours !== undefined ? template.withinHours : null,
     leagues: Array.isArray(template.leagues) ? [...template.leagues] : [],
-    cards: JSON.parse(JSON.stringify(template.cards)),
+    cards: normalizeCardsState(template.cards),
     id: `tpl-user-${Date.now()}-${++templateClock}`,
     createdAt: Date.now(),
     isDefault: false,
