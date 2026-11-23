@@ -1,6 +1,7 @@
-import { MATCHING } from './criteria.ts';
-import type { Game } from './types.ts';
-
+/**
+ * Team-name similarity for matching SportyBet fixtures to football-data.org standings.
+ * Cross-bookmaker game matching was removed with betPawa; only the name helpers remain.
+ */
 const NOISE = new Set(['fc', 'cf', 'afc', 'sc', 'ac', 'as', 'cd', 'ud', 'sv', 'fk']);
 
 export function normalizeTeam(name: string): string {
@@ -25,31 +26,4 @@ export function teamSimilarity(a: string, b: string): number {
   let overlap = 0;
   for (const [g, n] of bx) overlap += Math.min(n, by.get(g) ?? 0);
   return (2 * overlap) / (x.length - 1 + (y.length - 1));
-}
-
-export type GameMatch = { sportyGameId: string; betpawaGameId: string; score: number; homeScore: number; awayScore: number };
-
-export function matchGames(sporty: Game[], betpawa: Game[], threshold: number = MATCHING.teamSimilarityThreshold) {
-  const candidates: GameMatch[] = [];
-  // 6.3: cross-bookmaker matching only happens within the same sport.
-  for (const s of sporty) for (const p of betpawa) {
-    if ((p.sport ?? 'football') !== (s.sport ?? 'football')) continue;
-    const homeScore = teamSimilarity(s.home, p.home);
-    const awayScore = teamSimilarity(s.away, p.away);
-    if (homeScore >= threshold && awayScore >= threshold) {
-      candidates.push({ sportyGameId: s.id, betpawaGameId: p.id, score: (homeScore + awayScore) / 2, homeScore, awayScore });
-    }
-  }
-  candidates.sort((a, b) => b.score - a.score);
-  const usedS = new Set<string>(), usedP = new Set<string>(), matches: GameMatch[] = [];
-  for (const c of candidates) {
-    if (usedS.has(c.sportyGameId) || usedP.has(c.betpawaGameId)) continue;
-    usedS.add(c.sportyGameId); usedP.add(c.betpawaGameId); matches.push(c);
-  }
-  // Unmatched games stay unmatched. They are never forced.
-  return {
-    matches,
-    unmatchedSporty: sporty.filter((g) => !usedS.has(g.id)).map((g) => g.id),
-    unmatchedBetpawa: betpawa.filter((g) => !usedP.has(g.id)).map((g) => g.id),
-  };
 }

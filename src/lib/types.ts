@@ -1,8 +1,8 @@
-export type Bookmaker = 'sportybet' | 'betpawa';
+/** SportyBet is the only supported bookmaker. */
+export type Bookmaker = 'sportybet';
 
 export const BOOKMAKER_LABEL: Record<Bookmaker, string> = {
   sportybet: 'SportyBet',
-  betpawa: 'betPawa',
 };
 
 export type Sport = 'football' | 'tennis' | 'basketball';
@@ -18,7 +18,7 @@ export type MarketPeriod = 'ft' | 'q1' | 'q2' | 'q3' | 'q4' | 'h1' | 'h2' | null
 
 export type Outcome = {
   bookmaker: Bookmaker;
-  /** Native outcome id (SportyBet) or price id (betPawa; these EXPIRE, never cache for scripts). */
+  /** Native SportyBet outcome id. */
   nativeId: string;
   desc: string;
   odds: number;

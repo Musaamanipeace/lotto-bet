@@ -104,7 +104,7 @@ async function runAction(a: ValidatedAction, ctx: Ctx): Promise<string> {
       if (!ctx.signedIn) return 'Sign in to save templates.';
       const t = saveLocalTemplate({
         name: String(args.name),
-        bookmaker: (args.bookmaker === 'betpawa' ? 'betpawa' : 'sportybet') as 'sportybet' | 'betpawa',
+        bookmaker: 'sportybet' as const,
         withinHours: (args.withinHours as number | null | undefined) ?? null,
         leagues: (args.leagues as string[] | undefined) ?? [],
         cards: (args.cards as Parameters<typeof saveLocalTemplate>[0]['cards']) ?? undefined,

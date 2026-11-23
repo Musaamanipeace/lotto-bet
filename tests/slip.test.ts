@@ -12,7 +12,6 @@ const ou = (n: number) => mk(n, { marketKind: 'over_under', line: 2.5, pick: 'Ov
 test('one leg per game, one source bookmaker, max 50, with explicit reasons', () => {
   const s1 = addLeg(emptySlip(), mk(1)); assert.ok(s1.ok);
   const dup = addLeg(s1.slip, mk(1, { pick: 'Draw' })); assert.ok(!dup.ok && /already in the slip/.test(dup.error));
-  const mixed = addLeg(s1.slip, mk(2, { bookmaker: 'betpawa', gameId: 'betpawa:2' })); assert.ok(!mixed.ok && /clear it/.test(mixed.error));
   const full = addMany(emptySlip(), Array.from({ length: MAX_LEGS + 3 }, (_, i) => mk(i)));
   assert.equal(full.added, MAX_LEGS); assert.equal(full.refused.length, 3);
 });

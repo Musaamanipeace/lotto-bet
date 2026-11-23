@@ -27,11 +27,11 @@ test('skips games already on the slip and keeps scanning so N is still reached',
   assert.match(r.report.skipped[0].reason, /already in the slip/);
 });
 
-test('refuses a different bookmaker than the slip, and says why', () => {
+test('refuses a leg that cannot be represented as a SportyBet row, and says why', () => {
   const first = planAdd([pick(1)], emptySlip(), 1).slip;
-  const r = planAdd([pick(2, { bookmaker: 'betpawa', gameId: 'betpawa:ev2' })], first, 1);
+  const r = planAdd([pick(2, { bookmaker: 'other' as 'sportybet', gameId: 'other:ev2' })], first, 1);
   assert.equal(r.report.added, 0);
-  assert.match(r.report.skipped[0].reason, /sportybet/);
+  assert.match(r.report.skipped[0].reason, /can't be added/);
 });
 
 test('never goes past the leg cap', () => {

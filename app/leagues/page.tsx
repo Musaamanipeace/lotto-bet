@@ -13,7 +13,7 @@ export default function LeaguesPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [bookmaker, setBookmaker] = useState('');
+
   const [selected, setSelected] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
 
@@ -35,7 +35,7 @@ export default function LeaguesPage() {
       setLoading(true);
       setError(null);
       try {
-        const r = await fetch(`/api/leagues${bookmaker ? `?bookmaker=${bookmaker}` : ''}`);
+        const r = await fetch('/api/leagues');
         const j = await r.json();
         if (!j.ok) setError(j.error ?? `HTTP ${r.status}`);
         else {
@@ -49,7 +49,7 @@ export default function LeaguesPage() {
         setLoading(false);
       }
     })();
-  }, [bookmaker]);
+  }, []);
 
   const known = useMemo(() => new Set(leagues.map((l) => l.name)), [leagues]);
   const effective = useMemo(() => selected.filter((n) => known.has(n)), [selected, known]);
@@ -82,11 +82,9 @@ export default function LeaguesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <select className="field text-sm" value={bookmaker} onChange={(e) => setBookmaker(e.target.value)} aria-label="Bookmaker">
-            <option value="">All bookmakers</option>
-            <option value="sportybet">SportyBet</option>
-            <option value="betpawa">betPawa</option>
-          </select>
+          <span className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-300">
+            SportyBet
+          </span>
         </div>
       </div>
 

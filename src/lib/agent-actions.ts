@@ -164,8 +164,8 @@ function validateArgs(name: ActionName, a: Record<string, unknown>): string[] {
     case 'set_filters': {
       const fs = normalizeFilterState(a.bookmaker !== undefined || a.cards !== undefined || a.leagues !== undefined ? a : undefined);
       // normalizeFilterState validates shape; fall back to plain string fields
-      if (a.bookmaker !== undefined && !['sportybet', 'betpawa'].includes(a.bookmaker as Bookmaker)) {
-        problems.push(`bookmaker must be 'sportybet' or 'betpawa'`);
+      if (a.bookmaker !== undefined && a.bookmaker !== 'sportybet') {
+        problems.push(`bookmaker must be 'sportybet'`);
       }
       const strLeagues = validateStringArray(a.leagues, 'leagues');
       if (typeof strLeagues === 'string') problems.push(strLeagues);

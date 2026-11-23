@@ -23,7 +23,7 @@ test('AI legs get the right market shape; unrepresentable ones are skipped', () 
     { marketKind: 'over_under', line: 3.5, p: 'Under 3.5', outcomeKey: 'under' },
   );
   assert.equal(aiPickToRow(pick({ marketKey: 'corners_over' }))!, null);
-  assert.equal(aiPickToRow(pick({ gameId: 'betpawa:123' })), null); // prefix must match the bookmaker
+  assert.equal(aiPickToRow(pick({ bookmaker: 'other' as 'sportybet', gameId: 'other:123' })), null); // prefix must match
   assert.equal(aiPickToRow(pick({ gameId: 'sportybet:' })), null);
 });
 

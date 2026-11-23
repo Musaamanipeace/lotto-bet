@@ -1,31 +1,25 @@
 'use client';
 
 import { useState } from 'react';
-import { BOOKMAKER_LABEL, type Bookmaker } from '@/lib/types.ts';
+import { SPORTS } from '@/lib/types.ts';
 
 type ZeroDataBannerProps = {
-  bookmaker: Bookmaker;
   leaguesCount: number;
   withinHours: number | null;
   activeCardsCount: number;
   onResetFilters: () => void;
-  onSwitchBookmaker: (b: Bookmaker) => void;
   onRefreshCompleted?: () => void;
 };
 
 export function ZeroDataBanner({
-  bookmaker,
   leaguesCount,
   withinHours,
   activeCardsCount,
   onResetFilters,
-  onSwitchBookmaker,
   onRefreshCompleted,
 }: ZeroDataBannerProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-
-  const alternateBookmaker: Bookmaker = bookmaker === 'sportybet' ? 'betpawa' : 'sportybet';
 
   async function handleTriggerRefresh() {
     setRefreshing(true);
@@ -34,10 +28,11 @@ export function ZeroDataBanner({
       const res = await fetch('/api/admin/refresh', { method: 'POST' });
       const data = await res.json().catch(() => null);
       if (res.ok && data?.ok) {
-        setFeedback(`✓ Feed updated successfully (${data.results?.sportybet?.count ?? 0} SportyBet, ${data.results?.betpawa?.count ?? 0} betPawa games).`);
+        const counts = SPORTS.map((s) => `${s}: ${data.results?.[s]?.count ?? 0}`).join(', ');
+        setFeedback(`✓ Feed updated successfully (${counts} games).`);
         onRefreshCompleted?.();
       } else {
-        setFeedback(`Refresh returned status ${res.status}: ${data?.error ?? 'Upstream bookmaker endpoint reached'}. Try widening filters.`);
+        setFeedback(`Refresh returned status ${res.status}: ${data?.error ?? 'Upstream feed endpoint reached'}. Try widening filters.`);
         onRefreshCompleted?.();
       }
     } catch (e) {
@@ -59,16 +54,15 @@ export function ZeroDataBanner({
             No fixtures matched your current criteria
           </h3>
           <p className="mt-1 text-xs text-amber-200/90 leading-relaxed">
-            The database currently has no games matching the active filters for{' '}
-            <strong className="text-white">{BOOKMAKER_LABEL[bookmaker]}</strong>.
+            The database currently has no games matching the active filters for SportyBet.
             This happens when kickoff filters are too narrow, the selected leagues have no upcoming games,
-            or the upstream bookmaker feed has not run today.
+            or the upstream feed has not run today.
           </p>
 
           {/* Diagnostic status tags */}
           <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
             <span className="rounded border border-amber-500/30 bg-navy-950/60 px-2 py-0.5 text-slate-300">
-              Bookmaker: <strong className="text-white">{BOOKMAKER_LABEL[bookmaker]}</strong>
+              Bookmaker: <strong className="text-white">SportyBet</strong>
             </span>
             <span className="rounded border border-amber-500/30 bg-navy-950/60 px-2 py-0.5 text-slate-300">
               Time window: <strong className="text-white">{withinHours ? `Next ${withinHours}h` : 'Any time (7 days)'}</strong>
@@ -94,14 +88,7 @@ export function ZeroDataBanner({
               onClick={onResetFilters}
               className="btn-gold h-8 px-3 text-xs"
             >
-              ↺ Widen & Reset All Filters
-            </button>
-            <button
-              type="button"
-              onClick={() => onSwitchBookmaker(alternateBookmaker)}
-              className="btn-ghost h-8 px-3 text-xs border-white/20 text-white"
-            >
-              Switch to {BOOKMAKER_LABEL[alternateBookmaker]}
+              ↺ Widen &amp; Reset All Filters
             </button>
             <button
               type="button"

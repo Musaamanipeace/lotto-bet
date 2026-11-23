@@ -239,7 +239,7 @@ describe('client-storage & signOut cleanup (Task 1, Task 2, Task 12)', () => {
     const selectedLeagues = ['Premier League', 'La Liga'];
     const tpl = saveLocalTemplate({
       name: 'My Weekend EPL + LaLiga 24h',
-      bookmaker: 'betpawa',
+      bookmaker: 'sportybet',
       withinHours: 24,
       leagues: selectedLeagues,
       cards: defaultCards(),
@@ -249,7 +249,7 @@ describe('client-storage & signOut cleanup (Task 1, Task 2, Task 12)', () => {
 
     const loaded = getLocalTemplates().find((t) => t.id === tpl.id);
     assert.ok(loaded);
-    assert.equal(loaded.bookmaker, 'betpawa');
+    assert.equal(loaded.bookmaker, 'sportybet');
     assert.equal(loaded.withinHours, 24);
     assert.deepEqual(loaded.leagues, ['Premier League', 'La Liga']);
     assert.deepEqual(loaded.cards, defaultCards());

@@ -74,8 +74,7 @@ export function normalizeFilterState(raw: unknown, fallbackBookmaker: Bookmaker 
   const def = createDefaultFilterState(fallbackBookmaker);
   if (!raw || typeof raw !== 'object') return def;
   const x = raw as Record<string, unknown>;
-  const bookmaker: Bookmaker =
-    x.bookmaker === 'betpawa' || x.bookmaker === 'sportybet' ? x.bookmaker : def.bookmaker;
+  const bookmaker: Bookmaker = x.bookmaker === 'sportybet' ? 'sportybet' : def.bookmaker;
   const withinHours =
     x.withinHours === null || x.withinHours === undefined
       ? null

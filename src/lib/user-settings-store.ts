@@ -83,10 +83,7 @@ function normalizePrefs(raw: Partial<UserPreferences> | null | undefined, prev: 
     typeof raw?.timeoutSeconds === 'number' && Number.isFinite(raw.timeoutSeconds)
       ? Math.min(120, Math.max(10, Math.round(raw.timeoutSeconds)))
       : prev.timeoutSeconds;
-  const defaultBookmaker: Bookmaker =
-    raw?.defaultBookmaker === 'betpawa' || raw?.defaultBookmaker === 'sportybet'
-      ? raw.defaultBookmaker
-      : prev.defaultBookmaker;
+  const defaultBookmaker: Bookmaker = raw?.defaultBookmaker === 'sportybet' ? 'sportybet' : prev.defaultBookmaker;
   const filterState = raw?.filterState
     ? normalizeFilterState(raw.filterState, defaultBookmaker)
     : prev.filterState;

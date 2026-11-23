@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { extractActions, isNeverAllowed, validateAction } from '../src/lib/agent-actions.ts';
 
 test('set_filters: valid args pass; bad bookmaker rejected', () => {
-  const ok = validateAction({ name: 'set_filters', args: { bookmaker: 'betpawa', withinHours: 24, leagues: ['Premier League'] } });
+  const ok = validateAction({ name: 'set_filters', args: { bookmaker: 'sportybet', withinHours: 24, leagues: ['Premier League'] } });
   assert.equal(ok.ok, true);
   const bad = validateAction({ name: 'set_filters', args: { bookmaker: 'nfl', withinHours: -5 } });
   assert.equal(bad.ok, false);

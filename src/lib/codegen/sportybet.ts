@@ -9,7 +9,7 @@ export type SportyCodeResult =
 
 /**
  * Server-side POST to /orders/share, exactly one body shape, exactly one attempt.
- * Only SportyBet-sourced legs are accepted; a betPawa-sourced leg is an error, never converted.
+ * All legs are SportyBet-sourced; there is no other bookmaker to convert from.
  */
 export async function generateSportyBetCode(legs: PickRow[], fetchImpl: FetchImpl = fetch): Promise<SportyCodeResult> {
   if (legs.length === 0) return fail('Cannot generate a SportyBet code for an empty slip', { bookmaker: 'sportybet' });

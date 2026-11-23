@@ -518,21 +518,11 @@ export function MarketFilters(props: {
 
       {/* Unified Row: Bookmaker + Kickoff Time Period + Leagues + Preset Template */}
       <div className="grid gap-3 rounded-xl border border-white/10 bg-navy-950/50 p-3 sm:grid-cols-2 lg:grid-cols-4 items-end">
-        {/* 1. Bookmaker Control */}
+        {/* 1. Bookmaker (SportyBet is the only supported bookmaker) */}
         <div>
           <span className="block text-xs font-medium text-slate-400 mb-1">Bookmaker</span>
-          <div className="flex gap-1.5">
-            {(['sportybet', 'betpawa'] as Bookmaker[]).map((b) => (
-              <button
-                key={b}
-                type="button"
-                className={`flex-1 py-2 text-xs ${bookmaker === b ? 'btn-emerald' : 'btn-ghost'}`}
-                aria-pressed={bookmaker === b}
-                onClick={() => onBookmakerChange?.(b)}
-              >
-                {BOOKMAKER_LABEL[b]}
-              </button>
-            ))}
+          <div className="flex items-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300">
+            {BOOKMAKER_LABEL.sportybet}
           </div>
         </div>
 

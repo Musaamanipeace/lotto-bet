@@ -1,5 +1,4 @@
-import { prepareBetPawaScript } from '@/lib/codegen/betpawa.ts';
-import { generateCode, parseLegs, type Destination } from '@/lib/codegen/index.ts';
+import { generateCode, parseLegs } from '@/lib/codegen/index.ts';
 import { codegenRequiresSignIn } from '@/lib/codegen-access.ts';
 import { generateSportyBetCode } from '@/lib/codegen/sportybet.ts';
 import { currentUser, jsonError, requireJson } from '@/lib/session.ts';
@@ -21,14 +20,13 @@ export async function POST(req: Request) {
   let body: unknown;
   try { body = await req.json(); } catch { return Response.json({ ok: false, error: 'Request body is not valid JSON', details: {} }, { status: 400 }); }
   const { destination, legs } = (body ?? {}) as { destination?: string; legs?: unknown };
-  if (destination !== 'sportybet' && destination !== 'betpawa') {
-    return Response.json({ ok: false, error: 'destination must be "sportybet" or "betpawa"', details: {} }, { status: 400 });
+  if (destination !== 'sportybet') {
+    return Response.json({ ok: false, error: 'destination must be "sportybet"', details: {} }, { status: 400 });
   }
   const parsed = parseLegs(legs);
   if (!parsed.ok) return Response.json(parsed, { status: 400 });
-  const result = await generateCode(destination as Destination, parsed.legs, {
+  const result = await generateCode('sportybet', parsed.legs, {
     sportybet: (l) => generateSportyBetCode(l),
-    betpawa: (l) => prepareBetPawaScript(l),
   });
   return Response.json(result, { status: result.ok ? 200 : 502 });
 }

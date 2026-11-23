@@ -26,7 +26,7 @@ type AiPickLeg = Pick<AiPick, 'gameId' | 'bookmaker' | 'marketKey' | 'marketNati
  * Returns null when the pick cannot be represented, so it is skipped instead of producing a leg that cannot be booked.
  */
 export function aiPickToRow(p: AiPickLeg): PickRow | null {
-  if (p.bookmaker !== 'sportybet' && p.bookmaker !== 'betpawa') return null;
+  if (p.bookmaker !== 'sportybet') return null;
   const prefix = `${p.bookmaker}:`;
   if (!p.gameId.startsWith(prefix) || p.gameId.length === prefix.length) return null;
   const shape = SHAPES[p.marketKey];

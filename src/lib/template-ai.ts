@@ -5,6 +5,7 @@ import { applyFilters, matchesCardsState } from './filter-state.ts';
 import type { CardsState } from './market-cards.ts';
 import type { FilterTemplate } from './template-store.ts';
 import { targetSlip } from './targeting.ts';
+import { BOOKMAKER_LABEL } from './types.ts';
 
 /**
  * Checks whether an AI pick satisfies the market card rules and odds bounds of a template.
@@ -222,7 +223,7 @@ export function templateSummary(template: FilterTemplate, overrideWithinHours?: 
       return `${name} [${c.low.toFixed(2)}-${c.high.toFixed(2)}]`;
     });
 
-  const b = template.bookmaker === 'sportybet' ? 'SportyBet' : 'betPawa';
+  const b = BOOKMAKER_LABEL[template.bookmaker];
   const effectiveHours = overrideWithinHours !== undefined ? overrideWithinHours : template.withinHours;
   const timeDesc = effectiveHours ? ` · <${effectiveHours}h` : '';
   if (activeCards.length === 0) return `${b}${timeDesc} · All markets`;

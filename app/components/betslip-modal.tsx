@@ -18,7 +18,6 @@ import type { MarketSelector } from '@/lib/filters.ts';
 import { BOOKMAKER_LABEL, type MarketKind } from '@/lib/types.ts';
 import type { Destination } from '@/lib/codegen/index.ts';
 import type { SportyCodeResult } from '@/lib/codegen/sportybet.ts';
-import { BETPAWA_STEPS, BETPAWA_WARNING, type BetPawaScriptResult } from '@/lib/codegen/betpawa.ts';
 import type { Failure } from '@/lib/result.ts';
 import { upsertLocalSavedSlip } from '@/lib/saved-slips.ts';
 import { aiPickToRow } from '@/lib/ai-rows.ts';
@@ -35,7 +34,7 @@ import { disparityOf } from '@/lib/disparity.ts';
 import { ModelInfoPopover } from './model-info-popover.tsx';
 
 type CodegenOutcome =
-  | { destination: Destination; result: SportyCodeResult | BetPawaScriptResult | Failure; httpStatus: number }
+  | { destination: Destination; result: SportyCodeResult | Failure; httpStatus: number }
   | { destination: Destination; transportError: string };
 
 const KIND_LABEL: Record<MarketKind, string> = {
@@ -1009,62 +1008,6 @@ export function BetslipModal({
                   </div>
                 )}
 
-                {outcome && 'result' in outcome && outcome.result.ok && outcome.result.destination === 'betpawa' && (
-                  <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
-                    <p className="font-semibold text-emerald-300">
-                      {outcome.result.mapped}/{outcome.result.total} legs mapped for betPawa
-                    </p>
-                    {outcome.result.code && (
-                      <div className="rounded border border-emerald-500/40 bg-emerald-500/10 p-2">
-                        <p className="text-emerald-300">betPawa Booking Code</p>
-                        <p className="my-1 font-display text-2xl font-bold tracking-wider text-white">
-                          {outcome.result.code}
-                        </p>
-                        <button
-                          type="button"
-                          className="btn-ghost text-xs"
-                          onClick={() => void copyText('code', outcome.result.ok && outcome.result.destination === 'betpawa' && outcome.result.code ? outcome.result.code : '')}
-                        >
-                          Copy code
-                        </button>
-                      </div>
-                    )}
-                    <ol className="list-decimal space-y-0.5 pl-4 text-slate-300">
-                      {BETPAWA_STEPS.map((s) => (
-                        <li key={s}>{s}</li>
-                      ))}
-                    </ol>
-                    <p className="text-amber-300">{BETPAWA_WARNING}</p>
-                    <textarea
-                      readOnly
-                      className="field h-24 font-mono text-[11px]"
-                      value={outcome.result.script}
-                      onFocus={(e) => e.currentTarget.select()}
-                      aria-label="betPawa console script"
-                    />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        className="btn-gold text-xs"
-                        onClick={() =>
-                          void copyText(
-                            'script',
-                            outcome.result.ok && outcome.result.destination === 'betpawa'
-                              ? outcome.result.script
-                              : '',
-                          )
-                        }
-                      >
-                        Copy script
-                      </button>
-                      {copied && (
-                        <span className="text-emerald-300">
-                          {copied === 'script' || copied === 'code' ? '✓ Copied!' : copied}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
             </>
           )}

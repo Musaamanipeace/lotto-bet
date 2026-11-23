@@ -219,7 +219,7 @@ describe('Unified FilterState & AI Agent tools (Tasks 9 & 13)', () => {
       sampleAiPick({ id: 'ok', gameId: 'g1', league: 'Premier League', kickoff: now + 2 * 3600_000, odds: 1.7 }),
       sampleAiPick({ id: 'wrong-league', gameId: 'g2', league: 'Serie A', kickoff: now + 2 * 3600_000, odds: 1.7 }),
       sampleAiPick({ id: 'too-late', gameId: 'g3', league: 'Premier League', kickoff: now + 48 * 3600_000, odds: 1.7 }),
-      sampleAiPick({ id: 'wrong-bookie', gameId: 'g4', bookmaker: 'betpawa', league: 'Premier League', kickoff: now + 2 * 3600_000, odds: 1.7 }),
+      sampleAiPick({ id: 'wrong-bookie', gameId: 'g4', bookmaker: 'other' as 'sportybet', league: 'Premier League', kickoff: now + 2 * 3600_000, odds: 1.7 }),
     ];
 
     const matched = applyFilterState(picks, fs);

@@ -78,11 +78,8 @@ export async function PUT(req: Request) {
       if (typeof body.preferences.timeoutSeconds === 'number') {
         prefPatch.timeoutSeconds = body.preferences.timeoutSeconds;
       }
-      if (
-        body.preferences.defaultBookmaker === 'sportybet' ||
-        body.preferences.defaultBookmaker === 'betpawa'
-      ) {
-        prefPatch.defaultBookmaker = body.preferences.defaultBookmaker;
+      if (body.preferences.defaultBookmaker === 'sportybet') {
+        prefPatch.defaultBookmaker = 'sportybet';
       }
       if (body.preferences.filterState) {
         prefPatch.filterState = normalizeFilterState(

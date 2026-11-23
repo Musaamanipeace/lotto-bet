@@ -159,7 +159,7 @@ export function AlternativesPanel({ leagues, slip, setSlip }: { leagues: string[
           </div>
         )}
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
-          <label>Bookmaker <select className={INPUT} value={bookmaker} onChange={(e) => setBookmaker(e.target.value)}><option value="">Auto (largest pool)</option><option value="sportybet">SportyBet</option><option value="betpawa">betPawa</option></select></label>
+          <label>Bookmaker <select className={INPUT} value={bookmaker} onChange={(e) => setBookmaker(e.target.value)}><option value="">All (SportyBet)</option><option value="sportybet">SportyBet</option></select></label>
           <label>Swaps <select className={INPUT} value={scope} onChange={(e) => setScope(e.target.value as 'any' | 'same_market')}><option value="any">Across any market</option><option value="same_market">Same market only</option></select></label>
           <label>Pool <select className={INPUT} value={tier} onChange={(e) => setTier(e.target.value as 'higher')}><option value="higher">All tiers</option><option value="average">Safe + Balanced</option><option value="lower">Safe only</option></select></label>
           <label>Legs that must differ <input className={`${INPUT} w-14`} inputMode="numeric" value={minDiff} onChange={(e) => setMinDiff(e.target.value.replace(/\D/g, '').slice(0, 2))} /></label>

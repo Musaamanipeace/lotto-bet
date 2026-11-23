@@ -810,7 +810,6 @@ export function Builder({ heading }: { heading?: string }) {
             {games.status === 'ok' && pool.length === 0 && (
               games.data.count === 0 ? (
                 <ZeroDataBanner
-                  bookmaker={bookmaker}
                   leaguesCount={leagues.length}
                   withinHours={withinHours}
                   activeCardsCount={Object.values(cards).filter((c) => c.on).length}
@@ -819,7 +818,6 @@ export function Builder({ heading }: { heading?: string }) {
                     setLeagues([]);
                     setCards(defaultCards());
                   }}
-                  onSwitchBookmaker={(b) => chooseBookmaker(b)}
                   onRefreshCompleted={() => {
                     setBookmaker(bookmaker);
                   }}

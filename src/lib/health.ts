@@ -1,4 +1,3 @@
-import { fetchBetPawaGames } from './bookmakers/betpawa.ts';
 import { fetchSportyGames } from './bookmakers/sportybet.ts';
 import { fetchJsonOnce, type FetchImpl } from './http.ts';
 
@@ -30,10 +29,6 @@ export async function runHealthChecks(env: Env, fetchImpl: FetchImpl = fetch): P
   return Promise.all([
     timed('SportyBet', async () => {
       const r = await fetchSportyGames({ pageSize: 1 }, fetchImpl);
-      return r.ok ? { ok: true } : { ok: false, error: r.error, httpStatus: r.details.httpStatus };
-    }),
-    timed('betPawa', async () => {
-      const r = await fetchBetPawaGames({ take: 1 }, fetchImpl);
       return r.ok ? { ok: true } : { ok: false, error: r.error, httpStatus: r.details.httpStatus };
     }),
     probeStats('football-data.org', env.FOOTBALL_DATA_API_KEY, 'https://api.football-data.org/v4/competitions', 'X-Auth-Token'),

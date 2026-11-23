@@ -70,7 +70,7 @@ export function AccountModal({
       nativeEventId: l.gameId || 'ev1',
       home: l.home,
       away: l.away,
-      bookmaker: (s.bookmaker as 'sportybet' | 'betpawa') || 'sportybet',
+      bookmaker: 'sportybet' as const,
       kickoff: Date.now() + 3600000,
       league: null,
       marketNativeId: 'm1',

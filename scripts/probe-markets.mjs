@@ -1,19 +1,12 @@
-#!/usr/bin/env node
 /**
- * Phase 0 diagnostic (NOT used by the app). Read-only. One attempt per request, no retries,
- * about 40 to 60 small requests with a short pause between them.
+ * Phase 0 diagnostic (NOT used by the app). Read-only, SportyBet-only. One attempt per request,
+ * with a short pause between them.
  *
- *   node scripts/probe-markets-v2.mjs
- *       Stage 1. SportyBet: football (control), tennis, basketball. betPawa: scans category ids 1 to 15
- *       and shows which sport each one is.
+ *   node scripts/probe-markets.mjs
+ *       SportyBet market discovery for football (control), tennis and basketball.
  *
- *   node scripts/probe-markets-v2.mjs --betpawa=tennis:ID,basketball:ID
- *       Stage 2. Dumps betPawa's market types for the category ids you identified in stage 1.
- *
- *   node scripts/probe-markets-v2.mjs --fixtures-only
- *       Skips the long SportyBet market listing. Saves trimmed real feed responses as test fixtures
- *       (probe-output/fixture-sportybet-<sport>-feed.json) using the exact market ids the app will request,
- *       prints a short summary, then runs the betPawa category scan (or the stage 2 dump if --betpawa= is given).
+ *   node scripts/probe-markets.mjs --fixtures-only
+ *       Saves trimmed real feed responses as test fixtures using the exact market ids the app requests.
  *
  *   Add --all to print every market type instead of only the relevant-looking ones.
  *
@@ -23,24 +16,18 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 const SPORTY = process.env.SPORTY_BASE ?? 'https://www.sportybet.com';
-const PAWA = process.env.PAWA_BASE ?? 'https://www.betpawa.co.ke';
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const SH = { 'Current-Country': 'KE', Referer: `${SPORTY}/ke/`, Accept: 'application/json', 'User-Agent': UA };
-const PH = { 'x-pawa-brand': 'betpawa-kenya', 'x-pawa-language': 'en', devicetype: 'web', Accept: 'application/json' };
 
 const args = process.argv.slice(2);
 const SHOW_ALL = args.includes('--all');
 const FIXTURES_ONLY = args.includes('--fixtures-only');
-const pawaArg = (args.find((a) => a.startsWith('--betpawa=')) ?? '').slice('--betpawa='.length);
-const PAWA_PICKS = Object.fromEntries(
-  pawaArg.split(',').filter(Boolean).map((p) => p.split(':')).filter((p) => p.length === 2),
-);
 // Sportradar-style ids. Football is the control: it is known to work in the app today.
 const SPORTS = { football: 'sr:sport:1', tennis: 'sr:sport:5', basketball: 'sr:sport:2' };
 const RELEVANT = /winner|moneyline|total|over|under|quarter|half|1st|2nd|3rd|4th|games|sets|points/i;
 
-const report = { generatedAt: new Date().toISOString(), sportybet: {}, betpawa: {} };
+const report = { generatedAt: new Date().toISOString(), sportybet: {} };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function call(url, init = {}) {
@@ -155,83 +142,6 @@ async function probeSporty(sportName, sportId) {
   out.markets = printBucket(`SportyBet ${sportName} markets`, bucket, Math.max(detailsOk, picked.length));
 }
 
-// ---------- betPawa ----------
-function pawaUrl(cats, take, view) {
-  const q = {
-    queries: [{
-      query: { eventType: 'UPCOMING', ...(cats ? { categories: cats } : {}) },
-      sort: { popularity: 'DESC' }, skip: 0, take, ...(view ? { view } : {}),
-    }],
-  };
-  return `${PAWA}/api/sportsbook/v4/events/lists/by-queries?q=${encodeURIComponent(JSON.stringify(q))}`;
-}
-const pawaEvents = (json) => (Array.isArray(json?.responses) ? json.responses : []).flatMap((g) => (Array.isArray(g?.responses) ? g.responses : []));
-const names = (e) => {
-  const parts = Array.isArray(e.participants) ? e.participants : [];
-  const n = (pos) => parts.find((p) => p?.position === pos)?.name ?? '?';
-  return `${n(1)} v ${n(2)}`;
-};
-
-async function pawaFetch(cat, take) {
-  // Variant A: no view (asks for default markets). Variant B: the three market types the app already uses.
-  for (const view of [undefined, { marketTypes: ['3743', '3795', '5000'] }]) {
-    const r = await call(pawaUrl([cat], take, view), { headers: PH });
-    if (r.error) return { error: r.error };
-    const ev = pawaEvents(r.json);
-    if (r.status === 200 && ev.length) return { events: ev, variant: view ? 'known market types' : 'no view' };
-    if (r.status === 200 && !view) continue;
-  }
-  return { events: [], variant: null };
-}
-
-async function pawaScan() {
-  console.log('\n==================== betPawa: category scan (which id is which sport?) ====================');
-  report.betpawa.scan = {};
-  for (let c = 1; c <= 15; c++) {
-    const r = await pawaFetch(String(c), 5);
-    if (r.error) { console.log(`category ${c}: network error: ${r.error}`); report.betpawa.scan[c] = { error: r.error }; continue; }
-    if (!r.events.length) { console.log(`category ${c}: no events`); report.betpawa.scan[c] = { events: 0 }; continue; }
-    console.log(`category ${c}: ${r.events.length} events (${r.variant})`);
-    const sample = r.events.slice(0, 3).map((e) => ({ match: names(e), competition: e.competition?.name ?? '?', markets: Array.isArray(e.markets) ? e.markets.length : 0 }));
-    for (const s of sample) console.log(`    ${s.match} | ${s.competition} | ${s.markets} markets in payload`);
-    report.betpawa.scan[c] = { events: r.events.length, sample };
-  }
-  console.log('\nNext: find which category is tennis and which is basketball from the names above, then run:');
-  console.log('  node scripts/probe-markets-v2.mjs --betpawa=tennis:<id>,basketball:<id>');
-}
-
-async function pawaDeep(sportName, cat) {
-  console.log(`\n==================== betPawa: ${sportName} (category ${cat}) ====================`);
-  const out = (report.betpawa[sportName] = { category: cat });
-  const r = await pawaFetch(String(cat), 12);
-  if (r.error || !r.events.length) { console.log(`No events (${r.error ?? 'empty'}). Send me this line.`); out.error = r.error ?? 'empty'; return; }
-  console.log(`Events: ${r.events.length} (request variant: ${r.variant})`);
-  const e0 = r.events[0];
-  console.log(`Event keys: ${Object.keys(e0).join(', ')}`);
-  const m0 = (Array.isArray(e0.markets) ? e0.markets : [])[0];
-  if (m0) {
-    console.log(`Market keys: ${Object.keys(m0).join(', ')}`);
-    console.log(`marketType keys: ${Object.keys(m0.marketType ?? {}).join(', ')}`);
-    const row0 = Array.isArray(m0.row) ? m0.row[0] : null;
-    if (row0) console.log(`Row keys: ${Object.keys(row0).join(', ')}; specifier example: ${JSON.stringify(row0.specifier ?? null)}`);
-    out.rawMarketSample = m0;
-  }
-  const bucket = new Map();
-  for (const e of r.events) {
-    for (const m of Array.isArray(e.markets) ? e.markets : []) {
-      const id = String(m?.marketType?.id ?? '?');
-      const name = m?.marketType?.name ?? m?.marketType?.displayName ?? '';
-      for (const row of Array.isArray(m.row) ? m.row : []) {
-        const spec = isObj(row.specifier) ? JSON.stringify(row.specifier) : '';
-        const prices = (Array.isArray(row.prices) ? row.prices : []).map((p) => `${p.id}=${p.name ?? ''}`);
-        addMarket(bucket, id, name, spec, prices, String(e.id));
-      }
-    }
-  }
-  out.markets = printBucket(`betPawa ${sportName} markets`, bucket, r.events.length);
-}
-
-
 // ---------- SportyBet fixtures (exact ids the app will request) ----------
 const FINAL_IDS = { football: '1,10,18,29', tennis: '186,189', basketball: '219,225,236,68,90' };
 async function saveFixture(sportName, sportId) {
@@ -282,11 +192,6 @@ async function saveFixture(sportName, sportId) {
 for (const [name, id] of Object.entries(SPORTS)) {
   if (!FIXTURES_ONLY) await probeSporty(name, id);
   await saveFixture(name, id);
-}
-if (Object.keys(PAWA_PICKS).length) {
-  for (const [name, cat] of Object.entries(PAWA_PICKS)) await pawaDeep(name, cat);
-} else {
-  await pawaScan();
 }
 mkdirSync('probe-output', { recursive: true });
 writeFileSync('probe-output/report.json', JSON.stringify(report, null, 2));

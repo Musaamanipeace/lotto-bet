@@ -67,7 +67,7 @@ export async function POST(req: Request) {
       id: `tpl-${Date.now()}-${++serverTemplateClock}`,
       name: body.name.trim().slice(0, 60),
       description: typeof body.description === 'string' ? body.description.trim().slice(0, 200) : undefined,
-      bookmaker: body.bookmaker === 'betpawa' ? 'betpawa' : 'sportybet',
+      bookmaker: 'sportybet' as const,
       withinHours: body.withinHours !== undefined ? body.withinHours : null,
       leagues: Array.isArray(body.leagues) ? body.leagues : [],
       cards: normalizeCardsState(body.cards),

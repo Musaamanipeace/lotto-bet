@@ -1,14 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSportyResponse } from '../src/lib/bookmakers/sportybet.ts';
-import { parseBetPawaResponse } from '../src/lib/bookmakers/betpawa.ts';
-import { buildBetPawaConsoleSnippet, mapLegsToBetPawa, prepareBetPawaScript } from '../src/lib/codegen/betpawa.ts';
 import { generateCode, parseLegs, type CodegenDeps } from '../src/lib/codegen/index.ts';
 import { generateSportyBetCode } from '../src/lib/codegen/sportybet.ts';
-import { candidateRows, type PickRow } from '../src/lib/filters.ts';
+import { candidateRows } from '../src/lib/filters.ts';
 import { outcomeKeyOf } from '../src/lib/outcomes.ts';
 import { fail } from '../src/lib/result.ts';
-import { betpawaBody, jsonResponse, sportyBody } from './fixtures.ts';
+import { jsonResponse, sportyBody } from './fixtures.ts';
 
 const sp = parseSportyResponse(sportyBody); assert.ok(sp.ok);
 const rows = candidateRows(sp.games);
@@ -21,11 +19,12 @@ function spy(handler: (url: string, init: RequestInit) => Response) {
   return { calls, impl };
 }
 
-test('outcome keys: verified SportyBet ids; double chance and unknown betPawa names stay unidentified', () => {
+test('outcome keys: verified SportyBet ids; double chance and unknown labels stay unidentified', () => {
   assert.equal(outcomeKeyOf('sportybet', '1x2', { nativeId: '3', desc: 'Away' }), 'away');
   assert.equal(outcomeKeyOf('sportybet', 'btts', { nativeId: '74', desc: 'Yes' }), 'yes');
   assert.equal(outcomeKeyOf('sportybet', 'double_chance', { nativeId: '9', desc: '1X' }), null);
-  assert.equal(outcomeKeyOf('betpawa', '1x2', { nativeId: '1', desc: 'Weird' }), null);
+  assert.equal(outcomeKeyOf('sportybet', 'match_winner', { nativeId: '999', desc: 'Home' }), null);
+  assert.equal(outcomeKeyOf('sportybet', 'over_under', { nativeId: '18', desc: 'Maybe' }), null);
 });
 
 test('SportyBet: one POST, exact body shape, deep link', async () => {
@@ -53,75 +52,22 @@ test('SportyBet: non-10000 bizCode fails visibly after exactly one attempt (no a
   if (!r.ok) { assert.match(r.error, /11000/); assert.match(r.error, /odds changed/); assert.match(r.details.bodySnippet ?? '', /odds changed/); }
 });
 
-test('SportyBet: betPawa-sourced legs are rejected without any request', async () => {
-  const s = spy(() => jsonResponse(200, {}));
-  const r = await generateSportyBetCode([{ ...homeWin, bookmaker: 'betpawa' }], s.impl);
-  assert.equal(r.ok, false); assert.equal(s.calls.length, 0);
-});
-
-const bpGames = (() => { const r = parseBetPawaResponse(betpawaBody); assert.ok(r.ok); return r.games; })();
-const ghost: PickRow = { ...homeWin, home: 'Zzyzx Rovers', away: 'Qwerty United' };
-
-test('betPawa mapping: maps what it can, lists the rest with reasons', () => {
-  const { priceIds, unmapped } = mapLegsToBetPawa([homeWin, over25, ghost], bpGames);
-  assert.deepEqual(priceIds, [1001]);
-  assert.equal(unmapped.length, 2);
-  assert.match(unmapped.find((u) => u.leg.includes('Over'))!.reason, /does not offer over_under/);
-  assert.match(unmapped.find((u) => u.leg.includes('Zzyzx'))!.reason, /No matching betPawa event/);
-});
-
-test('betPawa: SINGLE selections, N/M mapped, GET only (server never POSTs booking-number)', async () => {
-  const s = spy(() => jsonResponse(200, betpawaBody));
-  const r = await prepareBetPawaScript([homeWin, over25, ghost], s.impl);
-  assert.ok(r.ok && r.destination === 'betpawa');
-  assert.equal(`${r.mapped}/${r.total}`, '1/3');
-  assert.deepEqual(r.body, { selections: [{ type: 'SINGLE', selections: [1001] }] });
-  assert.equal(r.unmapped.length, 2);
-  assert.equal(s.calls.length, 1);
-  assert.ok(s.calls.every((c) => c.init.method === 'GET' && !c.url.includes('booking-number')));
-});
-
-test('betPawa: zero mapped is an error with reasons and NO script', async () => {
-  const s = spy(() => jsonResponse(200, betpawaBody));
-  const r = await prepareBetPawaScript([over25, ghost], s.impl);
-  assert.equal(r.ok, false);
-  if (!r.ok) { assert.match(r.error, /0\/2 legs mapped/); assert.equal(r.details.unmapped?.length, 2); assert.ok(!('script' in r)); }
-});
-
-test('betPawa: fetch failure surfaces the real error, single attempt', async () => {
-  const s = spy(() => jsonResponse(503, 'down'));
-  const r = await prepareBetPawaScript([homeWin], s.impl);
-  assert.equal(s.calls.length, 1);
-  assert.equal(r.ok, false);
-  if (!r.ok) { assert.match(r.error, /Failed to fetch fresh betPawa events/); assert.equal(r.details.httpStatus, 503); }
-});
-
-test('snippet: relative URL, valid JS, embedded body, no cookies/tokens/fingerprints', () => {
-  const body = { selections: [{ type: 'SINGLE' as const, selections: [1001] }, { type: 'SINGLE' as const, selections: [2002] }] };
-  const js = buildBetPawaConsoleSnippet(body);
-  assert.ok(js.includes(JSON.stringify(body)));
-  assert.ok(js.startsWith("fetch('/api/sportsbook/v3/booking-number'"));
-  assert.ok(!/https?:\/\//.test(js));
-  assert.ok(!/cookie|x-pawa-token|fingerprint/i.test(js));
-  assert.doesNotThrow(() => new Function(js)); // compiles, not executed
-});
-
-test('rule 4: only the selected destination’s generator runs; a betPawa failure triggers nothing else', async () => {
+test('rule 4: only sportybet is a destination; no other generator is called', async () => {
   const called: string[] = [];
   const deps: CodegenDeps = {
-    sportybet: async () => { called.push('sportybet'); return fail('should not run'); },
-    betpawa: async () => { called.push('betpawa'); return fail('betPawa down', { httpStatus: 503 }); },
+    sportybet: async () => { called.push('sportybet'); return fail('down', { httpStatus: 503 }); },
   };
-  const bp = await generateCode('betpawa', [homeWin], deps);
-  assert.equal(bp.ok, false); assert.deepEqual(called, ['betpawa']);
-  called.length = 0;
-  await generateCode('sportybet', [homeWin], deps);
+  const r = await generateCode('sportybet', [homeWin], deps);
+  assert.equal(r.ok, false);
   assert.deepEqual(called, ['sportybet']);
   assert.equal((await generateCode('1xbet' as never, [homeWin], deps)).ok, false);
+  assert.deepEqual(called, ['sportybet']);
 });
 
-test('parseLegs validates untrusted input', () => {
+test('parseLegs validates untrusted input and accepts new-sport market kinds', () => {
   assert.ok(parseLegs([homeWin]).ok);
+  assert.ok(parseLegs([{ ...homeWin, marketKind: 'match_winner', sport: 'tennis' }]).ok);
+  assert.ok(parseLegs([{ ...homeWin, marketKind: 'over_under', period: 'q3', sport: 'basketball', line: 41.5 }]).ok);
   assert.equal(parseLegs([]).ok, false);
   assert.equal(parseLegs([{ ...homeWin, odds: 0.5 }]).ok, false);
   assert.equal(parseLegs([{ ...homeWin, marketKind: 'corners' }]).ok, false);

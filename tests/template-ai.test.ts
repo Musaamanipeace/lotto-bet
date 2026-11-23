@@ -88,7 +88,7 @@ test('filters AI picks by bookmaker and league when specified in template', () =
   const picks: AiPick[] = [
     makePick('1', 'home_win', 1.5, 'safe', { league: 'Premier League' }),
     makePick('2', 'home_win', 1.5, 'safe', { league: 'La Liga' }), // wrong league
-    makePick('3', 'home_win', 1.5, 'safe', { bookmaker: 'betpawa' }), // wrong bookmaker
+    makePick('3', 'home_win', 1.5, 'safe', { bookmaker: 'other' as 'sportybet' }), // wrong bookmaker
   ];
 
   const filtered = filterAiPicksByTemplate(picks, customTpl);
