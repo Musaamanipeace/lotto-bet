@@ -13,6 +13,28 @@ export type MatchScore = {
 
 export type LegOutcome = 'won' | 'lost' | 'void' | 'pending';
 
+type LegLike = Partial<PickRow> & {
+  home: string;
+  away: string;
+  pick: string;
+  odds: number;
+  gameId?: string;
+};
+
+/**
+ * Tennis and basketball have no score feed or settlement rules yet. Such legs must stay Pending
+ * even if a football score happens to share the same normalised match key. Old saved legs without
+ * a `sport` field are still recognised by their market kind / period.
+ */
+export function isNonFootballLeg(leg: LegLike): boolean {
+  if (leg.sport && leg.sport !== 'football') return true;
+  if (leg.marketKind === 'match_winner' || leg.marketKind === 'total') return true;
+  if (leg.period && leg.period !== 'ft') return true;
+  return false;
+}
+
+const NON_FOOTBALL_PENDING = { outcome: 'pending' as const, reason: 'Results for tennis/basketball are not supported yet' };
+
 export type SlipSettlementStatus = 'won' | 'lost' | 'pending' | 'void';
 
 export type EvaluatedLeg = {
@@ -84,9 +106,10 @@ function extractLine(leg: Partial<PickRow> & { pick?: string; specifier?: string
  * Evaluates the outcome of a single leg given the match score.
  */
 export function evaluateLegOutcome(
-  leg: Partial<PickRow> & { home: string; away: string; pick: string; odds: number; gameId?: string },
+  leg: LegLike,
   score?: MatchScore
 ): { outcome: LegOutcome; reason: string } {
+  if (isNonFootballLeg(leg)) return NON_FOOTBALL_PENDING;
   if (!score) {
     return { outcome: 'pending', reason: 'Awaiting match score' };
   }
@@ -218,7 +241,7 @@ export function evaluateSlip(
     createdAt: number;
     totalOdds: number;
     combinedImplied: number | null;
-    legs: Array<Partial<PickRow> & { home: string; away: string; pick: string; odds: number; gameId?: string }>;
+    legs: LegLike[];
   },
   scores: Map<string, MatchScore> | Record<string, MatchScore>
 ): EvaluatedSlip {
@@ -236,7 +259,8 @@ export function evaluateSlip(
   };
 
   const evaluatedLegs: EvaluatedLeg[] = slip.legs.map((leg) => {
-    const score = getScore(leg);
+    // Never attach a score (default or otherwise) to a leg we cannot settle.
+    const score = isNonFootballLeg(leg) ? undefined : getScore(leg);
     const { outcome, reason } = evaluateLegOutcome(leg, score);
     return {
       gameId: leg.gameId || normalizeMatchKey(leg.home, leg.away),

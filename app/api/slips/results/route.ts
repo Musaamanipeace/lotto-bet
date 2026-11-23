@@ -8,11 +8,12 @@ import {
 import { normalizeMatchKey, type MatchScore } from '@/lib/results-evaluator.ts';
 import { currentUser, jsonError } from '@/lib/session.ts';
 import { getDecryptedUserKeys, type ApiKeyProvider } from '@/lib/user-settings-store.ts';
+import type { Sport } from '@/lib/types.ts';
 
 // Query external football scores using ONLY the signed-in user's server-decrypted keys
 async function fetchExternalScores(
   userId: string,
-  matches: Array<{ home: string; away: string }>,
+  matches: Array<{ home: string; away: string; sport?: Sport }>,
 ): Promise<Record<string, MatchScore>> {
   const scores: Record<string, MatchScore> = {};
   const userKeys = await getDecryptedUserKeys(userId).catch(
@@ -80,6 +81,8 @@ async function fetchExternalScores(
   }
 
   for (const m of matches) {
+    // No score feed or settlement rules for new sports: no score, not even a deterministic default.
+    if (m.sport && m.sport !== 'football') continue;
     const key = normalizeMatchKey(m.home, m.away);
     if (!scores[key]) {
       const det = deterministicScore(m.home, m.away);
@@ -104,6 +107,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const home = searchParams.get('home');
   const away = searchParams.get('away');
+  const rawSport = searchParams.get('sport');
+  const sport: Sport | undefined = rawSport === 'tennis' || rawSport === 'basketball' || rawSport === 'football' ? rawSport : undefined;
 
   const existing = getServerScores();
 
@@ -112,7 +117,7 @@ export async function GET(req: NextRequest) {
     if (existing[key]) {
       return NextResponse.json({ ok: true, scores: { [key]: existing[key] } });
     }
-    const fetched = await fetchExternalScores(user.id, [{ home, away }]);
+    const fetched = await fetchExternalScores(user.id, [{ home, away, sport }]);
     return NextResponse.json({ ok: true, scores: fetched });
   }
 

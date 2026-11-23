@@ -5,10 +5,12 @@ import Link from 'next/link';
 import { useAuth } from '../components/auth-context';
 import {
   evaluateSlip,
+  isNonFootballLeg,
   normalizeMatchKey,
   type EvaluatedSlip,
   type MatchScore,
 } from '@/lib/results-evaluator.ts';
+import type { MarketPeriod } from '@/lib/types.ts';
 import {
   getLocalScores,
   saveLocalScores,
@@ -36,6 +38,8 @@ type SavedSlip = {
     outcomeKey?: any;
     line?: number | null;
     specifier?: string;
+    sport?: 'football' | 'tennis' | 'basketball';
+    period?: MarketPeriod;
   }[];
   totalOdds: number;
   combinedImplied: number | null;
@@ -90,6 +94,8 @@ export default function ResultsTrackerPage() {
     const allMatches: Array<{ home: string; away: string }> = [];
     loadedSlips.forEach((s) => {
       s.legs.forEach((l) => {
+        // Tennis/basketball legs stay Pending: never request or generate a score for them.
+        if (isNonFootballLeg(l)) return;
         const key = normalizeMatchKey(l.home, l.away);
         if (!currentScores[key]) {
           allMatches.push({ home: l.home, away: l.away });
@@ -112,6 +118,7 @@ export default function ResultsTrackerPage() {
     // For any remaining matches that need default scores, fill deterministically
     loadedSlips.forEach((s) => {
       s.legs.forEach((l) => {
+        if (isNonFootballLeg(l)) return;
         const key = normalizeMatchKey(l.home, l.away);
         if (!currentScores[key]) {
           const det = deterministicScore(l.home, l.away);

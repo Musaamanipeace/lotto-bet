@@ -142,3 +142,37 @@ test("legs with a 'default' placeholder score stay pending and never settle won/
   assert.equal(res.outcome, 'pending');
   assert.match(res.reason, /awaiting/i);
 });
+
+test('tennis and basketball legs never settle: no score is attached, even with a matching football score', () => {
+  const score: MatchScore = { homeScore: 2, awayScore: 1, status: 'FT', updatedAt: 0, source: 'manual' };
+  const tennis = { home: 'Player A', away: 'Player B', pick: 'Home', odds: 1.6, marketKind: 'match_winner' as const, outcomeKey: 'home' as const, sport: 'tennis' as const };
+  const basketball = { home: 'Lakers', away: 'Celtics', pick: 'Over 199.5', odds: 1.9, marketKind: 'over_under' as const, outcomeKey: 'over' as const, line: 199.5, sport: 'basketball' as const, period: 'ft' as const };
+  const q3 = { home: 'Lakers', away: 'Celtics', pick: 'Over 41.5', odds: 1.8, marketKind: 'over_under' as const, outcomeKey: 'over' as const, line: 41.5, period: 'q3' as const };
+
+  for (const leg of [tennis, basketball, q3]) {
+    assert.equal(evaluateLegOutcome(leg, score).outcome, 'pending');
+  }
+  const slip = evaluateSlip({
+    id: 'mixed', name: 'Mixed', bookmaker: 'sportybet', createdAt: 0, totalOdds: 5, combinedImplied: null,
+    legs: [tennis, basketball],
+  }, new Map([[normalizeMatchKey('Player A', 'Player B'), score], [normalizeMatchKey('Lakers', 'Celtics'), score]]));
+  assert.equal(slip.status, 'pending');
+  assert.equal(slip.pendingCount, 2);
+  assert.ok(slip.legs.every((l) => l.outcome === 'pending' && l.score === undefined));
+  assert.match(slip.legs[0].reason, /tennis\/basketball/);
+});
+
+test('a mixed slip with one lost football leg is still lost, but non-football legs stay pending', () => {
+  const score: MatchScore = { homeScore: 0, awayScore: 3, status: 'FT', updatedAt: 0, source: 'manual' };
+  const slip = evaluateSlip({
+    id: 'mixed2', name: 'Mixed', bookmaker: 'sportybet', createdAt: 0, totalOdds: 3, combinedImplied: null,
+    legs: [
+      { home: 'Arsenal', away: 'Chelsea', pick: 'Home', odds: 1.5, marketKind: '1x2' as const, outcomeKey: 'home' as const, sport: 'football' as const },
+      { home: 'Player A', away: 'Player B', pick: 'Home', odds: 1.6, marketKind: 'match_winner' as const, outcomeKey: 'home' as const, sport: 'tennis' as const },
+    ],
+  }, new Map([[normalizeMatchKey('Arsenal', 'Chelsea'), score], [normalizeMatchKey('Player A', 'Player B'), score]]));
+  assert.equal(slip.status, 'lost');
+  assert.equal(slip.lostCount, 1);
+  assert.equal(slip.pendingCount, 1);
+  assert.equal(slip.legs[1].score, undefined);
+});
